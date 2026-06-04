@@ -37,7 +37,7 @@ export function ShareModal({
       a.download = `marcador-${matchdayName.replace(/\s+/g, "-").toLowerCase()}.png`;
       a.click();
     } catch {
-      toast.error("No se pudo generar la imagen.");
+      toast.error("Couldn't generate the image.");
     } finally {
       setBusy(false);
     }
@@ -50,9 +50,9 @@ export function ShareModal({
       const dataUrl = await toPng(ref.current, { pixelRatio: 2, cacheBust: true });
       const blob = await (await fetch(dataUrl)).blob();
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles.");
+      toast.success("Image copied to clipboard.");
     } catch {
-      toast.error("Tu navegador no permite copiar imágenes. Usa Descargar.");
+      toast.error("Your browser can't copy images. Use Download.");
     } finally {
       setBusy(false);
     }
@@ -64,7 +64,7 @@ export function ShareModal({
         <button
           onClick={onClose}
           className="absolute -top-2 -right-2 z-10 size-9 rounded-full bg-background border border-border flex items-center justify-center hover:bg-secondary"
-          aria-label="Cerrar"
+          aria-label="Close"
         >
           <X size={16} />
         </button>
@@ -82,14 +82,14 @@ export function ShareModal({
             disabled={busy}
             className="flex-1 rounded-xl bg-secondary px-4 py-2.5 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40"
           >
-            <Copy size={14} /> Copiar
+            <Copy size={14} /> Copy
           </button>
           <button
             onClick={download}
             disabled={busy}
             className="flex-1 rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40"
           >
-            <Download size={14} /> Descargar
+            <Download size={14} /> Download
           </button>
         </div>
       </div>

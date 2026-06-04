@@ -45,7 +45,7 @@ function MePage() {
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
       <header className="mb-6">
         <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
-          Perfil
+          Profile
         </div>
         <h1 className="font-display font-bold text-3xl md:text-4xl mt-1">Mi Marcador</h1>
         <p className="text-sm text-muted-foreground mt-2">
@@ -58,15 +58,15 @@ function MePage() {
         </div>
       </header>
 
-      <Section title="Puntos por jornada">
+      <Section title="Points per matchday">
         <BarChart data={(scores.data as Score[] | undefined) ?? []} />
       </Section>
 
-      <Section title="Ranking en el tiempo">
+      <Section title="Rank over time">
         <RankChart data={(scores.data as Score[] | undefined) ?? []} />
       </Section>
 
-      <Section title="Historial de predicciones">
+      <Section title="Prediction history">
         <History groups={(history.data as HistoryGroup[] | undefined) ?? []} />
       </Section>
     </AppShell>
@@ -86,7 +86,7 @@ function BarChart({ data }: { data: Score[] }) {
   if (!data.length) {
     return (
       <div className="rounded-2xl border border-border bg-card">
-        <EmptyBall title="Sin puntos todavía" sub="Cuando termine una jornada verás aquí tus puntos." />
+        <EmptyBall title="No points yet" sub="Once a matchday finishes, your points will appear here." />
       </div>
     );
   }
@@ -144,7 +144,7 @@ function RankChart({ data }: { data: Score[] }) {
   if (!ranked.length) {
     return (
       <div className="rounded-2xl border border-border bg-card">
-        <EmptyBall title="Sin ranking todavía" sub="Tu posición aparecerá tras la primera jornada calculada." />
+        <EmptyBall title="No rank yet" sub="Your position will appear after the first scored matchday." />
       </div>
     );
   }
@@ -201,8 +201,8 @@ function History({ groups }: { groups: HistoryGroup[] }) {
     return (
       <div className="rounded-2xl border border-border bg-card">
         <EmptyBall
-          title="Aún no has jugado"
-          sub="Cuando envíes predicciones, su historial aparecerá aquí."
+          title="No predictions yet"
+          sub="Once you submit predictions, your history will appear here."
         />
       </div>
     );

@@ -12,7 +12,7 @@ export function KickoffCountdown({ kickoffAt }: { kickoffAt: string | null }) {
   if (!kickoffAt) {
     return (
       <div className="rounded-2xl border border-border bg-card/60 px-4 py-3 text-center text-xs uppercase tracking-[0.2em] text-muted-foreground flex items-center justify-center gap-2">
-        <Lock size={14} /> Jornada bloqueada
+        <Lock size={14} /> Matchday locked
       </div>
     );
   }
@@ -33,7 +33,7 @@ export function KickoffCountdown({ kickoffAt }: { kickoffAt: string | null }) {
       }`}
     >
       <div className="text-[10px] uppercase tracking-[0.3em] font-bold text-primary-foreground/80 text-center">
-        {urgent ? "⚠ Bloqueo inminente" : "Bloqueo en"}
+        {urgent ? "⚠ Locking soon" : "Locks in"}
       </div>
       <div className="mt-2 grid grid-cols-4 gap-2">
         <Tile value={d} label="d" />

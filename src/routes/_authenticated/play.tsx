@@ -123,8 +123,8 @@ function PlayPage() {
       {q.isLoading && <SkeletonList />}
       {q.data === null && (
         <EmptyBall
-          title="Sin jornada activa"
-          sub="Aún no hay partidos disponibles. Vuelve pronto — el balón está a punto de rodar."
+          title="No active matchday"
+          sub="No matches available yet. Check back soon — the ball's about to roll."
         />
       )}
       {q.data && (
@@ -137,7 +137,7 @@ function PlayPage() {
               {q.data.matchday.name}
             </h1>
             <p className="text-sm text-muted-foreground mt-2">
-              Las predicciones se bloquean al saque. Aplica un 2× booster por jornada.
+              Predictions lock at kickoff. Apply one 2× booster per matchday.
             </p>
           </header>
 
@@ -147,8 +147,8 @@ function PlayPage() {
 
           {q.data.matches.length === 0 ? (
             <EmptyBall
-              title="Esta jornada aún no tiene partidos"
-              sub="El admin todavía no los ha publicado."
+              title="This matchday has no fixtures yet"
+              sub="The admin hasn't published them."
             />
           ) : (
             <div className="space-y-3 pb-28">
@@ -178,18 +178,18 @@ function PlayPage() {
                   className="flex-1 rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-[0.99]"
                 >
                   {submitAll.isPending
-                    ? "Enviando…"
+                    ? "Submitting…"
                     : dirtyCount > 0
-                    ? `Enviar ${dirtyCount} predicción${dirtyCount === 1 ? "" : "es"}`
-                    : "Todo guardado"}
+                    ? `Submit ${dirtyCount} prediction${dirtyCount === 1 ? "" : "s"}`
+                    : "All saved"}
                 </button>
                 {allSaved && (
                   <button
                     onClick={() => setShareOpen(true)}
                     className="rounded-2xl bg-card border border-border px-4 py-3.5 text-sm font-bold flex items-center gap-2 shadow-card"
-                    aria-label="Compartir picks"
+                    aria-label="Share picks"
                   >
-                    <Share2 size={16} /> Compartir
+                    <Share2 size={16} /> Share
                   </button>
                 )}
               </div>
@@ -204,7 +204,7 @@ function PlayPage() {
                   onClick={() => guestGate.setOpen(true)}
                   className="w-full rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow transition active:scale-[0.99]"
                 >
-                  Crear cuenta para predecir
+                  Sign up to predict
                 </button>
               </div>
             </div>
@@ -214,7 +214,7 @@ function PlayPage() {
             open={shareOpen}
             onClose={() => setShareOpen(false)}
             matchdayName={q.data.matchday.name}
-            displayName={me.profile?.display_name ?? "Jugador"}
+            displayName={me.profile?.display_name ?? "Player"}
             matches={q.data.matches}
             drafts={shareDrafts}
             boostedMatchId={boostedMatchId}
