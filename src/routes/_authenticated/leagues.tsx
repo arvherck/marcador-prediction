@@ -124,7 +124,7 @@ function LeaguesPage() {
       </div>
       <div className="space-y-2">
         {leagues.isLoading && (
-          <div className="text-sm text-muted-foreground py-8 text-center">Cargando…</div>
+          <div className="text-sm text-muted-foreground py-8 text-center">Loading…</div>
         )}
         {leagues.data?.length === 0 && (
           <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
@@ -144,7 +144,7 @@ function LeaguesPage() {
               <div className="font-semibold truncate">{l.name}</div>
               <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
                 <span>
-                  {l.member_count} miembro{l.member_count === 1 ? "" : "s"}
+                  {l.member_count} member{l.member_count === 1 ? "" : "s"}
                 </span>
                 <span aria-hidden>·</span>
                 <span className="font-score font-bold tracking-widest text-primary">

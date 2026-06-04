@@ -54,7 +54,7 @@ function GuestGateModal({
           Create a free account
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Create a free account para hacer predicciones y competir en la tabla.
+          Create a free account to make predictions and compete on the leaderboard.
         </p>
         <div className="mt-5 flex flex-col gap-2">
           <button

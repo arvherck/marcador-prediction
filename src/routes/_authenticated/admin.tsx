@@ -165,7 +165,7 @@ function AddMatchForm({
         }
         className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
       >
-        <option value="">Selecciona jornada…</option>
+        <option value="">Select matchday…</option>
         {matchdays.map((md) => (
           <option key={md.id} value={md.id}>
             {md.name}
@@ -353,7 +353,7 @@ function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
         }
         className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm mb-3"
       >
-        <option value="">Selecciona jornada…</option>
+        <option value="">Select matchday…</option>
         {matchdays.map((md) => (
           <option key={md.id} value={md.id}>
             {md.name}
@@ -366,7 +366,7 @@ function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
           Select a matchday to view predictions.
         </p>
       ) : preds.isLoading ? (
-        <p className="text-sm text-muted-foreground">Cargando…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : !rows.length ? (
         <p className="text-sm text-muted-foreground">No predictions.</p>
       ) : (
