@@ -46,7 +46,7 @@ export const getCurrentMatchday = createServerFn({ method: "GET" }).handler(asyn
   );
 
   const now = Date.now();
-  const rows: MatchRow[] = matches.rows.map((r) => ({
+  const rows: MatchRow[] = matches.rows.map((r: Record<string, unknown> & { kickoff_at: string }) => ({
     id: r.id,
     matchday_id: r.matchday_id,
     home_team: r.home_team,
