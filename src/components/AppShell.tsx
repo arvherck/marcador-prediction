@@ -5,9 +5,11 @@ import { toast } from "sonner";
 
 const tabs = [
   { to: "/play", label: "Play", icon: BallIcon },
-  { to: "/leaderboard", label: "Table", icon: TableIcon },
+  { to: "/leaderboard", label: "Tabla", icon: TableIcon },
   { to: "/leagues", label: "Ligas", icon: LeagueIcon },
+  { to: "/me", label: "Mi Marcador", icon: UserIcon },
 ] as const;
+
 
 export function AppShell({
   children,
@@ -70,7 +72,8 @@ export function AppShell({
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-6">{children}</main>
 
       <nav className="fixed md:hidden bottom-0 inset-x-0 z-30 border-t border-border bg-background/95 backdrop-blur">
-        <div className="grid grid-cols-3 max-w-md mx-auto">
+        <div className="grid grid-cols-4 max-w-md mx-auto">
+
           {tabs.map((t) => {
             const Icon = t.icon;
             const active = loc.pathname.startsWith(t.to);
@@ -137,3 +140,12 @@ function LeagueIcon({ active: _ }: { active: boolean }) {
     </svg>
   );
 }
+function UserIcon({ active: _ }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
+    </svg>
+  );
+}
+
