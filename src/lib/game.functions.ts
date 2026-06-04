@@ -531,3 +531,76 @@ export const makeMeAdminFn = createServerFn({ method: "POST" }).handler(async ()
   await pool.query("UPDATE app_users SET is_admin=true WHERE id=$1", [me.id]);
   return { ok: true };
 });
+
+export const adminAddMatchFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      matchday_id: z.number().int(),
+      home_team: z.string().trim().min(1),
+      away_team: z.string().trim().min(1),
+      kickoff_at: z.string(),
+      phase: z.string().trim().max(40).optional().nullable(),
+      is_selected: z.boolean().optional().default(false),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const { pool } = await import("./lovable/database");
+    const { requireUser } = await import("./auth.server");
+    const me = await requireUser();
+    if (!me.is_admin) throw new Error("Forbidden");
+    const { rows } = await pool.query(
+      `INSERT INTO matches (matchday_id, home_team, away_team, kickoff_at, phase, is_selected)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [
+        data.matchday_id,
+        data.home_team,
+        data.away_team,
+        data.kickoff_at,
+        data.phase ?? null,
+        data.is_selected ?? false,
+      ],
+    );
+    return { id: rows[0].id };
+  });
+
+export const adminListPredictionsFn = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ matchday_id: z.number().int() }))
+  .handler(async ({ data }) => {
+    const { pool } = await import("./lovable/database");
+    const { requireUser } = await import("./auth.server");
+    const me = await requireUser();
+    if (!me.is_admin) throw new Error("Forbidden");
+    const { rows } = await pool.query(
+      `SELECT pr.id, pr.home_goals, pr.away_goals, pr.first_scorer AS pred_first_scorer,
+              pr.booster, pr.points,
+              m.id AS match_id, m.home_team, m.away_team, m.kickoff_at,
+              m.home_score, m.away_score, m.first_scorer AS actual_first_scorer, m.is_final,
+              p.display_name, u.email
+       FROM predictions pr
+       JOIN matches m ON m.id = pr.match_id
+       JOIN app_users u ON u.id = pr.user_id
+       LEFT JOIN profiles p ON p.user_id = pr.user_id
+       WHERE m.matchday_id = $1
+       ORDER BY m.kickoff_at ASC, m.id ASC, p.display_name ASC`,
+      [data.matchday_id],
+    );
+    return rows as Array<{
+      id: number;
+      home_goals: number;
+      away_goals: number;
+      pred_first_scorer: string | null;
+      booster: boolean;
+      points: number | null;
+      match_id: number;
+      home_team: string;
+      away_team: string;
+      kickoff_at: string;
+      home_score: number | null;
+      away_score: number | null;
+      actual_first_scorer: string | null;
+      is_final: boolean;
+      display_name: string | null;
+      email: string;
+    }>;
+  });
+

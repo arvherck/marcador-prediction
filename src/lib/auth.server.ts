@@ -49,10 +49,11 @@ export async function loadCurrentUser(): Promise<CurrentUser | null> {
   );
   if (!rows.length) return null;
   const r = rows[0];
+  const { isAdminEmail } = await import("./admin");
   return {
     id: r.id,
     email: r.email,
-    is_admin: r.is_admin,
+    is_admin: r.is_admin || isAdminEmail(r.email),
     profile: r.display_name
       ? {
           display_name: r.display_name,
@@ -62,6 +63,7 @@ export async function loadCurrentUser(): Promise<CurrentUser | null> {
       : null,
   };
 }
+
 
 export async function requireUser(): Promise<CurrentUser> {
   const u = await loadCurrentUser();
