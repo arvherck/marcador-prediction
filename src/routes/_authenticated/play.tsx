@@ -28,7 +28,9 @@ type Draft = { home: number; away: number; scorer: Scorer; dirty: boolean };
 
 function PlayPage() {
   const { me } = Route.useRouteContext();
-  const q = useQuery({ queryKey: ["matchday"], queryFn: () => getCurrentMatchday() });
+  const guest = useGuest();
+  const guestGate = useGuestGate();
+  const q = useQuery({ queryKey: ["matchday", guest ? "guest" : me.id], queryFn: () => getCurrentMatchday() });
   const qc = useQueryClient();
 
   // Local draft state for all 6 cards
