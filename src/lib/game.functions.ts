@@ -310,23 +310,74 @@ export const adminScoreMatchdayFn = createServerFn({ method: "POST" })
         "SELECT * FROM predictions WHERE match_id=$1",
         [m.id],
       );
+      const totalPreds = preds.length;
+      // Tally scoreline frequency for underdog bonus
+      const tally = new Map<string, number>();
+      for (const p of preds) {
+        const key = `${p.home_goals}-${p.away_goals}`;
+        tally.set(key, (tally.get(key) ?? 0) + 1);
+      }
+      const actualResult =
+        m.home_score > m.away_score ? "H" : m.home_score < m.away_score ? "A" : "D";
       for (const p of preds) {
         let pts = 0;
-        const actualResult =
-          m.home_score > m.away_score ? "H" : m.home_score < m.away_score ? "A" : "D";
         const predResult =
           p.home_goals > p.away_goals ? "H" : p.home_goals < p.away_goals ? "A" : "D";
-        if (actualResult === predResult) pts += 3;
+        const exactScore =
+          p.home_goals === m.home_score && p.away_goals === m.away_score;
+        if (exactScore || actualResult === predResult) pts += 3;
         if (p.home_goals === m.home_score) pts += 2;
         if (p.away_goals === m.away_score) pts += 2;
         if (p.home_goals - p.away_goals === m.home_score - m.away_score) pts += 3;
         if (p.first_scorer && p.first_scorer === m.first_scorer) pts += 3;
         if (p.booster) pts *= 2;
+        // Underdog bonus: this prediction's scoreline is rare AND correct
+        if (exactScore && totalPreds > 0) {
+          const key = `${p.home_goals}-${p.away_goals}`;
+          const share = (tally.get(key) ?? 0) / totalPreds;
+          if (share < 0.1) pts += 5;
+        }
         await pool.query("UPDATE predictions SET points=$1 WHERE id=$2", [pts, p.id]);
       }
     }
+
+    // Aggregate per-user totals for this matchday and upsert into matchday_scores
+    const { rows: totals } = await pool.query(
+      `SELECT p.user_id, COALESCE(SUM(p.points),0)::int AS total_points
+       FROM predictions p
+       JOIN matches m ON m.id = p.match_id
+       WHERE m.matchday_id = $1
+       GROUP BY p.user_id`,
+      [data.matchday_id],
+    );
+    // Compute ranks (dense by total_points desc)
+    const sorted = [...totals].sort((a, b) => b.total_points - a.total_points);
+    let rank = 0;
+    let prev: number | null = null;
+    let seen = 0;
+    const ranks = new Map<string, number>();
+    for (const row of sorted) {
+      seen += 1;
+      if (prev === null || row.total_points !== prev) {
+        rank = seen;
+        prev = row.total_points;
+      }
+      ranks.set(row.user_id, rank);
+    }
+    for (const row of totals) {
+      await pool.query(
+        `INSERT INTO matchday_scores (user_id, matchday_id, total_points, rank)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (user_id, matchday_id) DO UPDATE
+         SET total_points=EXCLUDED.total_points,
+             rank=EXCLUDED.rank,
+             updated_at=now()`,
+        [row.user_id, data.matchday_id, row.total_points, ranks.get(row.user_id) ?? null],
+      );
+    }
+
     await pool.query("UPDATE matchdays SET is_scored=true WHERE id=$1", [data.matchday_id]);
-    return { ok: true };
+    return { ok: true, users_scored: totals.length };
   });
 
 export const adminAddMatchdayFn = createServerFn({ method: "POST" })
