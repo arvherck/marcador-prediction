@@ -13,7 +13,7 @@ export function getSession() {
     password: SESSION_PASSWORD,
     name: "marcador_session",
     maxAge: 60 * 60 * 24 * 30,
-    cookie: { httpOnly: true, sameSite: "lax", secure: true, path: "/" },
+    cookie: { httpOnly: true, sameSite: "none", secure: true, path: "/" },
   });
 }
 
