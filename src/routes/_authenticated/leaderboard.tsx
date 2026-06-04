@@ -16,6 +16,7 @@ import {
   getMatchdayLeaderboard,
   getMyLeagues,
 } from "@/lib/game.functions";
+import { useGuest } from "@/lib/guest";
 import { teamFlag } from "@/lib/teamFlags";
 
 export const Route = createFileRoute("/_authenticated/leaderboard")({
@@ -48,6 +49,7 @@ type MatchdayRow = {
 
 function LeaderboardPage() {
   const { me } = Route.useRouteContext();
+  const guest = useGuest();
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
@@ -64,10 +66,10 @@ function LeaderboardPage() {
       </div>
 
       <Tabs defaultValue="overall" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-4">
+        <TabsList className={`grid w-full ${guest ? "grid-cols-2" : "grid-cols-3"} mb-4`}>
           <TabsTrigger value="overall">Overall</TabsTrigger>
           <TabsTrigger value="matchday">This Matchday</TabsTrigger>
-          <TabsTrigger value="leagues">My Leagues</TabsTrigger>
+          {!guest && <TabsTrigger value="leagues">My Leagues</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overall">
@@ -76,9 +78,11 @@ function LeaderboardPage() {
         <TabsContent value="matchday">
           <MatchdayTab meId={me.id} />
         </TabsContent>
-        <TabsContent value="leagues">
-          <LeaguesTab meId={me.id} />
-        </TabsContent>
+        {!guest && (
+          <TabsContent value="leagues">
+            <LeaguesTab meId={me.id} />
+          </TabsContent>
+        )}
       </Tabs>
     </AppShell>
   );

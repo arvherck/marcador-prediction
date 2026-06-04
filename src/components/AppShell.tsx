@@ -2,12 +2,14 @@ import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { signOutFn } from "@/lib/auth.functions";
 import { toast } from "sonner";
+import { useGuest, clearGuest } from "@/lib/guest";
+import { useGuestGate } from "@/components/GuestGate";
 
 const tabs = [
-  { to: "/play", label: "Play", icon: BallIcon },
-  { to: "/leaderboard", label: "Tabla", icon: TableIcon },
-  { to: "/leagues", label: "Ligas", icon: LeagueIcon },
-  { to: "/me", label: "Mi Marcador", icon: UserIcon },
+  { to: "/play", label: "Play", icon: BallIcon, guest: true },
+  { to: "/leaderboard", label: "Tabla", icon: TableIcon, guest: true },
+  { to: "/leagues", label: "Ligas", icon: LeagueIcon, guest: false },
+  { to: "/me", label: "Mi Marcador", icon: UserIcon, guest: false },
 ] as const;
 
 
@@ -22,12 +24,64 @@ export function AppShell({
 }) {
   const loc = useLocation();
   const router = useRouter();
+  const guest = useGuest();
+  const guestGate = useGuestGate();
 
   const logout = async () => {
+    if (guest) {
+      clearGuest();
+      router.navigate({ to: "/" });
+      return;
+    }
     await signOutFn();
     toast.success("Signed out.");
     await router.invalidate();
     router.navigate({ to: "/" });
+  };
+
+  const renderTab = (t: typeof tabs[number], variant: "top" | "bottom") => {
+    const Icon = t.icon;
+    const active = loc.pathname.startsWith(t.to);
+    if (guest && !t.guest) {
+      const cls =
+        variant === "top"
+          ? `px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+              active ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+            }`
+          : `flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition ${
+              active ? "text-primary" : "text-muted-foreground"
+            }`;
+      return (
+        <button
+          key={t.to}
+          type="button"
+          onClick={() => guestGate.setOpen(true)}
+          className={cls}
+        >
+          {variant === "bottom" && <Icon active={active} />}
+          {t.label}
+        </button>
+      );
+    }
+    if (variant === "top") {
+      return (
+        <NavLink key={t.to} to={t.to} active={active}>
+          {t.label}
+        </NavLink>
+      );
+    }
+    return (
+      <Link
+        key={t.to}
+        to={t.to}
+        className={`flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition ${
+          active ? "text-primary" : "text-muted-foreground"
+        }`}
+      >
+        <Icon active={active} />
+        {t.label}
+      </Link>
+    );
   };
 
   return (
@@ -41,29 +95,30 @@ export function AppShell({
             <span className="font-display font-bold tracking-tight">Marcador</span>
           </Link>
           <nav className="hidden md:flex items-center gap-1">
-            {tabs.map((t) => (
-              <NavLink key={t.to} to={t.to} active={loc.pathname.startsWith(t.to)}>
-                {t.label}
-              </NavLink>
-            ))}
-            {isAdmin && (
+            {tabs.map((t) => renderTab(t, "top"))}
+            {!guest && isAdmin && (
               <NavLink to="/admin" active={loc.pathname.startsWith("/admin")}>
                 Panel
               </NavLink>
             )}
-
           </nav>
           <div className="flex items-center gap-3">
-            {displayName && (
-              <span className="hidden sm:inline text-xs text-muted-foreground">
-                {displayName}
+            {guest ? (
+              <span className="hidden sm:inline text-[10px] uppercase tracking-widest font-bold text-amber-glow border border-primary/40 rounded px-1.5 py-0.5">
+                Invitado
               </span>
+            ) : (
+              displayName && (
+                <span className="hidden sm:inline text-xs text-muted-foreground">
+                  {displayName}
+                </span>
+              )
             )}
             <button
               onClick={logout}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
-              Sign out
+              {guest ? "Salir" : "Sign out"}
             </button>
           </div>
         </div>
@@ -73,25 +128,10 @@ export function AppShell({
 
       <nav className="fixed md:hidden bottom-0 inset-x-0 z-30 border-t border-border bg-background/95 backdrop-blur">
         <div className="grid grid-cols-4 max-w-md mx-auto">
-
-          {tabs.map((t) => {
-            const Icon = t.icon;
-            const active = loc.pathname.startsWith(t.to);
-            return (
-              <Link
-                key={t.to}
-                to={t.to}
-                className={`flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition ${
-                  active ? "text-primary" : "text-muted-foreground"
-                }`}
-              >
-                <Icon active={active} />
-                {t.label}
-              </Link>
-            );
-          })}
+          {tabs.map((t) => renderTab(t, "bottom"))}
         </div>
       </nav>
+      {guestGate.modal}
     </div>
   );
 }

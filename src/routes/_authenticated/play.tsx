@@ -7,6 +7,8 @@ import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { KickoffCountdown } from "@/components/KickoffCountdown";
 import { ShareModal } from "@/components/ShareModal";
+import { useGuestGate } from "@/components/GuestGate";
+import { useGuest } from "@/lib/guest";
 import {
   getCurrentMatchday,
   savePredictionFn,
@@ -26,7 +28,9 @@ type Draft = { home: number; away: number; scorer: Scorer; dirty: boolean };
 
 function PlayPage() {
   const { me } = Route.useRouteContext();
-  const q = useQuery({ queryKey: ["matchday"], queryFn: () => getCurrentMatchday() });
+  const guest = useGuest();
+  const guestGate = useGuestGate();
+  const q = useQuery({ queryKey: ["matchday", guest ? "guest" : me.id], queryFn: () => getCurrentMatchday() });
   const qc = useQueryClient();
 
   // Local draft state for all 6 cards
@@ -155,7 +159,7 @@ function PlayPage() {
                   draft={drafts[m.id]}
                   onUpdate={(patch) => updateDraft(m.id, patch)}
                   boostedMatchId={boostedMatchId}
-                  onToggleBooster={() => boost.mutate(m.id)}
+                  onToggleBooster={() => guestGate.require(() => boost.mutate(m.id), guest)}
                   boosterPending={boost.isPending}
                 />
               ))}
@@ -164,12 +168,12 @@ function PlayPage() {
 
           {q.data.matches.length > 0 && <ScoringLegend />}
 
-          {/* Sticky submit bar */}
-          {q.data.matches.length > 0 && (
+          {/* Sticky submit bar (hidden for guests) */}
+          {q.data.matches.length > 0 && !guest && (
             <div className="fixed inset-x-0 bottom-16 md:bottom-6 z-30 px-4 pointer-events-none">
               <div className="max-w-2xl mx-auto pointer-events-auto flex gap-2">
                 <button
-                  onClick={() => submitAll.mutate()}
+                  onClick={() => guestGate.require(() => submitAll.mutate(), guest)}
                   disabled={submitAll.isPending || dirtyCount === 0}
                   className="flex-1 rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-[0.99]"
                 >
@@ -192,6 +196,20 @@ function PlayPage() {
             </div>
           )}
 
+          {/* Guest CTA */}
+          {q.data.matches.length > 0 && guest && (
+            <div className="fixed inset-x-0 bottom-16 md:bottom-6 z-30 px-4 pointer-events-none">
+              <div className="max-w-2xl mx-auto pointer-events-auto">
+                <button
+                  onClick={() => guestGate.setOpen(true)}
+                  className="w-full rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow transition active:scale-[0.99]"
+                >
+                  Crear cuenta para predecir
+                </button>
+              </div>
+            </div>
+          )}
+
           <ShareModal
             open={shareOpen}
             onClose={() => setShareOpen(false)}
@@ -203,6 +221,7 @@ function PlayPage() {
           />
         </>
       )}
+      {guestGate.modal}
     </AppShell>
   );
 

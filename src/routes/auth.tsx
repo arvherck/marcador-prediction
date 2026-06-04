@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-r
 import { useState } from "react";
 import { toast } from "sonner";
 import { signInFn, signUpFn } from "@/lib/auth.functions";
+import { setGuest, clearGuest } from "@/lib/guest";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -27,6 +28,7 @@ function AuthPage() {
     try {
       if (mode === "signup") await signUpFn({ data: { email, password } });
       else await signInFn({ data: { email, password } });
+      clearGuest();
       toast.success("Welcome to Marcador.");
       await router.invalidate();
       navigate({ to: "/onboarding" });
@@ -35,6 +37,12 @@ function AuthPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const continueAsGuest = () => {
+    setGuest(true);
+    toast("Modo invitado activado.");
+    navigate({ to: "/play" });
   };
 
   return (
@@ -109,6 +117,22 @@ function AuthPage() {
               ? "New here? Create an account →"
               : "Already on Marcador? Sign in →"}
           </button>
+
+          <div className="relative my-5 text-center text-xs uppercase tracking-widest text-muted-foreground">
+            <span className="bg-background px-3 relative z-10">o</span>
+            <span className="absolute inset-x-0 top-1/2 h-px bg-border -z-0" />
+          </div>
+
+          <button
+            type="button"
+            onClick={continueAsGuest}
+            className="w-full rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary transition"
+          >
+            Continuar como invitado
+          </button>
+          <p className="mt-2 text-[11px] text-center text-muted-foreground/70">
+            Solo lectura. No podrás predecir ni aparecer en la tabla.
+          </p>
         </div>
       </main>
     </div>

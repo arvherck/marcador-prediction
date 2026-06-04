@@ -1,44 +1,58 @@
-## Finishing touches
+# Continue as Guest
 
-### 1. `src/components/EmptyBall.tsx` — animated football illustration
+## Note on Supabase
+The brief asks for `supabase.auth.signInAnonymously()`, but Marcador uses a custom cookie-session auth (`app_users` + bcrypt + `useSession`), not Supabase Auth. I'll implement the same intent — an ephemeral, no-profile, no-leaderboard guest session — using the existing stack. No new auth dependency.
 
-Pure-CSS/SVG football (black-and-white pentagon ball) with a gentle bounce + shadow pulse via Tailwind `animate-bounce` plus a custom keyframe added in `src/styles.css` (`@keyframes ball-spin` for a slow rotation). Component `<EmptyBall label="..." sub="..." />` renders ball + headline + subline, centered. Used by:
-- Play page when `q.data === null` or no matches
-- Mi Marcador when user has no scored predictions
-- Leaderboard when no rows
+## Behavior
+- Guest state lives in `sessionStorage` only (cleared when the tab/app closes — matches "does not persist").
+- No `app_users` row, no `profiles` row, no server session cookie.
+- Guests can read: current matchday's 6 selected matches, global leaderboard, completed match results.
+- Guests cannot: submit predictions, pick boosters, join/create leagues, appear on any leaderboard, access "Mi Marcador" or admin.
 
-### 2. `src/components/KickoffCountdown.tsx` — bold lock countdown
+## Changes
 
-Computes time until the earliest non-locked match's `kickoff_at`. Updates every second via `useEffect` + `setInterval`. Renders four big tiles (D / H / M / S) with `font-score`, amber gradient background, subtle pulse when <10 min, "BLOQUEO INMINENTE" red flash when <60s. If all matches are locked, renders nothing (or "Jornada bloqueada"). Drop into `play.tsx` directly under the matchday header.
+### 1. Guest client state
+- New `src/lib/guest.ts`: `isGuest()`, `setGuest(true|false)`, `clearGuest()` — backed by `sessionStorage.getItem("marcador_guest")`. SSR-safe (returns false when `window` is undefined).
+- New hook `useGuest()` in same file returning a reactive boolean (subscribes to a custom event dispatched by `setGuest`).
 
-### 3. Shareable summary card after submit
+### 2. Auth screen
+- `src/routes/auth.tsx`: add a "Continuar como invitado" button below the email form (subtle, ghost style). On click: `setGuest(true)` → `navigate({ to: "/play" })`.
 
-- New `src/components/PicksShareCard.tsx`: 1080×1350 logical layout (scales responsively, but locked aspect for screenshot). Amber-dark gradient bg, "EL MARCADOR" wordmark, matchday name, user display name, then a stacked list of all 6 picks (flag · team · score · team · flag) with the boosted pick highlighted with ⚡ and a glow ring. Footer: "marcador.app". Built with normal DOM (no canvas) so users can screenshot it.
-- New `src/components/ShareModal.tsx`: lightweight modal (fixed inset, backdrop blur) rendering `PicksShareCard` plus three buttons: **Copiar imagen** (uses `html-to-image` → clipboard), **Descargar PNG** (download), **Cerrar**. Install one tiny dep: `html-to-image` (Worker-safe, browser-only — only invoked in event handlers).
-- Hook into `play.tsx`: after `submitAll` `onSuccess` with `saved > 0`, set `showShare = true` and open the modal. Also add a persistent "Compartir mis picks" button in the sticky bar once all 6 are saved, so users can re-share without resubmitting.
+### 3. Route gate
+- `src/routes/_authenticated.tsx`: allow entry when `meFn()` returns null **and** `isGuest()` is true, but only for a guest-allowed subset: `/play` and `/leaderboard`. Any other path under `_authenticated` (onboarding, leagues, me, admin) redirects to `/auth`. Skip the onboarding redirect for guests.
+- Return `{ me: null, isGuest: true }` from `beforeLoad` so children can read it via `Route.useRouteContext()`.
 
-### 4. `src/routes/_authenticated/me.tsx` — "Mi Marcador" profile
+### 4. Public server functions
+The existing fetchers for matchday + leaderboard are likely auth-gated. I'll either:
+- Add `currentMatchdayPublicFn` and `globalLeaderboardPublicFn` that don't call `requireUser()`, returning the same shape minus user-specific fields (no `myPrediction`, no `myRank`); or
+- Make the existing fns tolerate a null user.
 
-Three sections:
+I'll pick the second when the existing fn already returns user-specific data optionally, otherwise add public siblings. Decided per-function while editing `src/lib/game.functions.ts`.
 
-1. **Historial de predicciones** — table grouped by matchday: match, pick, real, points. Reuses existing data via a new `getMyHistoryFn` server function that returns `{ matchday_id, matchday_name, matches: [{ home_team, away_team, home_score, away_score, pred_home, pred_away, pred_first, points, booster }] }[]`.
-2. **Puntos por jornada** — simple bar chart. Pure-SVG bars (no recharts dep): one bar per scored matchday, height ∝ points, amber gradient fill, value label on top, matchday label below. Reuses `matchday_scores` via new `getMyMatchdayScoresFn` returning `{ matchday_id, name, total_points, rank }[]` ordered by `starts_at`.
-3. **Ranking en el tiempo** — same data as #2 but a line chart of `rank` over matchdays (lower = better; y-axis inverted). Pure SVG polyline + dots, amber stroke, rank annotations.
+### 5. Play screen (read-only for guests)
+- `src/routes/_authenticated/play.tsx`: when `isGuest`, fetch via the public fn, hide the submit/booster controls, replace the prediction inputs with disabled placeholders, and show the same matches + kickoff countdown.
+- Intercept any prediction action with a shared `<GuestGate>` modal (see §7).
 
-Server additions in `src/lib/game.functions.ts`:
-- `getMyHistoryFn` (GET, auth) — joins `predictions` + `matches` + `matchdays` for current user, ordered by matchday `starts_at` then kickoff.
-- `getMyMatchdayScoresFn` (GET, auth) — `SELECT ms.*, md.name, md.starts_at FROM matchday_scores ms JOIN matchdays md ... WHERE user_id = me.id ORDER BY md.starts_at`.
+### 6. Leaderboard screen
+- `src/routes/_authenticated/leaderboard.tsx`: fetch via public fn when guest. No "your rank" row.
 
-Nav: add **"Mi Marcador"** tab to `AppShell` (`/me`), with a small user icon. Desktop nav becomes 4 tabs; mobile bottom nav becomes 4 columns (`grid-cols-4`).
+### 7. Guest upsell prompt
+- New `src/components/GuestGate.tsx`: a small modal component with the copy "Crea una cuenta gratis para hacer predicciones y competir en la tabla." + "Crear cuenta" button → `clearGuest()` then `navigate({ to: "/auth" })`, plus a "Seguir como invitado" dismiss.
+- Helper `useGuestGate()` returns `{ require, modal }`. Wrap any guarded action: `require(() => doThing())`. Used in play (submit/booster) and leagues entry points.
 
-### Technical notes
+### 8. Leagues entry points
+- `src/components/AppShell.tsx`: when guest, the "Ligas" and "Mi Marcador" nav items either hide or open the GuestGate. I'll hide "Mi Marcador" (account-only concept) and keep "Ligas" visible but route it through GuestGate. Add a small "Invitado" badge near the avatar with a "Salir" link that calls `clearGuest()` → `/auth`.
 
-- Bar/line charts hand-rolled in SVG, no charting lib (keeps bundle small, matches "simple" brief).
-- `html-to-image` is browser-only; gate any call behind an event handler (already the case).
-- All new copy in Spanish to match Marcador's existing tone: "Mi Marcador", "Compartir mis picks", "Bloqueo en…", "Sin predicciones todavía".
-- Empty-state animation uses CSS only (no Lottie) — keeps it fast.
+### 9. Server-side safety
+- Guests have no session cookie, so `requireUser()` on any mutation (`submitPredictionsFn`, `joinLeagueFn`, `createLeagueFn`) already throws. No server changes needed for protection — the GuestGate is purely UX.
 
-### Out of scope
+### 10. Persistence
+- `sessionStorage` clears on tab close, satisfying "does not persist". On reload within the same tab the guest stays in — acceptable and standard. If you want hard "every reload = back to login," I'll switch to in-memory `useState` at the root instead; flag if you prefer that.
 
-- Editing display name / avatar on Mi Marcador (existing onboarding owns that).
-- Server-side OG image generation for share card (client-side screenshot is sufficient per brief).
+## Files
+- New: `src/lib/guest.ts`, `src/components/GuestGate.tsx`
+- Edit: `src/routes/auth.tsx`, `src/routes/_authenticated.tsx`, `src/routes/_authenticated/play.tsx`, `src/routes/_authenticated/leaderboard.tsx`, `src/components/AppShell.tsx`, `src/lib/game.functions.ts` (add public read fns as needed)
+
+## Out of scope
+- Converting a guest session into a real account while preserving any in-memory picks (guests can't make picks anyway).
+- Server-side anonymous user rows.
