@@ -131,3 +131,21 @@
 @utility shadow-card {
   box-shadow: var(--shadow-card);
 }
+
+@keyframes ball-bounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-18px) rotate(180deg); }
+}
+@keyframes ball-shadow {
+  0%, 100% { transform: scaleX(1); opacity: 0.55; }
+  50% { transform: scaleX(0.55); opacity: 0.25; }
+}
+.animate-ball { animation: ball-bounce 1.6s ease-in-out infinite; }
+.animate-ball-shadow { animation: ball-shadow 1.6s ease-in-out infinite; }
+
+@keyframes urgent-flash {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.6 0.22 25 / 0.6); }
+  50% { box-shadow: 0 0 28px 6px oklch(0.6 0.22 25 / 0.6); }
+}
+.animate-urgent { animation: urgent-flash 0.9s ease-in-out infinite; }
+
