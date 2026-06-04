@@ -16,6 +16,7 @@ import {
   getMatchdayLeaderboard,
   getMyLeagues,
 } from "@/lib/game.functions";
+import { useGuest } from "@/lib/guest";
 import { teamFlag } from "@/lib/teamFlags";
 
 export const Route = createFileRoute("/_authenticated/leaderboard")({
