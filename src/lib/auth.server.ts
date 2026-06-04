@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { useSession } from "@tanstack/react-start/server";
-import { pool } from "./lovable/database";
+import { pool } from "./db";
 
 export type SessionData = { userId?: string };
 

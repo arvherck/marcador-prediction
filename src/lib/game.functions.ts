@@ -22,7 +22,7 @@ export type MatchRow = {
 };
 
 export const getCurrentMatchday = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./lovable/database");
+  const { pool } = await import("./db");
   const { loadCurrentUser } = await import("./auth.server");
   const me = await loadCurrentUser();
 
@@ -93,7 +93,7 @@ export const savePredictionFn = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     const match = await pool.query(
@@ -119,7 +119,7 @@ export const savePredictionFn = createServerFn({ method: "POST" })
 export const setBoosterFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ matchday_id: z.number().int(), match_id: z.number().int() }))
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     // verify the match belongs to matchday and not locked
@@ -155,7 +155,7 @@ export const setBoosterFn = createServerFn({ method: "POST" })
 export const getLeaderboard = createServerFn({ method: "GET" })
   .inputValidator(z.object({ league_id: z.string().uuid().optional() }).optional())
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const leagueId = data?.league_id;
     const params: unknown[] = [];
     let scope = "";
@@ -211,7 +211,7 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
       .optional(),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     let matchday: { id: number; name: string } | null = null;
     if (data?.matchday_id) {
       const r = await pool.query("SELECT id, name FROM matchdays WHERE id=$1", [
@@ -270,7 +270,7 @@ const MAX_OWNED_LEAGUES = 3;
 export const createLeagueFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ name: z.string().trim().min(2).max(50) }))
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     const owned = await pool.query(
@@ -308,7 +308,7 @@ export const joinLeagueFn = createServerFn({ method: "POST" })
       }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     const { rows } = await pool.query("SELECT id FROM leagues WHERE invite_code=$1", [
@@ -324,7 +324,7 @@ export const joinLeagueFn = createServerFn({ method: "POST" })
   });
 
 export const getMyLeagues = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./lovable/database");
+  const { pool } = await import("./db");
   const { loadCurrentUser } = await import("./auth.server");
   const me = await loadCurrentUser();
   if (!me) return [];
@@ -367,7 +367,7 @@ export const getMyLeagues = createServerFn({ method: "GET" }).handler(async () =
 
 // Admin
 export const adminListMatchdays = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./lovable/database");
+  const { pool } = await import("./db");
   const { requireUser } = await import("./auth.server");
   const me = await requireUser();
   if (!me.is_admin) throw new Error("Forbidden");
@@ -389,7 +389,7 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     if (!me.is_admin) throw new Error("Forbidden");
@@ -403,7 +403,7 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
 export const adminScoreMatchdayFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ matchday_id: z.number().int() }))
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     if (!me.is_admin) throw new Error("Forbidden");
@@ -503,7 +503,7 @@ export const adminAddMatchdayFn = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     if (!me.is_admin) throw new Error("Forbidden");
@@ -523,7 +523,7 @@ export const adminAddMatchdayFn = createServerFn({ method: "POST" })
 
 export const makeMeAdminFn = createServerFn({ method: "POST" }).handler(async () => {
   // Bootstrap helper: first user can claim admin if no admin exists yet.
-  const { pool } = await import("./lovable/database");
+  const { pool } = await import("./db");
   const { requireUser } = await import("./auth.server");
   const me = await requireUser();
   const { rows } = await pool.query("SELECT COUNT(*)::int AS c FROM app_users WHERE is_admin=true");
@@ -544,7 +544,7 @@ export const adminAddMatchFn = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     if (!me.is_admin) throw new Error("Forbidden");
@@ -566,7 +566,7 @@ export const adminAddMatchFn = createServerFn({ method: "POST" })
 export const adminListPredictionsFn = createServerFn({ method: "GET" })
   .inputValidator(z.object({ matchday_id: z.number().int() }))
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     if (!me.is_admin) throw new Error("Forbidden");
@@ -605,7 +605,7 @@ export const adminListPredictionsFn = createServerFn({ method: "GET" })
   });
 
 export const getMyHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./lovable/database");
+  const { pool } = await import("./db");
   const { loadCurrentUser } = await import("./auth.server");
   const me = await loadCurrentUser();
   if (!me) return [];
@@ -672,7 +672,7 @@ export const getMyHistoryFn = createServerFn({ method: "GET" }).handler(async ()
 });
 
 export const getMyMatchdayScoresFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./lovable/database");
+  const { pool } = await import("./db");
   const { loadCurrentUser } = await import("./auth.server");
   const me = await loadCurrentUser();
   if (!me) return [];
