@@ -7,7 +7,22 @@ import { AppShell } from "@/components/AppShell";
 import { createLeagueFn, getMyLeagues, joinLeagueFn } from "@/lib/game.functions";
 
 export const Route = createFileRoute("/_authenticated/leagues")({
-  head: () => ({ meta: [{ title: "Ligas · Marcador" }] }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/leagues";
+    const title = "Ligas · Private prediction leagues · Marcador";
+    const description =
+      "Create or join private Marcador leagues to compete with friends across the World Cup 2026 — share an invite code and track your mini-table.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: LeaguesPage,
 });
 
