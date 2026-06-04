@@ -9,7 +9,7 @@ export const signUpFn = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { hashPassword, getSession } = await import("./auth.server");
     const existing = await pool.query("SELECT id FROM app_users WHERE email=$1", [
       data.email,
@@ -33,7 +33,7 @@ export const signInFn = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { verifyPassword, getSession } = await import("./auth.server");
     const { rows } = await pool.query(
       "SELECT id, password_hash FROM app_users WHERE email=$1",
@@ -68,7 +68,7 @@ export const completeOnboardingFn = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
-    const { pool } = await import("./lovable/database");
+    const { pool } = await import("./db");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
     await pool.query(
