@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-r
 import { useState } from "react";
 import { toast } from "sonner";
 import { signInFn, signUpFn } from "@/lib/auth.functions";
+import { setGuest, clearGuest } from "@/lib/guest";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
