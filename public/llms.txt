@@ -1,0 +1,15 @@
+# Marcador
+
+> Marcador is the scoreboard for World Cup 2026 predictions. Predict every matchday's six matches, boost a call, and climb the global table.
+
+Marcador lets soccer fans predict scores for every World Cup 2026 match, compete on a global leaderboard, and run private mini-leagues with friends. Points are awarded for correct results and exact scores, with a 2× booster per matchday.
+
+## Pages
+
+- [Home](/): Landing page introducing Marcador and the World Cup 2026 prediction game.
+- [Leaderboard](/leaderboard): Global standings ranking every player by points across the tournament.
+- [Play](/play): Current matchday's six matches — public read-only view of the selected fixtures.
+
+## Optional
+
+- [Sign in or create an account](/auth): Required to submit predictions or join leagues.

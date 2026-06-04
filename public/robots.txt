@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+Disallow: /admin
+Disallow: /me
+Disallow: /onboarding
+Disallow: /auth
+
+Sitemap: https://marcador-prediction.lovable.app/sitemap.xml
