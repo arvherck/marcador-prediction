@@ -163,15 +163,29 @@ export const getLeaderboard = createServerFn({ method: "GET" })
       params.push(leagueId);
       scope = `JOIN league_members lm ON lm.user_id = u.id AND lm.league_id = $1`;
     }
+    // Most recent scored matchday (for "last MD" delta column)
+    const lastMd = await pool.query(
+      "SELECT id FROM matchdays WHERE is_scored=true ORDER BY starts_at DESC LIMIT 1",
+    );
+    const lastMdId = lastMd.rows[0]?.id ?? null;
+    const lastMdParamIdx = params.length + 1;
+    if (lastMdId !== null) params.push(lastMdId);
+    const lastMdJoin =
+      lastMdId !== null
+        ? `LEFT JOIN matchday_scores ms ON ms.user_id = u.id AND ms.matchday_id = $${lastMdParamIdx}`
+        : "";
+    const lastMdSelect = lastMdId !== null ? "COALESCE(ms.total_points,0)::int" : "0";
     const { rows } = await pool.query(
       `SELECT u.id, p.display_name, p.country, p.favourite_team,
               COALESCE(SUM(pr.points),0)::int AS total_points,
-              COUNT(pr.id) FILTER (WHERE pr.points IS NOT NULL)::int AS scored_predictions
+              COUNT(pr.id) FILTER (WHERE pr.points IS NOT NULL)::int AS scored_predictions,
+              ${lastMdSelect} AS last_md_points
        FROM app_users u
        JOIN profiles p ON p.user_id = u.id
        ${scope}
+       ${lastMdJoin}
        LEFT JOIN predictions pr ON pr.user_id = u.id
-       GROUP BY u.id, p.display_name, p.country, p.favourite_team
+       GROUP BY u.id, p.display_name, p.country, p.favourite_team${lastMdId !== null ? ", ms.total_points" : ""}
        ORDER BY total_points DESC, p.display_name ASC
        LIMIT 200`,
       params,
@@ -183,8 +197,65 @@ export const getLeaderboard = createServerFn({ method: "GET" })
       favourite_team: string;
       total_points: number;
       scored_predictions: number;
+      last_md_points: number;
     }>;
   });
+
+export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
+  .inputValidator(
+    z
+      .object({
+        matchday_id: z.number().int().optional(),
+        league_id: z.string().uuid().optional(),
+      })
+      .optional(),
+  )
+  .handler(async ({ data }) => {
+    const { pool } = await import("./lovable/database");
+    let matchday: { id: number; name: string } | null = null;
+    if (data?.matchday_id) {
+      const r = await pool.query("SELECT id, name FROM matchdays WHERE id=$1", [
+        data.matchday_id,
+      ]);
+      matchday = r.rows[0] ?? null;
+    } else {
+      const r = await pool.query(
+        "SELECT id, name FROM matchdays WHERE is_scored=true ORDER BY starts_at DESC LIMIT 1",
+      );
+      matchday = r.rows[0] ?? null;
+    }
+    if (!matchday) return { matchday: null, rows: [] as Array<never> };
+
+    const params: unknown[] = [matchday.id];
+    let scope = "";
+    if (data?.league_id) {
+      params.push(data.league_id);
+      scope = `JOIN league_members lm ON lm.user_id = ms.user_id AND lm.league_id = $2`;
+    }
+    const { rows } = await pool.query(
+      `SELECT ms.user_id AS id, p.display_name, p.country, p.favourite_team,
+              ms.total_points::int AS total_points, ms.rank
+       FROM matchday_scores ms
+       JOIN profiles p ON p.user_id = ms.user_id
+       ${scope}
+       WHERE ms.matchday_id = $1
+       ORDER BY ms.total_points DESC, p.display_name ASC
+       LIMIT 200`,
+      params,
+    );
+    return {
+      matchday,
+      rows: rows as Array<{
+        id: string;
+        display_name: string;
+        country: string;
+        favourite_team: string;
+        total_points: number;
+        rank: number | null;
+      }>,
+    };
+  });
+
 
 // Leagues
 function genCode() {
