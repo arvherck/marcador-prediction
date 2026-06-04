@@ -7,6 +7,8 @@ import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { KickoffCountdown } from "@/components/KickoffCountdown";
 import { ShareModal } from "@/components/ShareModal";
+import { useGuestGate } from "@/components/GuestGate";
+import { useGuest } from "@/lib/guest";
 import {
   getCurrentMatchday,
   savePredictionFn,
