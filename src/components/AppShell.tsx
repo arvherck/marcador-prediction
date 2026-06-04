@@ -46,9 +46,10 @@ export function AppShell({
             ))}
             {isAdmin && (
               <NavLink to="/admin" active={loc.pathname.startsWith("/admin")}>
-                Admin
+                Panel
               </NavLink>
             )}
+
           </nav>
           <div className="flex items-center gap-3">
             {displayName && (
