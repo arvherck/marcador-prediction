@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Copy, Share2, Trophy } from "lucide-react";
+import { Share2, Trophy } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { createLeagueFn, getMyLeagues, joinLeagueFn } from "@/lib/game.functions";
 
