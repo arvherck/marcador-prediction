@@ -1,33 +1,33 @@
-## Ligas — Spanish-branded leagues hub
+## Panel de Control — email-allowlisted admin
 
-Rename and rebuild the existing Leagues area as "Ligas", with code-format enforcement, share links, league ranks, and a 3-league creation cap.
+### Allowlist
+
+Add `src/lib/admin.ts` with `ADMIN_EMAILS = ["gandalftheswole76@gmail.com"]` and `isAdminEmail(email)`. In `loadCurrentUser` (`src/lib/auth.server.ts`), override `is_admin` to `true` whenever the user's email is in this list, so the existing `is_admin` flag drives every gate (nav link, route gate, server fns).
+
+### Rebuild `src/routes/_authenticated/admin.tsx` as "Panel de Control"
+
+Replace the current admin page with a plain, functional layout titled **Panel de Control**. Drop the `makeMeAdminFn` claim flow — access is purely email-based now. If a non-admin lands here, show a short "No autorizado" message.
+
+Four sections, each a `<details>` or stacked card:
+
+1. **Añadir partido** — manual single-match form: matchday selector (existing matchdays from `adminListMatchdays`), home team, away team, kickoff datetime, phase (text input: "Fase de grupos", "Octavos", "Cuartos", "Semifinal", "Final"), and a "Es uno de los 6 partidos seleccionados" checkbox. New server fn `adminAddMatchFn`.
+2. **Registrar resultado** — reuses the existing per-match result row (home/away score + first scorer) inside each matchday block.
+3. **Calcular puntuación** — the existing "Score matchday" button per matchday (calls `adminScoreMatchdayFn`, which we already wired up with underdog bonus + matchday_scores).
+4. **Predicciones por jornada** — read-only table. Select a matchday → call new `adminListPredictionsFn` → render a table with columns: Usuario · Partido · Predicción · Resultado real · Booster · Puntos.
 
 ### Server (`src/lib/game.functions.ts`)
 
-- **Invite code format `MRC-XXXX`**: change `genCode()` to return `"MRC-"` + 4 chars from the 32-char unambiguous alphabet. Keep collision retry.
-- **`createLeagueFn`**: before insert, count leagues where `owner_id = me.id`. If `>= 3`, throw `"You've reached the 3-league creation limit."`.
-- **`joinLeagueFn`**: normalize input by uppercasing and trimming, and accept either `MRC-XXXX` or bare `XXXX` (auto-prefix). Keep the existing UNIQUE constraint behavior.
-- **`getMyLeagues`** (extend): also return `my_rank` and `my_points` per league, computed from `matchday_scores` aggregated per league member (dense rank desc by total). Shape: `{ id, name, invite_code, owner_id, member_count, my_points, my_rank }`. `my_rank` is `null` if user has no scored predictions yet.
+- **DB schema additions** via migration: add `phase TEXT` and `is_selected BOOLEAN DEFAULT false` to `matches`. (Both nullable / defaulted so existing rows stay valid.)
+- **`adminAddMatchFn`** — admin-only; inserts a single match with phase + is_selected. Zod-validated.
+- **`adminListPredictionsFn`** — admin-only; takes `matchday_id`, returns rows joining `predictions` + `matches` + `profiles` ordered by match kickoff then user display name.
+- Update `adminListMatchdays` SELECT so the returned matches include the new `phase` and `is_selected` columns (already uses `SELECT *`, so no change needed beyond the migration).
 
-### Route `src/routes/_authenticated/leagues.tsx` — "Ligas"
+### Nav
 
-- H1 "Ligas", tagline in Spanish-flavored copy.
-- Two cards at top: **Crear liga** (name input + Create button, disabled with hint when at the 3-league cap) and **Unirse con código** (code input pre-formatted with the `MRC-` prefix visible).
-- **My leagues list**: each row shows league name, member count, invite code chip (monospace), a "Copiar enlace" button that copies `${window.location.origin}/leagues/join?code=MRC-XXXX` to clipboard (toast confirmation), and a right-aligned rank badge ("#3 of 12 · 42 pts" or "Sin puntos aún").
-- 3-league cap: read `getMyLeagues().filter(l => l.owner_id === me.id).length` and disable the Create button when `>= 3`, with a hint line.
+`AppShell` already conditionally renders the Admin tab when `me.is_admin` is true — no change needed; the email override flips that flag automatically. Rename the tab label from "Admin" to "Panel" for the new branding.
 
-### New route `src/routes/_authenticated/leagues.join.tsx`
+### Technical notes
 
-- `validateSearch` with zod: `{ code: z.string().regex(/^MRC-[A-Z0-9]{4}$/).optional() }`.
-- On mount, if `code` is present and user is authenticated, show a confirmation card ("Unirse a la liga con código MRC-XXXX") with a Join button that calls `joinLeagueFn`. On success, navigate to `/leagues/$id`.
-- If no code, redirect to `/leagues`.
-
-### Nav (`src/components/AppShell.tsx`)
-
-- Rename the `/leagues` tab label from "Leagues" to "Ligas" (desktop nav + mobile bottom bar). Keep the route path `/leagues` so existing share links still work.
-
-### Notes
-
-- No DB migration needed — `invite_code` is already `text UNIQUE`, fits `MRC-XXXX`.
-- `getMyLeagues` already scopes to the current user, so adding `my_rank`/`my_points` is a single SQL join with a `RANK() OVER (PARTITION BY league_id ORDER BY ...)` subquery.
-- League detail page (`/leagues/$id`) is out of scope for this task and left unchanged.
+- No new dependencies. `<table>` markup with `divide-y` is enough for the predictions view.
+- The email override in `loadCurrentUser` is non-destructive: it only flips `is_admin` to true on read, it doesn't modify the DB. If you want it persisted, that's a follow-up.
+- Out of scope: bulk match import, editing/deleting matches, league moderation.
