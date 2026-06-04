@@ -46,28 +46,37 @@ export const getCurrentMatchday = createServerFn({ method: "GET" }).handler(asyn
   );
 
   const now = Date.now();
-  const rows: MatchRow[] = matches.rows.map((r: Record<string, unknown> & { kickoff_at: string }) => ({
-    id: r.id,
-    matchday_id: r.matchday_id,
-    home_team: r.home_team,
-    away_team: r.away_team,
-    kickoff_at: r.kickoff_at,
-    home_score: r.home_score,
-    away_score: r.away_score,
-    first_scorer: r.first_scorer,
-    is_final: r.is_final,
-    locked: new Date(r.kickoff_at).getTime() <= now,
-    prediction:
-      r.p_home !== null && r.p_home !== undefined
-        ? {
-            home_goals: r.p_home,
-            away_goals: r.p_away,
-            first_scorer: r.p_first,
-            booster: r.p_booster,
-            points: r.p_points,
-          }
-        : null,
-  }));
+  const rows: MatchRow[] = matches.rows.map((r) => {
+    const row = r as {
+      id: number; matchday_id: number; home_team: string; away_team: string;
+      kickoff_at: string; home_score: number | null; away_score: number | null;
+      first_scorer: string | null; is_final: boolean;
+      p_home: number | null; p_away: number | null; p_first: string | null;
+      p_booster: boolean | null; p_points: number | null;
+    };
+    return {
+      id: row.id,
+      matchday_id: row.matchday_id,
+      home_team: row.home_team,
+      away_team: row.away_team,
+      kickoff_at: row.kickoff_at,
+      home_score: row.home_score,
+      away_score: row.away_score,
+      first_scorer: row.first_scorer,
+      is_final: row.is_final,
+      locked: new Date(row.kickoff_at).getTime() <= now,
+      prediction:
+        row.p_home !== null && row.p_home !== undefined
+          ? {
+              home_goals: row.p_home,
+              away_goals: row.p_away ?? 0,
+              first_scorer: row.p_first ?? "none",
+              booster: row.p_booster ?? false,
+              points: row.p_points,
+            }
+          : null,
+    };
+  });
 
   return { matchday, matches: rows };
 });
