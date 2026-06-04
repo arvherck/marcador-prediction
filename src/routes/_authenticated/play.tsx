@@ -159,7 +159,7 @@ function PlayPage() {
                   draft={drafts[m.id]}
                   onUpdate={(patch) => updateDraft(m.id, patch)}
                   boostedMatchId={boostedMatchId}
-                  onToggleBooster={() => boost.mutate(m.id)}
+                  onToggleBooster={() => guestGate.require(() => boost.mutate(m.id), guest)}
                   boosterPending={boost.isPending}
                 />
               ))}
