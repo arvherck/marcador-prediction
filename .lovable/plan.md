@@ -1,33 +1,44 @@
-## Panel de Control — email-allowlisted admin
+## Finishing touches
 
-### Allowlist
+### 1. `src/components/EmptyBall.tsx` — animated football illustration
 
-Add `src/lib/admin.ts` with `ADMIN_EMAILS = ["gandalftheswole76@gmail.com"]` and `isAdminEmail(email)`. In `loadCurrentUser` (`src/lib/auth.server.ts`), override `is_admin` to `true` whenever the user's email is in this list, so the existing `is_admin` flag drives every gate (nav link, route gate, server fns).
+Pure-CSS/SVG football (black-and-white pentagon ball) with a gentle bounce + shadow pulse via Tailwind `animate-bounce` plus a custom keyframe added in `src/styles.css` (`@keyframes ball-spin` for a slow rotation). Component `<EmptyBall label="..." sub="..." />` renders ball + headline + subline, centered. Used by:
+- Play page when `q.data === null` or no matches
+- Mi Marcador when user has no scored predictions
+- Leaderboard when no rows
 
-### Rebuild `src/routes/_authenticated/admin.tsx` as "Panel de Control"
+### 2. `src/components/KickoffCountdown.tsx` — bold lock countdown
 
-Replace the current admin page with a plain, functional layout titled **Panel de Control**. Drop the `makeMeAdminFn` claim flow — access is purely email-based now. If a non-admin lands here, show a short "No autorizado" message.
+Computes time until the earliest non-locked match's `kickoff_at`. Updates every second via `useEffect` + `setInterval`. Renders four big tiles (D / H / M / S) with `font-score`, amber gradient background, subtle pulse when <10 min, "BLOQUEO INMINENTE" red flash when <60s. If all matches are locked, renders nothing (or "Jornada bloqueada"). Drop into `play.tsx` directly under the matchday header.
 
-Four sections, each a `<details>` or stacked card:
+### 3. Shareable summary card after submit
 
-1. **Añadir partido** — manual single-match form: matchday selector (existing matchdays from `adminListMatchdays`), home team, away team, kickoff datetime, phase (text input: "Fase de grupos", "Octavos", "Cuartos", "Semifinal", "Final"), and a "Es uno de los 6 partidos seleccionados" checkbox. New server fn `adminAddMatchFn`.
-2. **Registrar resultado** — reuses the existing per-match result row (home/away score + first scorer) inside each matchday block.
-3. **Calcular puntuación** — the existing "Score matchday" button per matchday (calls `adminScoreMatchdayFn`, which we already wired up with underdog bonus + matchday_scores).
-4. **Predicciones por jornada** — read-only table. Select a matchday → call new `adminListPredictionsFn` → render a table with columns: Usuario · Partido · Predicción · Resultado real · Booster · Puntos.
+- New `src/components/PicksShareCard.tsx`: 1080×1350 logical layout (scales responsively, but locked aspect for screenshot). Amber-dark gradient bg, "EL MARCADOR" wordmark, matchday name, user display name, then a stacked list of all 6 picks (flag · team · score · team · flag) with the boosted pick highlighted with ⚡ and a glow ring. Footer: "marcador.app". Built with normal DOM (no canvas) so users can screenshot it.
+- New `src/components/ShareModal.tsx`: lightweight modal (fixed inset, backdrop blur) rendering `PicksShareCard` plus three buttons: **Copiar imagen** (uses `html-to-image` → clipboard), **Descargar PNG** (download), **Cerrar**. Install one tiny dep: `html-to-image` (Worker-safe, browser-only — only invoked in event handlers).
+- Hook into `play.tsx`: after `submitAll` `onSuccess` with `saved > 0`, set `showShare = true` and open the modal. Also add a persistent "Compartir mis picks" button in the sticky bar once all 6 are saved, so users can re-share without resubmitting.
 
-### Server (`src/lib/game.functions.ts`)
+### 4. `src/routes/_authenticated/me.tsx` — "Mi Marcador" profile
 
-- **DB schema additions** via migration: add `phase TEXT` and `is_selected BOOLEAN DEFAULT false` to `matches`. (Both nullable / defaulted so existing rows stay valid.)
-- **`adminAddMatchFn`** — admin-only; inserts a single match with phase + is_selected. Zod-validated.
-- **`adminListPredictionsFn`** — admin-only; takes `matchday_id`, returns rows joining `predictions` + `matches` + `profiles` ordered by match kickoff then user display name.
-- Update `adminListMatchdays` SELECT so the returned matches include the new `phase` and `is_selected` columns (already uses `SELECT *`, so no change needed beyond the migration).
+Three sections:
 
-### Nav
+1. **Historial de predicciones** — table grouped by matchday: match, pick, real, points. Reuses existing data via a new `getMyHistoryFn` server function that returns `{ matchday_id, matchday_name, matches: [{ home_team, away_team, home_score, away_score, pred_home, pred_away, pred_first, points, booster }] }[]`.
+2. **Puntos por jornada** — simple bar chart. Pure-SVG bars (no recharts dep): one bar per scored matchday, height ∝ points, amber gradient fill, value label on top, matchday label below. Reuses `matchday_scores` via new `getMyMatchdayScoresFn` returning `{ matchday_id, name, total_points, rank }[]` ordered by `starts_at`.
+3. **Ranking en el tiempo** — same data as #2 but a line chart of `rank` over matchdays (lower = better; y-axis inverted). Pure SVG polyline + dots, amber stroke, rank annotations.
 
-`AppShell` already conditionally renders the Admin tab when `me.is_admin` is true — no change needed; the email override flips that flag automatically. Rename the tab label from "Admin" to "Panel" for the new branding.
+Server additions in `src/lib/game.functions.ts`:
+- `getMyHistoryFn` (GET, auth) — joins `predictions` + `matches` + `matchdays` for current user, ordered by matchday `starts_at` then kickoff.
+- `getMyMatchdayScoresFn` (GET, auth) — `SELECT ms.*, md.name, md.starts_at FROM matchday_scores ms JOIN matchdays md ... WHERE user_id = me.id ORDER BY md.starts_at`.
+
+Nav: add **"Mi Marcador"** tab to `AppShell` (`/me`), with a small user icon. Desktop nav becomes 4 tabs; mobile bottom nav becomes 4 columns (`grid-cols-4`).
 
 ### Technical notes
 
-- No new dependencies. `<table>` markup with `divide-y` is enough for the predictions view.
-- The email override in `loadCurrentUser` is non-destructive: it only flips `is_admin` to true on read, it doesn't modify the DB. If you want it persisted, that's a follow-up.
-- Out of scope: bulk match import, editing/deleting matches, league moderation.
+- Bar/line charts hand-rolled in SVG, no charting lib (keeps bundle small, matches "simple" brief).
+- `html-to-image` is browser-only; gate any call behind an event handler (already the case).
+- All new copy in Spanish to match Marcador's existing tone: "Mi Marcador", "Compartir mis picks", "Bloqueo en…", "Sin predicciones todavía".
+- Empty-state animation uses CSS only (no Lottie) — keeps it fast.
+
+### Out of scope
+
+- Editing display name / avatar on Mi Marcador (existing onboarding owns that).
+- Server-side OG image generation for share card (client-side screenshot is sufficient per brief).
