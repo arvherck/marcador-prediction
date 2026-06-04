@@ -2,8 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Lock, Zap, Trophy } from "lucide-react";
+import { Lock, Zap, Trophy, Share2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { EmptyBall } from "@/components/EmptyBall";
+import { KickoffCountdown } from "@/components/KickoffCountdown";
+import { ShareModal } from "@/components/ShareModal";
 import {
   getCurrentMatchday,
   savePredictionFn,
@@ -11,6 +14,7 @@ import {
   type MatchRow,
 } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
+
 
 export const Route = createFileRoute("/_authenticated/play")({
   head: () => ({ meta: [{ title: "Play · Marcador" }] }),
@@ -27,6 +31,8 @@ function PlayPage() {
 
   // Local draft state for all 6 cards
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
+  const [shareOpen, setShareOpen] = useState(false);
+
 
   useEffect(() => {
     if (!q.data) return;
@@ -79,7 +85,10 @@ function PlayPage() {
     },
     onSuccess: ({ saved }) => {
       if (saved === 0) toast("No changes to submit.");
-      else toast.success(`Submitted ${saved} prediction${saved === 1 ? "" : "s"}.`);
+      else {
+        toast.success(`Submitted ${saved} prediction${saved === 1 ? "" : "s"}.`);
+        setShareOpen(true);
+      }
       qc.invalidateQueries({ queryKey: ["matchday"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
@@ -89,64 +98,114 @@ function PlayPage() {
     (m) => !m.locked && drafts[m.id]?.dirty,
   ).length ?? 0;
 
+  const nextKickoff = useMemo(() => {
+    if (!q.data) return null;
+    const upcoming = q.data.matches
+      .filter((m) => !m.locked)
+      .map((m) => m.kickoff_at)
+      .sort();
+    return upcoming[0] ?? null;
+  }, [q.data]);
+
+  const allSaved = q.data && q.data.matches.length > 0 && dirtyCount === 0;
+  const shareDrafts = useMemo(() => {
+    const out: Record<number, { home: number; away: number }> = {};
+    for (const id in drafts) out[id] = { home: drafts[id].home, away: drafts[id].away };
+    return out;
+  }, [drafts]);
+
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
       {q.isLoading && <SkeletonList />}
       {q.data === null && (
-        <div className="text-center py-20 text-muted-foreground">
-          No matchday available yet. Check back soon.
-        </div>
+        <EmptyBall
+          title="Sin jornada activa"
+          sub="Aún no hay partidos disponibles. Vuelve pronto — el balón está a punto de rodar."
+        />
       )}
       {q.data && (
         <>
-          <header className="mb-6">
+          <header className="mb-5">
             <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
               {q.data.matchday.name}
             </div>
             <h1 className="font-display font-bold text-3xl md:text-4xl mt-1 leading-tight">
-              {q.data.matchday.name} — Group Stage
+              {q.data.matchday.name}
             </h1>
             <p className="text-sm text-muted-foreground mt-2">
-              Predictions lock at kickoff. Apply one 2× booster across the matchday.
+              Las predicciones se bloquean al saque. Aplica un 2× booster por jornada.
             </p>
           </header>
 
-          <div className="space-y-3 pb-28">
-            {q.data.matches.map((m) => (
-              <MatchCard
-                key={m.id}
-                match={m}
-                draft={drafts[m.id]}
-                onUpdate={(patch) => updateDraft(m.id, patch)}
-                boostedMatchId={boostedMatchId}
-                onToggleBooster={() => boost.mutate(m.id)}
-                boosterPending={boost.isPending}
-              />
-            ))}
+          <div className="mb-5">
+            <KickoffCountdown kickoffAt={nextKickoff} />
           </div>
 
-          <ScoringLegend />
+          {q.data.matches.length === 0 ? (
+            <EmptyBall
+              title="Esta jornada aún no tiene partidos"
+              sub="El admin todavía no los ha publicado."
+            />
+          ) : (
+            <div className="space-y-3 pb-28">
+              {q.data.matches.map((m) => (
+                <MatchCard
+                  key={m.id}
+                  match={m}
+                  draft={drafts[m.id]}
+                  onUpdate={(patch) => updateDraft(m.id, patch)}
+                  boostedMatchId={boostedMatchId}
+                  onToggleBooster={() => boost.mutate(m.id)}
+                  boosterPending={boost.isPending}
+                />
+              ))}
+            </div>
+          )}
+
+          {q.data.matches.length > 0 && <ScoringLegend />}
 
           {/* Sticky submit bar */}
-          <div className="fixed inset-x-0 bottom-0 md:bottom-6 z-30 px-4 pointer-events-none">
-            <div className="max-w-2xl mx-auto pointer-events-auto">
-              <button
-                onClick={() => submitAll.mutate()}
-                disabled={submitAll.isPending || dirtyCount === 0}
-                className="w-full rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-[0.99]"
-              >
-                {submitAll.isPending
-                  ? "Submitting…"
-                  : dirtyCount > 0
-                  ? `Submit ${dirtyCount} prediction${dirtyCount === 1 ? "" : "s"}`
-                  : "All predictions saved"}
-              </button>
+          {q.data.matches.length > 0 && (
+            <div className="fixed inset-x-0 bottom-16 md:bottom-6 z-30 px-4 pointer-events-none">
+              <div className="max-w-2xl mx-auto pointer-events-auto flex gap-2">
+                <button
+                  onClick={() => submitAll.mutate()}
+                  disabled={submitAll.isPending || dirtyCount === 0}
+                  className="flex-1 rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-[0.99]"
+                >
+                  {submitAll.isPending
+                    ? "Enviando…"
+                    : dirtyCount > 0
+                    ? `Enviar ${dirtyCount} predicción${dirtyCount === 1 ? "" : "es"}`
+                    : "Todo guardado"}
+                </button>
+                {allSaved && (
+                  <button
+                    onClick={() => setShareOpen(true)}
+                    className="rounded-2xl bg-card border border-border px-4 py-3.5 text-sm font-bold flex items-center gap-2 shadow-card"
+                    aria-label="Compartir picks"
+                  >
+                    <Share2 size={16} /> Compartir
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
+
+          <ShareModal
+            open={shareOpen}
+            onClose={() => setShareOpen(false)}
+            matchdayName={q.data.matchday.name}
+            displayName={me.profile?.display_name ?? "Jugador"}
+            matches={q.data.matches}
+            drafts={shareDrafts}
+            boostedMatchId={boostedMatchId}
+          />
         </>
       )}
     </AppShell>
   );
+
 }
 
 function MatchCard({

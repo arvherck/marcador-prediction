@@ -604,3 +604,94 @@ export const adminListPredictionsFn = createServerFn({ method: "GET" })
     }>;
   });
 
+export const getMyHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { pool } = await import("./lovable/database");
+  const { loadCurrentUser } = await import("./auth.server");
+  const me = await loadCurrentUser();
+  if (!me) return [];
+  const { rows } = await pool.query(
+    `SELECT md.id AS matchday_id, md.name AS matchday_name, md.starts_at,
+            m.id AS match_id, m.home_team, m.away_team,
+            m.home_score, m.away_score, m.first_scorer AS actual_first_scorer, m.is_final,
+            pr.home_goals AS pred_home, pr.away_goals AS pred_away,
+            pr.first_scorer AS pred_first, pr.booster, pr.points
+     FROM matchdays md
+     JOIN matches m ON m.matchday_id = md.id
+     LEFT JOIN predictions pr ON pr.match_id = m.id AND pr.user_id = $1
+     WHERE pr.id IS NOT NULL
+     ORDER BY md.starts_at DESC, m.kickoff_at ASC`,
+    [me.id],
+  );
+  // Group by matchday
+  const map = new Map<number, {
+    matchday_id: number;
+    matchday_name: string;
+    starts_at: string;
+    matches: Array<{
+      match_id: number;
+      home_team: string;
+      away_team: string;
+      home_score: number | null;
+      away_score: number | null;
+      actual_first_scorer: string | null;
+      is_final: boolean;
+      pred_home: number;
+      pred_away: number;
+      pred_first: string | null;
+      booster: boolean;
+      points: number | null;
+    }>;
+  }>();
+  for (const r of rows) {
+    const row = r as Record<string, unknown>;
+    const mdId = row.matchday_id as number;
+    if (!map.has(mdId)) {
+      map.set(mdId, {
+        matchday_id: mdId,
+        matchday_name: row.matchday_name as string,
+        starts_at: row.starts_at as string,
+        matches: [],
+      });
+    }
+    map.get(mdId)!.matches.push({
+      match_id: row.match_id as number,
+      home_team: row.home_team as string,
+      away_team: row.away_team as string,
+      home_score: row.home_score as number | null,
+      away_score: row.away_score as number | null,
+      actual_first_scorer: row.actual_first_scorer as string | null,
+      is_final: row.is_final as boolean,
+      pred_home: row.pred_home as number,
+      pred_away: row.pred_away as number,
+      pred_first: row.pred_first as string | null,
+      booster: row.booster as boolean,
+      points: row.points as number | null,
+    });
+  }
+  return Array.from(map.values());
+});
+
+export const getMyMatchdayScoresFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { pool } = await import("./lovable/database");
+  const { loadCurrentUser } = await import("./auth.server");
+  const me = await loadCurrentUser();
+  if (!me) return [];
+  const { rows } = await pool.query(
+    `SELECT ms.matchday_id, md.name, md.starts_at,
+            ms.total_points::int AS total_points, ms.rank
+     FROM matchday_scores ms
+     JOIN matchdays md ON md.id = ms.matchday_id
+     WHERE ms.user_id = $1
+     ORDER BY md.starts_at ASC`,
+    [me.id],
+  );
+  return rows as Array<{
+    matchday_id: number;
+    name: string;
+    starts_at: string;
+    total_points: number;
+    rank: number | null;
+  }>;
+});
+
+
