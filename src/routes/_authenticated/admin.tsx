@@ -4,15 +4,16 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import {
+  adminAddMatchFn,
   adminAddMatchdayFn,
   adminListMatchdays,
+  adminListPredictionsFn,
   adminScoreMatchdayFn,
   adminSetResultFn,
-  makeMeAdminFn,
 } from "@/lib/game.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  head: () => ({ meta: [{ title: "Admin · Marcador" }] }),
+  head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
   component: AdminPage,
 });
 
@@ -25,6 +26,8 @@ type Match = {
   away_score: number | null;
   first_scorer: string | null;
   is_final: boolean;
+  phase: string | null;
+  is_selected: boolean;
 };
 type Matchday = {
   id: number;
@@ -34,33 +37,25 @@ type Matchday = {
   matches: Match[] | null;
 };
 
+const PHASES = [
+  "Fase de grupos",
+  "Octavos",
+  "Cuartos",
+  "Semifinal",
+  "Final",
+];
+
 function AdminPage() {
   const { me } = Route.useRouteContext();
-  const qc = useQueryClient();
-
-  const claim = useMutation({
-    mutationFn: () => makeMeAdminFn(),
-    onSuccess: () => {
-      toast.success("You're now admin. Reload to see tools.");
-      qc.invalidateQueries();
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
-  });
 
   if (!me.is_admin) {
     return (
       <AppShell displayName={me.profile?.display_name}>
         <div className="max-w-md mx-auto text-center py-16">
-          <h1 className="font-display font-bold text-2xl">Admin area</h1>
+          <h1 className="font-display font-bold text-2xl">No autorizado</h1>
           <p className="text-sm text-muted-foreground mt-2">
-            You're not an admin. If no admin exists yet, you can claim it (first user only).
+            Esta sección está restringida a administradores.
           </p>
-          <button
-            onClick={() => claim.mutate()}
-            className="mt-6 rounded-xl bg-amber-gradient px-5 py-2.5 text-sm font-bold shadow-glow"
-          >
-            Claim admin
-          </button>
         </div>
       </AppShell>
     );
@@ -72,19 +67,160 @@ function AdminPage() {
 function AdminInner({ displayName }: { displayName?: string }) {
   const qc = useQueryClient();
   const mds = useQuery({ queryKey: ["admin-mds"], queryFn: () => adminListMatchdays() });
+  const matchdays = (mds.data as Matchday[] | undefined) ?? [];
 
   return (
     <AppShell displayName={displayName} isAdmin>
-      <h1 className="font-display font-bold text-2xl md:text-3xl mb-6">Admin</h1>
+      <h1 className="font-display font-bold text-2xl md:text-3xl mb-6">
+        Panel de Control
+      </h1>
 
-      <NewMatchdayForm onCreated={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })} />
+      <Section title="Nueva jornada (6 partidos)">
+        <NewMatchdayForm
+          onCreated={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
+        />
+      </Section>
 
-      <div className="mt-8 space-y-6">
-        {(mds.data as Matchday[] | undefined)?.map((md) => (
-          <MatchdayBlock key={md.id} md={md} onChange={() => qc.invalidateQueries()} />
-        ))}
-      </div>
+      <Section title="Añadir partido manualmente">
+        <AddMatchForm
+          matchdays={matchdays}
+          onAdded={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
+        />
+      </Section>
+
+      <Section title="Resultados y cálculo de puntuación">
+        <div className="space-y-6">
+          {matchdays.map((md) => (
+            <MatchdayBlock
+              key={md.id}
+              md={md}
+              onChange={() => qc.invalidateQueries()}
+            />
+          ))}
+          {!matchdays.length && (
+            <p className="text-sm text-muted-foreground">No hay jornadas todavía.</p>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Predicciones por jornada">
+        <PredictionsViewer matchdays={matchdays} />
+      </Section>
     </AppShell>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-8">
+      <h2 className="font-display font-semibold text-lg mb-3">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function AddMatchForm({
+  matchdays,
+  onAdded,
+}: {
+  matchdays: Matchday[];
+  onAdded: () => void;
+}) {
+  const [matchdayId, setMatchdayId] = useState<number | "">("");
+  const [home, setHome] = useState("");
+  const [away, setAway] = useState("");
+  const [kickoff, setKickoff] = useState("");
+  const [phase, setPhase] = useState<string>(PHASES[0]);
+  const [isSelected, setIsSelected] = useState(false);
+
+  const add = useMutation({
+    mutationFn: () =>
+      adminAddMatchFn({
+        data: {
+          matchday_id: Number(matchdayId),
+          home_team: home,
+          away_team: away,
+          kickoff_at: new Date(kickoff).toISOString(),
+          phase,
+          is_selected: isSelected,
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Partido añadido.");
+      setHome("");
+      setAway("");
+      setKickoff("");
+      setIsSelected(false);
+      onAdded();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 space-y-2">
+      <select
+        value={matchdayId}
+        onChange={(e) =>
+          setMatchdayId(e.target.value === "" ? "" : Number(e.target.value))
+        }
+        className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
+      >
+        <option value="">Selecciona jornada…</option>
+        {matchdays.map((md) => (
+          <option key={md.id} value={md.id}>
+            {md.name}
+          </option>
+        ))}
+      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          placeholder="Equipo local"
+          value={home}
+          onChange={(e) => setHome(e.target.value)}
+          className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
+        />
+        <input
+          placeholder="Equipo visitante"
+          value={away}
+          onChange={(e) => setAway(e.target.value)}
+          className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
+        />
+      </div>
+      <input
+        type="datetime-local"
+        value={kickoff}
+        onChange={(e) => setKickoff(e.target.value)}
+        className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
+      />
+      <select
+        value={phase}
+        onChange={(e) => setPhase(e.target.value)}
+        className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
+      >
+        {PHASES.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => setIsSelected(e.target.checked)}
+        />
+        Es uno de los 6 partidos seleccionados
+      </label>
+      <button
+        onClick={() => add.mutate()}
+        disabled={
+          add.isPending || !matchdayId || !home || !away || !kickoff
+        }
+        className="w-full rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold disabled:opacity-40"
+      >
+        Añadir partido
+      </button>
+    </div>
   );
 }
 
@@ -92,10 +228,10 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
   const score = useMutation({
     mutationFn: () => adminScoreMatchdayFn({ data: { matchday_id: md.id } }),
     onSuccess: () => {
-      toast.success("Matchday scored.");
+      toast.success("Jornada calculada.");
       onChange();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
   return (
@@ -109,7 +245,7 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
         </div>
         {md.is_scored ? (
           <span className="text-xs font-bold text-success uppercase tracking-wider">
-            Scored
+            Calculada
           </span>
         ) : (
           <button
@@ -117,12 +253,17 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
             disabled={score.isPending}
             className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
           >
-            Score matchday
+            Calcular puntuación
           </button>
         )}
       </div>
       <div className="divide-y divide-border">
         {md.matches?.map((m) => <ResultRow key={m.id} m={m} onChange={onChange} />)}
+        {!md.matches?.length && (
+          <div className="px-4 py-3 text-xs text-muted-foreground">
+            No hay partidos en esta jornada.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -140,16 +281,22 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
         data: { match_id: m.id, home_score: home, away_score: away, first_scorer: scorer },
       }),
     onSuccess: () => {
-      toast.success("Result saved.");
+      toast.success("Resultado guardado.");
       onChange();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
   return (
     <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
-      <div className="flex-1 min-w-[160px] font-medium text-sm">
-        {m.home_team} <span className="text-muted-foreground">vs</span> {m.away_team}
+      <div className="flex-1 min-w-[160px] text-sm">
+        <div className="font-medium">
+          {m.home_team} <span className="text-muted-foreground">vs</span> {m.away_team}
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          {m.phase ?? "—"}
+          {m.is_selected && " · ⭐ seleccionado"}
+        </div>
       </div>
       <input
         type="number"
@@ -171,17 +318,105 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
         onChange={(e) => setScorer(e.target.value as "home" | "away" | "none")}
         className="rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
       >
-        <option value="home">{m.home_team} scored first</option>
-        <option value="away">{m.away_team} scored first</option>
-        <option value="none">No goals</option>
+        <option value="home">{m.home_team} marcó primero</option>
+        <option value="away">{m.away_team} marcó primero</option>
+        <option value="none">Sin goles</option>
       </select>
       <button
         onClick={() => save.mutate()}
         disabled={save.isPending}
         className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold disabled:opacity-40"
       >
-        {m.is_final ? "Update" : "Save"}
+        {m.is_final ? "Actualizar" : "Guardar"}
       </button>
+    </div>
+  );
+}
+
+function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
+  const [mdId, setMdId] = useState<number | "">("");
+  const preds = useQuery({
+    queryKey: ["admin-predictions", mdId],
+    queryFn: () =>
+      adminListPredictionsFn({ data: { matchday_id: Number(mdId) } }),
+    enabled: typeof mdId === "number",
+  });
+
+  const rows = preds.data ?? [];
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <select
+        value={mdId}
+        onChange={(e) =>
+          setMdId(e.target.value === "" ? "" : Number(e.target.value))
+        }
+        className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm mb-3"
+      >
+        <option value="">Selecciona jornada…</option>
+        {matchdays.map((md) => (
+          <option key={md.id} value={md.id}>
+            {md.name}
+          </option>
+        ))}
+      </select>
+
+      {typeof mdId !== "number" ? (
+        <p className="text-sm text-muted-foreground">
+          Selecciona una jornada para ver las predicciones.
+        </p>
+      ) : preds.isLoading ? (
+        <p className="text-sm text-muted-foreground">Cargando…</p>
+      ) : !rows.length ? (
+        <p className="text-sm text-muted-foreground">Sin predicciones.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-left text-muted-foreground">
+              <tr>
+                <th className="py-2 pr-3">Usuario</th>
+                <th className="py-2 pr-3">Partido</th>
+                <th className="py-2 pr-3">Predicción</th>
+                <th className="py-2 pr-3">Real</th>
+                <th className="py-2 pr-3">Booster</th>
+                <th className="py-2 pr-3 text-right">Puntos</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="py-2 pr-3">
+                    <div className="font-medium">
+                      {r.display_name ?? "—"}
+                    </div>
+                    <div className="text-muted-foreground">{r.email}</div>
+                  </td>
+                  <td className="py-2 pr-3">
+                    {r.home_team} vs {r.away_team}
+                  </td>
+                  <td className="py-2 pr-3 font-score">
+                    {r.home_goals}-{r.away_goals}
+                    {r.pred_first_scorer && r.pred_first_scorer !== "none" && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({r.pred_first_scorer})
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-3 font-score">
+                    {r.is_final
+                      ? `${r.home_score}-${r.away_score}`
+                      : "—"}
+                  </td>
+                  <td className="py-2 pr-3">{r.booster ? "★" : ""}</td>
+                  <td className="py-2 pr-3 text-right font-bold">
+                    {r.points ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -207,21 +442,21 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
         },
       }),
     onSuccess: () => {
-      toast.success("Matchday created.");
+      toast.success("Jornada creada.");
       setName("");
       setStartsAt("");
       setMatches(Array.from({ length: 6 }).map(() => ({ home_team: "", away_team: "", kickoff_at: "" })));
       onCreated();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
   return (
     <details className="rounded-2xl border border-border bg-card p-4">
-      <summary className="cursor-pointer font-semibold">+ New matchday (6 fixtures)</summary>
+      <summary className="cursor-pointer font-semibold">Crear jornada con 6 partidos</summary>
       <div className="mt-4 space-y-2">
         <input
-          placeholder="Matchday name"
+          placeholder="Nombre de jornada"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
@@ -235,7 +470,7 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
         {matches.map((m, i) => (
           <div key={i} className="grid grid-cols-[1fr_1fr_1.4fr] gap-2">
             <input
-              placeholder="Home"
+              placeholder="Local"
               value={m.home_team}
               onChange={(e) =>
                 setMatches((arr) =>
@@ -245,7 +480,7 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
               className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
             />
             <input
-              placeholder="Away"
+              placeholder="Visitante"
               value={m.away_team}
               onChange={(e) =>
                 setMatches((arr) =>
@@ -271,7 +506,7 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
           disabled={create.isPending}
           className="mt-2 w-full rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold disabled:opacity-40"
         >
-          Create matchday
+          Crear jornada
         </button>
       </div>
     </details>
