@@ -20,12 +20,22 @@ import { useGuest } from "@/lib/guest";
 import { teamFlag } from "@/lib/teamFlags";
 
 export const Route = createFileRoute("/_authenticated/leaderboard")({
-  head: () => ({
-    meta: [
-      { title: "El Marcador · Marcador" },
-      { name: "description", content: "Live standings across the tournament." },
-    ],
-  }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/leaderboard";
+    const title = "Global leaderboard · Marcador";
+    const description =
+      "Live World Cup 2026 prediction standings — see who tops the global Marcador table, with points from matchday results and exact scores.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: LeaderboardPage,
 });
 
