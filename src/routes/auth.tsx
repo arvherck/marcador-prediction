@@ -28,6 +28,7 @@ function AuthPage() {
     try {
       if (mode === "signup") await signUpFn({ data: { email, password } });
       else await signInFn({ data: { email, password } });
+      clearGuest();
       toast.success("Welcome to Marcador.");
       await router.invalidate();
       navigate({ to: "/onboarding" });
@@ -36,6 +37,12 @@ function AuthPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const continueAsGuest = () => {
+    setGuest(true);
+    toast("Modo invitado activado.");
+    navigate({ to: "/play" });
   };
 
   return (
