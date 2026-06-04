@@ -38,9 +38,9 @@ type Matchday = {
 };
 
 const PHASES = [
-  "Fase de grupos",
-  "Octavos",
-  "Cuartos",
+  "Group stage",
+  "Round of 16",
+  "Quarterfinal",
   "Semifinal",
   "Final",
 ];
@@ -52,9 +52,9 @@ function AdminPage() {
     return (
       <AppShell displayName={me.profile?.display_name}>
         <div className="max-w-md mx-auto text-center py-16">
-          <h1 className="font-display font-bold text-2xl">No autorizado</h1>
+          <h1 className="font-display font-bold text-2xl">Not authorized</h1>
           <p className="text-sm text-muted-foreground mt-2">
-            Esta sección está restringida a administradores.
+            This section is restricted to admins.
           </p>
         </div>
       </AppShell>
@@ -75,20 +75,20 @@ function AdminInner({ displayName }: { displayName?: string }) {
         Panel de Control
       </h1>
 
-      <Section title="Nueva jornada (6 partidos)">
+      <Section title="New matchday (6 matches)">
         <NewMatchdayForm
           onCreated={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
         />
       </Section>
 
-      <Section title="Añadir partido manualmente">
+      <Section title="Add match manually">
         <AddMatchForm
           matchdays={matchdays}
           onAdded={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
         />
       </Section>
 
-      <Section title="Resultados y cálculo de puntuación">
+      <Section title="Results & scoring">
         <div className="space-y-6">
           {matchdays.map((md) => (
             <MatchdayBlock
@@ -98,12 +98,12 @@ function AdminInner({ displayName }: { displayName?: string }) {
             />
           ))}
           {!matchdays.length && (
-            <p className="text-sm text-muted-foreground">No hay jornadas todavía.</p>
+            <p className="text-sm text-muted-foreground">No matchdays yet.</p>
           )}
         </div>
       </Section>
 
-      <Section title="Predicciones por jornada">
+      <Section title="Predictions by matchday">
         <PredictionsViewer matchdays={matchdays} />
       </Section>
     </AppShell>
@@ -146,7 +146,7 @@ function AddMatchForm({
         },
       }),
     onSuccess: () => {
-      toast.success("Partido añadido.");
+      toast.success("Match added.");
       setHome("");
       setAway("");
       setKickoff("");
@@ -165,7 +165,7 @@ function AddMatchForm({
         }
         className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
       >
-        <option value="">Selecciona jornada…</option>
+        <option value="">Select matchday…</option>
         {matchdays.map((md) => (
           <option key={md.id} value={md.id}>
             {md.name}
@@ -174,13 +174,13 @@ function AddMatchForm({
       </select>
       <div className="grid grid-cols-2 gap-2">
         <input
-          placeholder="Equipo local"
+          placeholder="Home team"
           value={home}
           onChange={(e) => setHome(e.target.value)}
           className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
         />
         <input
-          placeholder="Equipo visitante"
+          placeholder="Away team"
           value={away}
           onChange={(e) => setAway(e.target.value)}
           className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
@@ -209,7 +209,7 @@ function AddMatchForm({
           checked={isSelected}
           onChange={(e) => setIsSelected(e.target.checked)}
         />
-        Es uno de los 6 partidos seleccionados
+        One of the 6 selected matches
       </label>
       <button
         onClick={() => add.mutate()}
@@ -218,7 +218,7 @@ function AddMatchForm({
         }
         className="w-full rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold disabled:opacity-40"
       >
-        Añadir partido
+        Add match
       </button>
     </div>
   );
@@ -228,7 +228,7 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
   const score = useMutation({
     mutationFn: () => adminScoreMatchdayFn({ data: { matchday_id: md.id } }),
     onSuccess: () => {
-      toast.success("Jornada calculada.");
+      toast.success("Matchday scored.");
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
@@ -245,7 +245,7 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
         </div>
         {md.is_scored ? (
           <span className="text-xs font-bold text-success uppercase tracking-wider">
-            Calculada
+            Scored
           </span>
         ) : (
           <button
@@ -253,7 +253,7 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
             disabled={score.isPending}
             className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
           >
-            Calcular puntuación
+            Run scoring
           </button>
         )}
       </div>
@@ -261,7 +261,7 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
         {md.matches?.map((m) => <ResultRow key={m.id} m={m} onChange={onChange} />)}
         {!md.matches?.length && (
           <div className="px-4 py-3 text-xs text-muted-foreground">
-            No hay partidos en esta jornada.
+            No matches in this matchday.
           </div>
         )}
       </div>
@@ -281,7 +281,7 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
         data: { match_id: m.id, home_score: home, away_score: away, first_scorer: scorer },
       }),
     onSuccess: () => {
-      toast.success("Resultado guardado.");
+      toast.success("Result saved.");
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
@@ -295,7 +295,7 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
         </div>
         <div className="text-[11px] text-muted-foreground">
           {m.phase ?? "—"}
-          {m.is_selected && " · ⭐ seleccionado"}
+          {m.is_selected && " · ⭐ selected"}
         </div>
       </div>
       <input
@@ -318,16 +318,16 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
         onChange={(e) => setScorer(e.target.value as "home" | "away" | "none")}
         className="rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
       >
-        <option value="home">{m.home_team} marcó primero</option>
-        <option value="away">{m.away_team} marcó primero</option>
-        <option value="none">Sin goles</option>
+        <option value="home">{m.home_team} scored first</option>
+        <option value="away">{m.away_team} scored first</option>
+        <option value="none">No goals</option>
       </select>
       <button
         onClick={() => save.mutate()}
         disabled={save.isPending}
         className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold disabled:opacity-40"
       >
-        {m.is_final ? "Actualizar" : "Guardar"}
+        {m.is_final ? "Update" : "Save"}
       </button>
     </div>
   );
@@ -353,7 +353,7 @@ function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
         }
         className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm mb-3"
       >
-        <option value="">Selecciona jornada…</option>
+        <option value="">Select matchday…</option>
         {matchdays.map((md) => (
           <option key={md.id} value={md.id}>
             {md.name}
@@ -363,23 +363,23 @@ function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
 
       {typeof mdId !== "number" ? (
         <p className="text-sm text-muted-foreground">
-          Selecciona una jornada para ver las predicciones.
+          Select a matchday to view predictions.
         </p>
       ) : preds.isLoading ? (
-        <p className="text-sm text-muted-foreground">Cargando…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : !rows.length ? (
-        <p className="text-sm text-muted-foreground">Sin predicciones.</p>
+        <p className="text-sm text-muted-foreground">No predictions.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="text-left text-muted-foreground">
               <tr>
-                <th className="py-2 pr-3">Usuario</th>
-                <th className="py-2 pr-3">Partido</th>
-                <th className="py-2 pr-3">Predicción</th>
-                <th className="py-2 pr-3">Real</th>
+                <th className="py-2 pr-3">User</th>
+                <th className="py-2 pr-3">Match</th>
+                <th className="py-2 pr-3">Prediction</th>
+                <th className="py-2 pr-3">Actual</th>
                 <th className="py-2 pr-3">Booster</th>
-                <th className="py-2 pr-3 text-right">Puntos</th>
+                <th className="py-2 pr-3 text-right">Points</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -442,7 +442,7 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
         },
       }),
     onSuccess: () => {
-      toast.success("Jornada creada.");
+      toast.success("Matchday created.");
       setName("");
       setStartsAt("");
       setMatches(Array.from({ length: 6 }).map(() => ({ home_team: "", away_team: "", kickoff_at: "" })));
@@ -453,10 +453,10 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <details className="rounded-2xl border border-border bg-card p-4">
-      <summary className="cursor-pointer font-semibold">Crear jornada con 6 partidos</summary>
+      <summary className="cursor-pointer font-semibold">Create matchday with 6 matches</summary>
       <div className="mt-4 space-y-2">
         <input
-          placeholder="Nombre de jornada"
+          placeholder="Matchday name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
@@ -470,7 +470,7 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
         {matches.map((m, i) => (
           <div key={i} className="grid grid-cols-[1fr_1fr_1.4fr] gap-2">
             <input
-              placeholder="Local"
+              placeholder="Home"
               value={m.home_team}
               onChange={(e) =>
                 setMatches((arr) =>
@@ -480,7 +480,7 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
               className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
             />
             <input
-              placeholder="Visitante"
+              placeholder="Away"
               value={m.away_team}
               onChange={(e) =>
                 setMatches((arr) =>
@@ -506,7 +506,7 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
           disabled={create.isPending}
           className="mt-2 w-full rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold disabled:opacity-40"
         >
-          Crear jornada
+          Create matchday
         </button>
       </div>
     </details>

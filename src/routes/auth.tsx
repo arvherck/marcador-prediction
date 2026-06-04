@@ -41,7 +41,7 @@ function AuthPage() {
 
   const continueAsGuest = () => {
     setGuest(true);
-    toast("Modo invitado activado.");
+    toast("Guest mode on.");
     navigate({ to: "/play" });
   };
 
@@ -128,10 +128,10 @@ function AuthPage() {
             onClick={continueAsGuest}
             className="w-full rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary transition"
           >
-            Continuar como invitado
+            Continue as guest
           </button>
           <p className="mt-2 text-[11px] text-center text-muted-foreground/70">
-            Solo lectura. No podrás predecir ni aparecer en la tabla.
+            Read-only. You can't predict or appear on the leaderboard.
           </p>
         </div>
       </main>

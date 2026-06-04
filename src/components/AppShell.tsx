@@ -105,7 +105,7 @@ export function AppShell({
           <div className="flex items-center gap-3">
             {guest ? (
               <span className="hidden sm:inline text-[10px] uppercase tracking-widest font-bold text-amber-glow border border-primary/40 rounded px-1.5 py-0.5">
-                Invitado
+                Guest
               </span>
             ) : (
               displayName && (
@@ -118,7 +118,7 @@ export function AppShell({
               onClick={logout}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
-              {guest ? "Salir" : "Sign out"}
+              {guest ? "Exit" : "Sign out"}
             </button>
           </div>
         </div>

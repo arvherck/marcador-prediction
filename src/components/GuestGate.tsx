@@ -51,23 +51,23 @@ function GuestGateModal({
           <span className="font-score font-bold text-primary-foreground text-lg">M</span>
         </div>
         <h2 className="font-display font-bold text-xl leading-tight">
-          Crea una cuenta gratis
+          Create a free account
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Crea una cuenta gratis para hacer predicciones y competir en la tabla.
+          Create a free account to make predictions and compete on the leaderboard.
         </p>
         <div className="mt-5 flex flex-col gap-2">
           <button
             onClick={onSignUp}
             className="w-full rounded-xl bg-amber-gradient px-4 py-3 text-sm font-bold text-primary-foreground shadow-glow"
           >
-            Crear cuenta
+            Sign up
           </button>
           <button
             onClick={onClose}
             className="w-full rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground transition"
           >
-            Seguir como invitado
+            Stay as guest
           </button>
         </div>
       </div>
