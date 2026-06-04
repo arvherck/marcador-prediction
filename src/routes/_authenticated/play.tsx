@@ -2,8 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Lock, Zap, Trophy } from "lucide-react";
+import { Lock, Zap, Trophy, Share2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { EmptyBall } from "@/components/EmptyBall";
+import { KickoffCountdown } from "@/components/KickoffCountdown";
+import { ShareModal } from "@/components/ShareModal";
 import {
   getCurrentMatchday,
   savePredictionFn,
@@ -11,6 +14,7 @@ import {
   type MatchRow,
 } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
+
 
 export const Route = createFileRoute("/_authenticated/play")({
   head: () => ({ meta: [{ title: "Play · Marcador" }] }),
@@ -27,6 +31,8 @@ function PlayPage() {
 
   // Local draft state for all 6 cards
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
+  const [shareOpen, setShareOpen] = useState(false);
+
 
   useEffect(() => {
     if (!q.data) return;
