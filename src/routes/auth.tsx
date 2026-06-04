@@ -5,12 +5,22 @@ import { signInFn, signUpFn } from "@/lib/auth.functions";
 import { setGuest, clearGuest } from "@/lib/guest";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({
-    meta: [
-      { title: "Sign in · Marcador" },
-      { name: "description", content: "Sign in or create a Marcador account." },
-    ],
-  }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/auth";
+    const title = "Sign in or create your account · Marcador";
+    const description =
+      "Sign in to Marcador or create a free account to predict every World Cup 2026 matchday, run private leagues, and join the global leaderboard.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: AuthPage,
 });
 
@@ -82,16 +92,28 @@ function AuthPage() {
           </div>
 
           <form onSubmit={submit} className="space-y-3">
+            <label htmlFor="auth-email" className="sr-only">
+              Email
+            </label>
             <input
+              id="auth-email"
+              name="email"
               type="email"
+              autoComplete="email"
               required
               placeholder="you@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-xl bg-input border border-border px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/50"
             />
+            <label htmlFor="auth-password" className="sr-only">
+              Password
+            </label>
             <input
+              id="auth-password"
+              name="password"
               type="password"
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
               required
               minLength={8}
               placeholder="Password (min 8 characters)"

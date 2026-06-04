@@ -4,7 +4,23 @@ import { toast } from "sonner";
 import { completeOnboardingFn } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
-  head: () => ({ meta: [{ title: "Set up your profile · Marcador" }] }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/onboarding";
+    const title = "Set up your profile · Marcador";
+    const description =
+      "Finish your Marcador profile — choose a display name, your country, and your favourite World Cup 2026 team before you start predicting.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { name: "robots", content: "noindex" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: OnboardingPage,
 });
 
@@ -55,8 +71,10 @@ function OnboardingPage() {
         </div>
 
         <form onSubmit={submit} className="space-y-4">
-          <Field label="Display name">
+          <Field id="display-name" label="Display name">
             <input
+              id="display-name"
+              name="display_name"
               required
               maxLength={40}
               value={displayName}
@@ -65,8 +83,10 @@ function OnboardingPage() {
               className="w-full rounded-xl bg-input border border-border px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/50"
             />
           </Field>
-          <Field label="Country">
+          <Field id="country" label="Country">
             <input
+              id="country"
+              name="country"
               required
               list="country-list"
               value={country}
@@ -80,8 +100,10 @@ function OnboardingPage() {
               ))}
             </datalist>
           </Field>
-          <Field label="Favourite World Cup team">
+          <Field id="favourite-team" label="Favourite World Cup team">
             <select
+              id="favourite-team"
+              name="favourite_team"
               required
               value={team}
               onChange={(e) => setTeam(e.target.value)}
@@ -108,13 +130,24 @@ function OnboardingPage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="block">
-      <span className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+    <div className="block">
+      <label
+        htmlFor={id}
+        className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5"
+      >
         {label}
-      </span>
+      </label>
       {children}
-    </label>
+    </div>
   );
 }

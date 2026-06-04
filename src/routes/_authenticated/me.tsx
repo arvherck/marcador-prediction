@@ -5,7 +5,23 @@ import { EmptyBall } from "@/components/EmptyBall";
 import { getMyHistoryFn, getMyMatchdayScoresFn } from "@/lib/game.functions";
 
 export const Route = createFileRoute("/_authenticated/me")({
-  head: () => ({ meta: [{ title: "Mi Marcador · Marcador" }] }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/me";
+    const title = "Mi Marcador · Your predictions · Marcador";
+    const description =
+      "Your Marcador profile and prediction history — review past matchdays, booster calls, points earned, and your standing on the global table.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { name: "robots", content: "noindex" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: MePage,
 });
 

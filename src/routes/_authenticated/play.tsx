@@ -19,7 +19,22 @@ import { teamFlag } from "@/lib/teamFlags";
 
 
 export const Route = createFileRoute("/_authenticated/play")({
-  head: () => ({ meta: [{ title: "Play · Marcador" }] }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/play";
+    const title = "This matchday · Marcador";
+    const description =
+      "Predict the current World Cup 2026 matchday — six selected fixtures, exact scores, first scorer, and a 2× booster to double your call.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: PlayPage,
 });
 

@@ -14,15 +14,52 @@ export const Route = createFileRoute("/")({
       if (e && typeof e === "object" && "isRedirect" in e) throw e;
     }
   },
-  head: () => ({
-    meta: [
-      { title: "Marcador — World Cup 2026 Predictions" },
-      {
-        name: "description",
-        content: "Predict every World Cup 2026 match. Boost your call. Top the global scoreboard.",
-      },
-    ],
-  }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/";
+    const image = "https://marcador-prediction.lovable.app/og-marcador.jpg";
+    const title = "Marcador — World Cup 2026 Predictions";
+    const description =
+      "Predict every World Cup 2026 match, boost a call, and climb the global scoreboard. Six fixtures a matchday, points for results and exact scores.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+        { property: "og:type", content: "website" },
+        { property: "og:image", content: image },
+        { property: "og:image:width", content: "1200" },
+        { property: "og:image:height", content: "630" },
+        { name: "twitter:image", content: image },
+      ],
+      links: [{ rel: "canonical", href: url }],
+      scripts: [
+        {
+          type: "application/ld+json",
+          children: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "WebSite",
+            name: "Marcador",
+            url,
+            description,
+          }),
+        },
+        {
+          type: "application/ld+json",
+          children: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            name: "Marcador",
+            url,
+            logo: image,
+            description:
+              "Marcador is the scoreboard for World Cup 2026 predictions — predict matches, run private leagues, and track a global ranking.",
+          }),
+        },
+      ],
+    };
+  },
   component: Landing,
 });
 

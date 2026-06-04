@@ -4,7 +4,23 @@ import { AppShell } from "@/components/AppShell";
 import { getLeaderboard, getMyLeagues } from "@/lib/game.functions";
 
 export const Route = createFileRoute("/_authenticated/leagues/$id")({
-  head: () => ({ meta: [{ title: "League · Marcador" }] }),
+  head: ({ params }) => {
+    const url = `https://marcador-prediction.lovable.app/leagues/${params.id}`;
+    const title = "League standings · Marcador";
+    const description =
+      "Private Marcador league standings — track your friends' World Cup 2026 predictions, points per matchday, and ranking inside this league.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { name: "robots", content: "noindex" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: LeagueDetailPage,
 });
 
