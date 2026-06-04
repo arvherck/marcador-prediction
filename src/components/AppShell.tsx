@@ -2,12 +2,14 @@ import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { signOutFn } from "@/lib/auth.functions";
 import { toast } from "sonner";
+import { useGuest, clearGuest } from "@/lib/guest";
+import { useGuestGate } from "@/components/GuestGate";
 
 const tabs = [
-  { to: "/play", label: "Play", icon: BallIcon },
-  { to: "/leaderboard", label: "Tabla", icon: TableIcon },
-  { to: "/leagues", label: "Ligas", icon: LeagueIcon },
-  { to: "/me", label: "Mi Marcador", icon: UserIcon },
+  { to: "/play", label: "Play", icon: BallIcon, guest: true },
+  { to: "/leaderboard", label: "Tabla", icon: TableIcon, guest: true },
+  { to: "/leagues", label: "Ligas", icon: LeagueIcon, guest: false },
+  { to: "/me", label: "Mi Marcador", icon: UserIcon, guest: false },
 ] as const;
 
 
