@@ -168,12 +168,12 @@ function PlayPage() {
 
           {q.data.matches.length > 0 && <ScoringLegend />}
 
-          {/* Sticky submit bar */}
-          {q.data.matches.length > 0 && (
+          {/* Sticky submit bar (hidden for guests) */}
+          {q.data.matches.length > 0 && !guest && (
             <div className="fixed inset-x-0 bottom-16 md:bottom-6 z-30 px-4 pointer-events-none">
               <div className="max-w-2xl mx-auto pointer-events-auto flex gap-2">
                 <button
-                  onClick={() => submitAll.mutate()}
+                  onClick={() => guestGate.require(() => submitAll.mutate(), guest)}
                   disabled={submitAll.isPending || dirtyCount === 0}
                   className="flex-1 rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-[0.99]"
                 >
@@ -192,6 +192,20 @@ function PlayPage() {
                     <Share2 size={16} /> Compartir
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Guest CTA */}
+          {q.data.matches.length > 0 && guest && (
+            <div className="fixed inset-x-0 bottom-16 md:bottom-6 z-30 px-4 pointer-events-none">
+              <div className="max-w-2xl mx-auto pointer-events-auto">
+                <button
+                  onClick={() => guestGate.setOpen(true)}
+                  className="w-full rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow transition active:scale-[0.99]"
+                >
+                  Crear cuenta para predecir
+                </button>
               </div>
             </div>
           )}
