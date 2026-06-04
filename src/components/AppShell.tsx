@@ -6,7 +6,7 @@ import { toast } from "sonner";
 const tabs = [
   { to: "/play", label: "Play", icon: BallIcon },
   { to: "/leaderboard", label: "Table", icon: TableIcon },
-  { to: "/leagues", label: "Leagues", icon: LeagueIcon },
+  { to: "/leagues", label: "Ligas", icon: LeagueIcon },
 ] as const;
 
 export function AppShell({

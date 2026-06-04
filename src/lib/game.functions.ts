@@ -261,9 +261,11 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
 function genCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "";
-  for (let i = 0; i < 6; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return s;
+  for (let i = 0; i < 4; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return `MRC-${s}`;
 }
+
+const MAX_OWNED_LEAGUES = 3;
 
 export const createLeagueFn = createServerFn({ method: "POST" })
   .inputValidator(z.object({ name: z.string().trim().min(2).max(50) }))
@@ -271,8 +273,14 @@ export const createLeagueFn = createServerFn({ method: "POST" })
     const { pool } = await import("./lovable/database");
     const { requireUser } = await import("./auth.server");
     const me = await requireUser();
+    const owned = await pool.query(
+      "SELECT COUNT(*)::int AS c FROM leagues WHERE owner_id=$1",
+      [me.id],
+    );
+    if (owned.rows[0].c >= MAX_OWNED_LEAGUES) {
+      throw new Error("You've reached the 3-league creation limit.");
+    }
     let code = genCode();
-    // retry on collision
     for (let i = 0; i < 5; i++) {
       const c = await pool.query("SELECT 1 FROM leagues WHERE invite_code=$1", [code]);
       if (!c.rows.length) break;
@@ -290,7 +298,15 @@ export const createLeagueFn = createServerFn({ method: "POST" })
   });
 
 export const joinLeagueFn = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ invite_code: z.string().trim().toUpperCase().min(4).max(12) }))
+  .inputValidator(
+    z
+      .object({ invite_code: z.string().trim().min(4).max(16) })
+      .transform((v) => {
+        let code = v.invite_code.toUpperCase().replace(/\s+/g, "");
+        if (!code.startsWith("MRC-")) code = `MRC-${code}`;
+        return { invite_code: code };
+      }),
+  )
   .handler(async ({ data }) => {
     const { pool } = await import("./lovable/database");
     const { requireUser } = await import("./auth.server");
@@ -313,11 +329,27 @@ export const getMyLeagues = createServerFn({ method: "GET" }).handler(async () =
   const me = await loadCurrentUser();
   if (!me) return [];
   const { rows } = await pool.query(
-    `SELECT l.id, l.name, l.invite_code, l.owner_id,
-            (SELECT COUNT(*)::int FROM league_members WHERE league_id=l.id) AS member_count
+    `WITH league_totals AS (
+       SELECT lm.league_id, lm.user_id,
+              COALESCE(SUM(ms.total_points),0)::int AS total_points
+       FROM league_members lm
+       LEFT JOIN matchday_scores ms ON ms.user_id = lm.user_id
+       GROUP BY lm.league_id, lm.user_id
+     ),
+     ranked AS (
+       SELECT league_id, user_id, total_points,
+              RANK() OVER (PARTITION BY league_id ORDER BY total_points DESC) AS rnk,
+              SUM(CASE WHEN total_points > 0 THEN 1 ELSE 0 END)
+                OVER (PARTITION BY league_id) AS scored_members
+       FROM league_totals
+     )
+     SELECT l.id, l.name, l.invite_code, l.owner_id,
+            (SELECT COUNT(*)::int FROM league_members WHERE league_id=l.id) AS member_count,
+            COALESCE(r.total_points, 0)::int AS my_points,
+            CASE WHEN COALESCE(r.total_points,0) > 0 THEN r.rnk::int ELSE NULL END AS my_rank
      FROM leagues l
-     JOIN league_members m ON m.league_id = l.id
-     WHERE m.user_id = $1
+     JOIN league_members m ON m.league_id = l.id AND m.user_id = $1
+     LEFT JOIN ranked r ON r.league_id = l.id AND r.user_id = $1
      ORDER BY l.created_at DESC`,
     [me.id],
   );
@@ -327,8 +359,11 @@ export const getMyLeagues = createServerFn({ method: "GET" }).handler(async () =
     invite_code: string;
     owner_id: string;
     member_count: number;
+    my_points: number;
+    my_rank: number | null;
   }>;
 });
+
 
 // Admin
 export const adminListMatchdays = createServerFn({ method: "GET" }).handler(async () => {

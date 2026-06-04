@@ -17,6 +17,7 @@ import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authentic
 import { Route as AuthenticatedLeaguesRouteImport } from './routes/_authenticated/leagues'
 import { Route as AuthenticatedLeaderboardRouteImport } from './routes/_authenticated/leaderboard'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedLeaguesJoinRouteImport } from './routes/_authenticated/leagues.join'
 import { Route as AuthenticatedLeaguesIdRouteImport } from './routes/_authenticated/leagues.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -59,6 +60,12 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedLeaguesJoinRoute =
+  AuthenticatedLeaguesJoinRouteImport.update({
+    id: '/join',
+    path: '/join',
+    getParentRoute: () => AuthenticatedLeaguesRoute,
+  } as any)
 const AuthenticatedLeaguesIdRoute = AuthenticatedLeaguesIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -74,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/play': typeof AuthenticatedPlayRoute
   '/leagues/$id': typeof AuthenticatedLeaguesIdRoute
+  '/leagues/join': typeof AuthenticatedLeaguesJoinRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -84,6 +92,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/play': typeof AuthenticatedPlayRoute
   '/leagues/$id': typeof AuthenticatedLeaguesIdRoute
+  '/leagues/join': typeof AuthenticatedLeaguesJoinRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -96,6 +105,7 @@ export interface FileRoutesById {
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/play': typeof AuthenticatedPlayRoute
   '/_authenticated/leagues/$id': typeof AuthenticatedLeaguesIdRoute
+  '/_authenticated/leagues/join': typeof AuthenticatedLeaguesJoinRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/play'
     | '/leagues/$id'
+    | '/leagues/join'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/play'
     | '/leagues/$id'
+    | '/leagues/join'
   id:
     | '__root__'
     | '/'
@@ -129,6 +141,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/play'
     | '/_authenticated/leagues/$id'
+    | '/_authenticated/leagues/join'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/leagues/join': {
+      id: '/_authenticated/leagues/join'
+      path: '/join'
+      fullPath: '/leagues/join'
+      preLoaderRoute: typeof AuthenticatedLeaguesJoinRouteImport
+      parentRoute: typeof AuthenticatedLeaguesRoute
+    }
     '/_authenticated/leagues/$id': {
       id: '/_authenticated/leagues/$id'
       path: '/$id'
@@ -207,10 +227,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedLeaguesRouteChildren {
   AuthenticatedLeaguesIdRoute: typeof AuthenticatedLeaguesIdRoute
+  AuthenticatedLeaguesJoinRoute: typeof AuthenticatedLeaguesJoinRoute
 }
 
 const AuthenticatedLeaguesRouteChildren: AuthenticatedLeaguesRouteChildren = {
   AuthenticatedLeaguesIdRoute: AuthenticatedLeaguesIdRoute,
+  AuthenticatedLeaguesJoinRoute: AuthenticatedLeaguesJoinRoute,
 }
 
 const AuthenticatedLeaguesRouteWithChildren =
