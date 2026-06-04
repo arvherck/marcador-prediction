@@ -84,10 +84,15 @@ function LeaguesPage() {
 
       <div className="grid md:grid-cols-2 gap-3 mb-8">
         <div className="rounded-2xl border border-border bg-card p-4">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
+          <label
+            htmlFor="league-name"
+            className="block text-xs uppercase tracking-widest text-muted-foreground mb-3"
+          >
             Create league
-          </div>
+          </label>
           <input
+            id="league-name"
+            name="league_name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={50}
@@ -108,14 +113,19 @@ function LeaguesPage() {
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-4">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
+          <label
+            htmlFor="invite-code"
+            className="block text-xs uppercase tracking-widest text-muted-foreground mb-3"
+          >
             Join with code
-          </div>
+          </label>
           <div className="flex items-stretch rounded-xl bg-input border border-border overflow-hidden focus-within:ring-2 focus-within:ring-primary/50">
             <span className="px-3 flex items-center font-score font-bold text-primary text-sm">
               MRC-
             </span>
             <input
+              id="invite-code"
+              name="invite_code"
               value={code}
               onChange={(e) =>
                 setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))
