@@ -5,12 +5,22 @@ import { signInFn, signUpFn } from "@/lib/auth.functions";
 import { setGuest, clearGuest } from "@/lib/guest";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({
-    meta: [
-      { title: "Sign in · Marcador" },
-      { name: "description", content: "Sign in or create a Marcador account." },
-    ],
-  }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/auth";
+    const title = "Sign in or create your account · Marcador";
+    const description =
+      "Sign in to Marcador or create a free account to predict every World Cup 2026 matchday, run private leagues, and join the global leaderboard.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: AuthPage,
 });
 
