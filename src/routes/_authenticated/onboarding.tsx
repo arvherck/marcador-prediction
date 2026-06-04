@@ -4,7 +4,23 @@ import { toast } from "sonner";
 import { completeOnboardingFn } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
-  head: () => ({ meta: [{ title: "Set up your profile · Marcador" }] }),
+  head: () => {
+    const url = "https://marcador-prediction.lovable.app/onboarding";
+    const title = "Set up your profile · Marcador";
+    const description =
+      "Finish your Marcador profile — choose a display name, your country, and your favourite World Cup 2026 team before you start predicting.";
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { name: "robots", content: "noindex" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:url", content: url },
+      ],
+      links: [{ rel: "canonical", href: url }],
+    };
+  },
   component: OnboardingPage,
 });
 
