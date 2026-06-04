@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Lock, Zap, Trophy } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import {
   getCurrentMatchday,
@@ -9,15 +10,84 @@ import {
   setBoosterFn,
   type MatchRow,
 } from "@/lib/game.functions";
+import { teamFlag } from "@/lib/teamFlags";
 
 export const Route = createFileRoute("/_authenticated/play")({
   head: () => ({ meta: [{ title: "Play · Marcador" }] }),
   component: PlayPage,
 });
 
+type Scorer = "home" | "away" | "none";
+type Draft = { home: number; away: number; scorer: Scorer; dirty: boolean };
+
 function PlayPage() {
   const { me } = Route.useRouteContext();
   const q = useQuery({ queryKey: ["matchday"], queryFn: () => getCurrentMatchday() });
+  const qc = useQueryClient();
+
+  // Local draft state for all 6 cards
+  const [drafts, setDrafts] = useState<Record<number, Draft>>({});
+
+  useEffect(() => {
+    if (!q.data) return;
+    const next: Record<number, Draft> = {};
+    for (const m of q.data.matches) {
+      next[m.id] = {
+        home: m.prediction?.home_goals ?? 0,
+        away: m.prediction?.away_goals ?? 0,
+        scorer: (m.prediction?.first_scorer as Scorer) ?? "home",
+        dirty: false,
+      };
+    }
+    setDrafts(next);
+  }, [q.data]);
+
+  const updateDraft = (id: number, patch: Partial<Draft>) =>
+    setDrafts((d) => ({ ...d, [id]: { ...d[id], ...patch, dirty: true } }));
+
+  const boostedMatchId = useMemo(
+    () => q.data?.matches.find((m) => m.prediction?.booster)?.id ?? null,
+    [q.data],
+  );
+
+  const boost = useMutation({
+    mutationFn: (match_id: number) =>
+      setBoosterFn({ data: { matchday_id: q.data!.matchday.id, match_id } }),
+    onSuccess: () => {
+      toast.success("2× booster applied.");
+      qc.invalidateQueries({ queryKey: ["matchday"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
+  });
+
+  const submitAll = useMutation({
+    mutationFn: async () => {
+      if (!q.data) return { saved: 0 };
+      const dirty = q.data.matches.filter((m) => !m.locked && drafts[m.id]?.dirty);
+      for (const m of dirty) {
+        const d = drafts[m.id];
+        await savePredictionFn({
+          data: {
+            match_id: m.id,
+            home_goals: d.home,
+            away_goals: d.away,
+            first_scorer: d.scorer,
+          },
+        });
+      }
+      return { saved: dirty.length };
+    },
+    onSuccess: ({ saved }) => {
+      if (saved === 0) toast("No changes to submit.");
+      else toast.success(`Submitted ${saved} prediction${saved === 1 ? "" : "s"}.`);
+      qc.invalidateQueries({ queryKey: ["matchday"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
+  });
+
+  const dirtyCount = q.data?.matches.filter(
+    (m) => !m.locked && drafts[m.id]?.dirty,
+  ).length ?? 0;
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
@@ -29,84 +99,98 @@ function PlayPage() {
       )}
       {q.data && (
         <>
-          <div className="mb-6">
-            <div className="text-xs uppercase tracking-widest text-muted-foreground">
-              Current matchday
-            </div>
-            <h1 className="font-display font-bold text-2xl md:text-3xl mt-1">
+          <header className="mb-6">
+            <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
               {q.data.matchday.name}
+            </div>
+            <h1 className="font-display font-bold text-3xl md:text-4xl mt-1 leading-tight">
+              {q.data.matchday.name} — Group Stage
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Predictions lock at kickoff. Apply one 2× booster per matchday.
+            <p className="text-sm text-muted-foreground mt-2">
+              Predictions lock at kickoff. Apply one 2× booster across the matchday.
             </p>
+          </header>
+
+          <div className="space-y-3 pb-28">
+            {q.data.matches.map((m) => (
+              <MatchCard
+                key={m.id}
+                match={m}
+                draft={drafts[m.id]}
+                onUpdate={(patch) => updateDraft(m.id, patch)}
+                boostedMatchId={boostedMatchId}
+                onToggleBooster={() => boost.mutate(m.id)}
+                boosterPending={boost.isPending}
+              />
+            ))}
           </div>
-          <div className="space-y-3">
-            {q.data.matches.map((m) => {
-              const mdId = q.data!.matchday.id;
-              return <MatchCard key={m.id} match={m} matchdayId={mdId} />;
-            })}
-          </div>
+
           <ScoringLegend />
+
+          {/* Sticky submit bar */}
+          <div className="fixed inset-x-0 bottom-0 md:bottom-6 z-30 px-4 pointer-events-none">
+            <div className="max-w-2xl mx-auto pointer-events-auto">
+              <button
+                onClick={() => submitAll.mutate()}
+                disabled={submitAll.isPending || dirtyCount === 0}
+                className="w-full rounded-2xl bg-amber-gradient px-5 py-3.5 text-base font-bold text-primary-foreground shadow-glow disabled:opacity-40 disabled:cursor-not-allowed transition active:scale-[0.99]"
+              >
+                {submitAll.isPending
+                  ? "Submitting…"
+                  : dirtyCount > 0
+                  ? `Submit ${dirtyCount} prediction${dirtyCount === 1 ? "" : "s"}`
+                  : "All predictions saved"}
+              </button>
+            </div>
+          </div>
         </>
       )}
     </AppShell>
   );
 }
 
-function MatchCard({ match, matchdayId }: { match: MatchRow; matchdayId: number }) {
-  const qc = useQueryClient();
-  const [home, setHome] = useState<number>(match.prediction?.home_goals ?? 0);
-  const [away, setAway] = useState<number>(match.prediction?.away_goals ?? 0);
-  const [scorer, setScorer] = useState<"home" | "away" | "none">(
-    (match.prediction?.first_scorer as "home" | "away" | "none") ?? "home",
-  );
-  const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    setHome(match.prediction?.home_goals ?? 0);
-    setAway(match.prediction?.away_goals ?? 0);
-    setScorer((match.prediction?.first_scorer as "home" | "away" | "none") ?? "home");
-    setDirty(false);
-  }, [match.id, match.prediction?.home_goals, match.prediction?.away_goals, match.prediction?.first_scorer]);
-
-  const save = useMutation({
-    mutationFn: () =>
-      savePredictionFn({
-        data: { match_id: match.id, home_goals: home, away_goals: away, first_scorer: scorer },
-      }),
-    onSuccess: () => {
-      toast.success("Prediction saved.");
-      setDirty(false);
-      qc.invalidateQueries({ queryKey: ["matchday"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to save."),
-  });
-
-  const boost = useMutation({
-    mutationFn: () => setBoosterFn({ data: { matchday_id: matchdayId, match_id: match.id } }),
-    onSuccess: () => {
-      toast.success("Booster set.");
-      qc.invalidateQueries({ queryKey: ["matchday"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
-  });
-
+function MatchCard({
+  match,
+  draft,
+  onUpdate,
+  boostedMatchId,
+  onToggleBooster,
+  boosterPending,
+}: {
+  match: MatchRow;
+  draft: Draft | undefined;
+  onUpdate: (p: Partial<Draft>) => void;
+  boostedMatchId: number | null;
+  onToggleBooster: () => void;
+  boosterPending: boolean;
+}) {
   const kickoff = new Date(match.kickoff_at);
+  const isBoosted = boostedMatchId === match.id;
+  const boosterDisabledOther = boostedMatchId !== null && !isBoosted;
+  const hasResult = match.is_final && match.home_score !== null && match.away_score !== null;
+  const home = draft?.home ?? 0;
+  const away = draft?.away ?? 0;
+  const scorer = draft?.scorer ?? "home";
+
   const change = (side: "h" | "a", delta: number) => {
     if (match.locked) return;
-    setDirty(true);
-    if (side === "h") setHome((v) => Math.max(0, Math.min(20, v + delta)));
-    else setAway((v) => Math.max(0, Math.min(20, v + delta)));
+    if (side === "h") onUpdate({ home: Math.max(0, Math.min(20, home + delta)) });
+    else onUpdate({ away: Math.max(0, Math.min(20, away + delta)) });
   };
 
   return (
     <div
-      className={`rounded-2xl border bg-card shadow-card overflow-hidden ${
-        match.prediction?.booster ? "border-primary/60 shadow-glow" : "border-border"
+      className={`rounded-2xl border bg-card shadow-card overflow-hidden transition ${
+        match.locked
+          ? "opacity-70 border-border"
+          : isBoosted
+          ? "border-primary shadow-glow"
+          : "border-border"
       }`}
     >
-      <div className="px-4 py-2.5 flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">
+      {/* Header strip */}
+      <div className="px-4 py-2.5 flex items-center justify-between text-xs border-b border-border/50 bg-background/40">
+        <span className="text-muted-foreground tabular-nums">
           {kickoff.toLocaleString(undefined, {
             weekday: "short",
             month: "short",
@@ -116,106 +200,126 @@ function MatchCard({ match, matchdayId }: { match: MatchRow; matchdayId: number 
           })}
         </span>
         <div className="flex items-center gap-2">
-          {match.prediction?.points !== null && match.prediction?.points !== undefined && (
-            <span className="font-score text-amber-glow font-bold">
-              +{match.prediction.points} pts
+          {hasResult && match.prediction?.points !== null && match.prediction?.points !== undefined && (
+            <span className="flex items-center gap-1 font-score text-amber-glow font-bold">
+              <Trophy size={12} /> +{match.prediction.points} pts
             </span>
           )}
           {match.locked ? (
-            <span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
-              Locked
+            <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
+              <Lock size={12} /> Locked
             </span>
           ) : (
             <button
-              onClick={() => boost.mutate()}
-              disabled={boost.isPending}
-              className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md transition ${
-                match.prediction?.booster
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-muted-foreground hover:text-foreground"
+              onClick={onToggleBooster}
+              disabled={boosterPending || boosterDisabledOther}
+              className={`flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-md transition ${
+                isBoosted
+                  ? "bg-primary text-primary-foreground shadow-glow"
+                  : boosterDisabledOther
+                  ? "bg-secondary/40 text-muted-foreground/40 cursor-not-allowed"
+                  : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
               }`}
+              aria-pressed={isBoosted}
             >
-              {match.prediction?.booster ? "2× boosted" : "Apply 2×"}
+              <Zap size={12} fill={isBoosted ? "currentColor" : "none"} />
+              {isBoosted ? "2× active" : "2× boost"}
             </button>
           )}
         </div>
       </div>
 
-      <div className="px-4 pb-4">
+      {/* Score row — the hero */}
+      <div className="px-4 pt-5 pb-4">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <TeamSide name={match.home_team} actual={match.home_score} />
-          <div className="flex items-center gap-2">
-            <ScoreStepper value={home} onChange={(d) => change("h", d)} locked={match.locked} />
-            <span className="text-muted-foreground font-score text-xl">·</span>
-            <ScoreStepper value={away} onChange={(d) => change("a", d)} locked={match.locked} />
-          </div>
-          <TeamSide name={match.away_team} actual={match.away_score} alignRight />
+          <TeamSide name={match.home_team} />
+          <ScorePair
+            home={home}
+            away={away}
+            onChange={change}
+            locked={match.locked}
+          />
+          <TeamSide name={match.away_team} alignRight />
         </div>
 
-        <div className="mt-4">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1.5">
+        {/* Actual result */}
+        {hasResult && (
+          <div className="mt-3 flex items-center justify-center gap-2 text-xs">
+            <span className="text-muted-foreground">Final</span>
+            <span className="font-score font-bold text-amber-glow text-base tabular-nums">
+              {match.home_score} – {match.away_score}
+            </span>
+          </div>
+        )}
+
+        {/* First scorer */}
+        <div className="mt-5">
+          <div className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground mb-2">
             First team to score
           </div>
           <div className="grid grid-cols-3 gap-1.5">
-            {(["home", "none", "away"] as const).map((opt) => (
-              <button
-                key={opt}
-                disabled={match.locked}
-                onClick={() => {
-                  setScorer(opt);
-                  setDirty(true);
-                }}
-                className={`rounded-lg px-2 py-2 text-xs font-semibold border transition ${
-                  scorer === opt
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-border text-muted-foreground hover:text-foreground"
-                } ${match.locked ? "opacity-60 cursor-not-allowed" : ""}`}
-              >
-                {opt === "home"
-                  ? match.home_team
+            {(["home", "none", "away"] as const).map((opt) => {
+              const active = scorer === opt;
+              const label =
+                opt === "home"
+                  ? `${teamFlag(match.home_team)} ${match.home_team}`
                   : opt === "away"
-                  ? match.away_team
-                  : "No goals / 0-0"}
-              </button>
-            ))}
+                  ? `${match.away_team} ${teamFlag(match.away_team)}`
+                  : "0 – 0";
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  disabled={match.locked}
+                  onClick={() => onUpdate({ scorer: opt })}
+                  className={`rounded-lg px-2 py-2 text-xs font-semibold border transition truncate ${
+                    active
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background border-border text-muted-foreground hover:text-foreground hover:border-primary/50"
+                  } ${match.locked ? "opacity-60 cursor-not-allowed" : ""}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
-
-        {!match.locked && (
-          <button
-            onClick={() => save.mutate()}
-            disabled={save.isPending || !dirty}
-            className="mt-4 w-full rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold shadow-glow disabled:opacity-40"
-          >
-            {save.isPending
-              ? "Saving…"
-              : match.prediction
-              ? dirty
-                ? "Update prediction"
-                : "Saved"
-              : "Lock in prediction"}
-          </button>
-        )}
       </div>
     </div>
   );
 }
 
-function TeamSide({
-  name,
-  actual,
-  alignRight,
+function TeamSide({ name, alignRight }: { name: string; alignRight?: boolean }) {
+  return (
+    <div
+      className={`min-w-0 flex items-center gap-2 ${
+        alignRight ? "justify-end flex-row-reverse" : ""
+      }`}
+    >
+      <span className="text-2xl md:text-3xl leading-none shrink-0">{teamFlag(name)}</span>
+      <div className={`font-semibold text-sm md:text-base truncate ${alignRight ? "text-right" : ""}`}>
+        {name}
+      </div>
+    </div>
+  );
+}
+
+function ScorePair({
+  home,
+  away,
+  onChange,
+  locked,
 }: {
-  name: string;
-  actual: number | null;
-  alignRight?: boolean;
+  home: number;
+  away: number;
+  onChange: (side: "h" | "a", delta: number) => void;
+  locked: boolean;
 }) {
   return (
-    <div className={`min-w-0 ${alignRight ? "text-right" : ""}`}>
-      <div className="font-semibold text-sm md:text-base truncate">{name}</div>
-      {actual !== null && (
-        <div className="font-score text-amber-glow text-xs mt-0.5">Final: {actual}</div>
-      )}
+    <div className="flex items-center gap-2 md:gap-3">
+      <ScoreStepper value={home} onChange={(d) => onChange("h", d)} locked={locked} />
+      <span className="font-score text-3xl text-muted-foreground/60 leading-none">:</span>
+      <ScoreStepper value={away} onChange={(d) => onChange("a", d)} locked={locked} />
     </div>
   );
 }
@@ -230,24 +334,28 @@ function ScoreStepper({
   locked: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center select-none">
       <button
         type="button"
         onClick={() => onChange(1)}
         disabled={locked}
-        className="size-6 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-30"
+        className="size-6 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-30 transition"
         aria-label="Increase"
       >
         ▲
       </button>
-      <div className="font-score text-3xl md:text-4xl font-bold w-10 text-center tabular-nums">
+      <div
+        className={`font-score font-bold w-14 text-center tabular-nums leading-none py-1 text-4xl md:text-5xl ${
+          locked ? "text-muted-foreground" : "text-foreground"
+        }`}
+      >
         {value}
       </div>
       <button
         type="button"
         onClick={() => onChange(-1)}
         disabled={locked || value === 0}
-        className="size-6 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-30"
+        className="size-6 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-30 transition"
         aria-label="Decrease"
       >
         ▼
@@ -266,14 +374,14 @@ function ScoringLegend() {
     ["2×", "Booster multiplier"],
   ];
   return (
-    <div className="mt-8 rounded-2xl border border-border bg-card/60 p-4">
-      <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">
+    <div className="mt-6 rounded-2xl border border-border bg-card/60 p-4">
+      <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-3">
         Scoring
       </div>
       <div className="grid grid-cols-2 gap-2 text-sm">
         {items.map(([pts, label]) => (
           <div key={label} className="flex items-center gap-2">
-            <span className="font-score font-bold text-primary w-9">{pts}</span>
+            <span className="font-score font-bold text-primary w-9 tabular-nums">{pts}</span>
             <span className="text-muted-foreground">{label}</span>
           </div>
         ))}
@@ -286,7 +394,7 @@ function SkeletonList() {
   return (
     <div className="space-y-3">
       {[1, 2, 3, 4, 5, 6].map((i) => (
-        <div key={i} className="rounded-2xl border border-border bg-card h-32 animate-pulse" />
+        <div key={i} className="rounded-2xl border border-border bg-card h-40 animate-pulse" />
       ))}
     </div>
   );
