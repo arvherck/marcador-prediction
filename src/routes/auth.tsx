@@ -117,6 +117,22 @@ function AuthPage() {
               ? "New here? Create an account →"
               : "Already on Marcador? Sign in →"}
           </button>
+
+          <div className="relative my-5 text-center text-xs uppercase tracking-widest text-muted-foreground">
+            <span className="bg-background px-3 relative z-10">o</span>
+            <span className="absolute inset-x-0 top-1/2 h-px bg-border -z-0" />
+          </div>
+
+          <button
+            type="button"
+            onClick={continueAsGuest}
+            className="w-full rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-secondary transition"
+          >
+            Continuar como invitado
+          </button>
+          <p className="mt-2 text-[11px] text-center text-muted-foreground/70">
+            Solo lectura. No podrás predecir ni aparecer en la tabla.
+          </p>
         </div>
       </main>
     </div>
