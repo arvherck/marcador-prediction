@@ -41,9 +41,10 @@ function PlayPage() {
             </p>
           </div>
           <div className="space-y-3">
-            {q.data.matches.map((m) => (
-              <MatchCard key={m.id} match={m} matchdayId={q.data.matchday.id} />
-            ))}
+            {q.data.matches.map((m) => {
+              const mdId = q.data!.matchday.id;
+              return <MatchCard key={m.id} match={m} matchdayId={mdId} />;
+            })}
           </div>
           <ScoringLegend />
         </>
