@@ -72,6 +72,10 @@ function MePage() {
           <span className="font-score font-bold text-3xl text-amber-glow">{total}</span>
           <span className="text-xs text-muted-foreground">pts</span>
         </div>
+        <StreakRow
+          current={me.profile?.current_streak ?? 0}
+          longest={me.profile?.longest_streak ?? 0}
+        />
       </header>
 
       <Section title="Points per matchday">
@@ -95,6 +99,30 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="font-display font-semibold text-lg mb-3">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function StreakRow({ current, longest }: { current: number; longest: number }) {
+  if (current === 0 && longest === 0) {
+    return (
+      <div className="mt-3 text-sm text-muted-foreground">No streak yet</div>
+    );
+  }
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      <div className="inline-flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-1.5 text-sm">
+        <span aria-hidden>🔥</span>
+        <span className="text-muted-foreground">Current streak:</span>
+        <span className="font-bold text-amber-glow tabular-nums">{current}</span>
+        <span className="text-muted-foreground">matchday{current === 1 ? "" : "s"}</span>
+      </div>
+      <div className="inline-flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-1.5 text-sm">
+        <span aria-hidden>⭐</span>
+        <span className="text-muted-foreground">Longest streak:</span>
+        <span className="font-bold text-amber-glow tabular-nums">{longest}</span>
+        <span className="text-muted-foreground">matchday{longest === 1 ? "" : "s"}</span>
+      </div>
+    </div>
   );
 }
 

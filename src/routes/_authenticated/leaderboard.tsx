@@ -48,6 +48,7 @@ type OverallRow = {
   favourite_team: string;
   total_points: number;
   last_md_points: number;
+  current_streak: number;
 };
 
 type MatchdayRow = {
@@ -124,6 +125,7 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
           country={row.country}
           favourite={row.favourite_team}
           primary={row.total_points}
+          streak={row.current_streak}
           secondary={
             row.last_md_points > 0 ? `+${row.last_md_points} last MD` : "—"
           }
@@ -241,6 +243,7 @@ function Row({
   favourite,
   primary,
   secondary,
+  streak,
 }: {
   rank: number;
   isMe: boolean;
@@ -249,6 +252,7 @@ function Row({
   favourite: string;
   primary: number;
   secondary?: string;
+  streak?: number;
 }) {
   const isTop3 = rank <= 3;
   return (
@@ -279,6 +283,14 @@ function Row({
             {isMe && (
               <span className="text-[10px] uppercase tracking-wider text-primary font-bold">
                 You
+              </span>
+            )}
+            {streak !== undefined && streak >= 3 && (
+              <span
+                className="text-[11px] font-bold text-amber-glow tabular-nums"
+                title={`${streak} matchday streak`}
+              >
+                🔥 {streak}
               </span>
             )}
           </div>

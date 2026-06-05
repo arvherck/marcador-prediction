@@ -10,6 +10,8 @@ export type CurrentUser = {
     display_name: string;
     country: string;
     favourite_team: string;
+    current_streak: number;
+    longest_streak: number;
   } | null;
 };
 
@@ -20,7 +22,7 @@ export const meFn = createServerFn({ method: "GET" })
     const [{ data: profile }, { data: roles }] = await Promise.all([
       supabase
         .from("profiles")
-        .select("display_name, country, favourite_team")
+        .select("display_name, country, favourite_team, current_streak, longest_streak")
         .eq("user_id", userId)
         .maybeSingle(),
       supabase.from("user_roles").select("role").eq("user_id", userId),
@@ -34,6 +36,8 @@ export const meFn = createServerFn({ method: "GET" })
             display_name: profile.display_name,
             country: profile.country,
             favourite_team: profile.favourite_team,
+            current_streak: (profile as { current_streak?: number }).current_streak ?? 0,
+            longest_streak: (profile as { longest_streak?: number }).longest_streak ?? 0,
           }
         : null,
     };
