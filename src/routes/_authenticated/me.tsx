@@ -72,6 +72,10 @@ function MePage() {
           <span className="font-score font-bold text-3xl text-amber-glow">{total}</span>
           <span className="text-xs text-muted-foreground">pts</span>
         </div>
+        <StreakRow
+          current={me.profile?.current_streak ?? 0}
+          longest={me.profile?.longest_streak ?? 0}
+        />
       </header>
 
       <Section title="Points per matchday">
