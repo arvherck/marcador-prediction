@@ -4,9 +4,12 @@ import { pool } from "./db";
 
 export type SessionData = { userId?: string };
 
-const SESSION_PASSWORD =
-  process.env.SESSION_SECRET ??
-  "marcador-dev-session-secret-please-set-SESSION_SECRET-in-prod-32chars";
+const SESSION_PASSWORD = process.env.SESSION_SECRET;
+if (!SESSION_PASSWORD || SESSION_PASSWORD.length < 32) {
+  throw new Error(
+    "SESSION_SECRET environment variable is required and must be at least 32 characters.",
+  );
+}
 
 export function getSession() {
   return useSession<SessionData>({
