@@ -14,16 +14,320 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      league_members: {
+        Row: {
+          joined_at: string
+          league_id: string
+          user_id: string
+        }
+        Insert: {
+          joined_at?: string
+          league_id: string
+          user_id: string
+        }
+        Update: {
+          joined_at?: string
+          league_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "league_members_league_id_fkey"
+            columns: ["league_id"]
+            isOneToOne: false
+            referencedRelation: "leagues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leagues: {
+        Row: {
+          created_at: string
+          id: string
+          invite_code: string
+          name: string
+          owner_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          invite_code: string
+          name: string
+          owner_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          invite_code?: string
+          name?: string
+          owner_id?: string
+        }
+        Relationships: []
+      }
+      matchday_scores: {
+        Row: {
+          created_at: string
+          id: string
+          matchday_id: number
+          rank: number | null
+          total_points: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          matchday_id: number
+          rank?: number | null
+          total_points?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          matchday_id?: number
+          rank?: number | null
+          total_points?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matchday_scores_matchday_id_fkey"
+            columns: ["matchday_id"]
+            isOneToOne: false
+            referencedRelation: "matchdays"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matchdays: {
+        Row: {
+          created_at: string
+          id: number
+          is_scored: boolean
+          name: string
+          starts_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          is_scored?: boolean
+          name: string
+          starts_at: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          is_scored?: boolean
+          name?: string
+          starts_at?: string
+        }
+        Relationships: []
+      }
+      matches: {
+        Row: {
+          away_score: number | null
+          away_team: string
+          first_scorer: string | null
+          home_score: number | null
+          home_team: string
+          id: number
+          is_final: boolean
+          is_selected: boolean
+          kickoff_at: string
+          matchday_id: number
+          phase: string | null
+        }
+        Insert: {
+          away_score?: number | null
+          away_team: string
+          first_scorer?: string | null
+          home_score?: number | null
+          home_team: string
+          id?: number
+          is_final?: boolean
+          is_selected?: boolean
+          kickoff_at: string
+          matchday_id: number
+          phase?: string | null
+        }
+        Update: {
+          away_score?: number | null
+          away_team?: string
+          first_scorer?: string | null
+          home_score?: number | null
+          home_team?: string
+          id?: number
+          is_final?: boolean
+          is_selected?: boolean
+          kickoff_at?: string
+          matchday_id?: number
+          phase?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matches_matchday_id_fkey"
+            columns: ["matchday_id"]
+            isOneToOne: false
+            referencedRelation: "matchdays"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      predictions: {
+        Row: {
+          away_goals: number
+          booster: boolean
+          created_at: string
+          first_scorer: string
+          home_goals: number
+          id: number
+          match_id: number
+          points: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          away_goals: number
+          booster?: boolean
+          created_at?: string
+          first_scorer: string
+          home_goals: number
+          id?: number
+          match_id: number
+          points?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          away_goals?: number
+          booster?: boolean
+          created_at?: string
+          first_scorer?: string
+          home_goals?: number
+          id?: number
+          match_id?: number
+          points?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "predictions_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          country: string
+          created_at: string
+          display_name: string
+          favourite_team: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          country: string
+          created_at?: string
+          display_name: string
+          favourite_team: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          country?: string
+          created_at?: string
+          display_name?: string
+          favourite_team?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      global_leaderboard: {
+        Args: { _league_id?: string }
+        Returns: {
+          country: string
+          display_name: string
+          favourite_team: string
+          id: string
+          last_md_points: number
+          scored_predictions: number
+          total_points: number
+        }[]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_league_member: {
+        Args: { _league_id: string; _user_id: string }
+        Returns: boolean
+      }
+      matchday_leaderboard: {
+        Args: { _league_id?: string; _matchday_id?: number }
+        Returns: {
+          country: string
+          display_name: string
+          favourite_team: string
+          id: string
+          matchday_id: number
+          matchday_name: string
+          rank: number
+          total_points: number
+        }[]
+      }
+      my_leagues: {
+        Args: never
+        Returns: {
+          id: string
+          invite_code: string
+          member_count: number
+          my_points: number
+          my_rank: number
+          name: string
+          owner_id: string
+        }[]
+      }
+      score_matchday: { Args: { _matchday_id: number }; Returns: number }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +454,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const
