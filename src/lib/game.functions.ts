@@ -206,10 +206,10 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data: rows, error } = await supabase.rpc("matchday_leaderboard", {
-      _matchday_id: data?.matchday_id ?? null,
-      _league_id: data?.league_id ?? null,
-    });
+    const args: { _matchday_id?: number; _league_id?: string } = {};
+    if (data?.matchday_id != null) args._matchday_id = data.matchday_id;
+    if (data?.league_id) args._league_id = data.league_id;
+    const { data: rows, error } = await supabase.rpc("matchday_leaderboard", args);
     if (error) throw new Error(error.message);
     const list = (rows ?? []) as Array<{
       matchday_id: number;
