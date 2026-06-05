@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_cache: {
+        Row: {
+          cache_key: string
+          data: Json
+          expires_at: string
+          fetched_at: string
+          id: string
+        }
+        Insert: {
+          cache_key: string
+          data: Json
+          expires_at: string
+          fetched_at?: string
+          id?: string
+        }
+        Update: {
+          cache_key?: string
+          data?: Json
+          expires_at?: string
+          fetched_at?: string
+          id?: string
+        }
+        Relationships: []
+      }
+      api_usage: {
+        Row: {
+          calls_made: number
+          date: string
+          updated_at: string
+        }
+        Insert: {
+          calls_made?: number
+          date: string
+          updated_at?: string
+        }
+        Update: {
+          calls_made?: number
+          date?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       league_members: {
         Row: {
           joined_at: string
