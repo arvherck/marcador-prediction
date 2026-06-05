@@ -250,6 +250,51 @@ export type Database = {
         }
         Relationships: []
       }
+      tournament_predictions: {
+        Row: {
+          created_at: string
+          id: string
+          points_awarded: number | null
+          predicted_winner: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          points_awarded?: number | null
+          predicted_winner: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          points_awarded?: number | null
+          predicted_winner?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      tournament_settings: {
+        Row: {
+          actual_winner: string | null
+          id: number
+          predictions_locked: boolean
+          updated_at: string
+        }
+        Insert: {
+          actual_winner?: string | null
+          id?: number
+          predictions_locked?: boolean
+          updated_at?: string
+        }
+        Update: {
+          actual_winner?: string | null
+          id?: number
+          predictions_locked?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
