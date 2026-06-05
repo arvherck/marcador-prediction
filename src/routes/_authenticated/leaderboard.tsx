@@ -13,7 +13,9 @@ import {
 } from "@/components/ui/select";
 import {
   getLeaderboard,
+  getLeaderboardPublic,
   getMatchdayLeaderboard,
+  getMatchdayLeaderboardPublic,
   getMyLeagues,
 } from "@/lib/game.functions";
 import { useGuest } from "@/lib/guest";
@@ -83,10 +85,10 @@ function LeaderboardPage() {
         </TabsList>
 
         <TabsContent value="overall">
-          <OverallTab meId={me.id} />
+          <OverallTab meId={me.id} isGuest={guest} />
         </TabsContent>
         <TabsContent value="matchday">
-          <MatchdayTab meId={me.id} />
+          <MatchdayTab meId={me.id} isGuest={guest} />
         </TabsContent>
         {!guest && (
           <TabsContent value="leagues">
@@ -98,11 +100,13 @@ function LeaderboardPage() {
   );
 }
 
-function OverallTab({ meId, leagueId }: { meId: string; leagueId?: string }) {
+function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boolean; leagueId?: string }) {
   const q = useQuery({
-    queryKey: ["leaderboard", "overall", leagueId ?? "global"],
+    queryKey: ["leaderboard", "overall", leagueId ?? "global", isGuest ? "guest" : "auth"],
     queryFn: () =>
-      getLeaderboard({ data: leagueId ? { league_id: leagueId } : {} }),
+      isGuest
+        ? getLeaderboardPublic({ data: leagueId ? { league_id: leagueId } : {} })
+        : getLeaderboard({ data: leagueId ? { league_id: leagueId } : {} }),
   });
 
   if (q.isLoading) return <SkeletonBoard />;
@@ -129,10 +133,13 @@ function OverallTab({ meId, leagueId }: { meId: string; leagueId?: string }) {
   );
 }
 
-function MatchdayTab({ meId }: { meId: string }) {
+function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
   const q = useQuery({
-    queryKey: ["leaderboard", "matchday"],
-    queryFn: () => getMatchdayLeaderboard({ data: {} }),
+    queryKey: ["leaderboard", "matchday", isGuest ? "guest" : "auth"],
+    queryFn: () =>
+      isGuest
+        ? getMatchdayLeaderboardPublic({ data: {} })
+        : getMatchdayLeaderboard({ data: {} }),
   });
 
   if (q.isLoading) return <SkeletonBoard />;

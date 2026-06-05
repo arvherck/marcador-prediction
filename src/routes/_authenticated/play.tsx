@@ -11,6 +11,7 @@ import { useGuestGate } from "@/components/GuestGate";
 import { useGuest } from "@/lib/guest";
 import {
   getCurrentMatchday,
+  getCurrentMatchdayPublic,
   savePredictionFn,
   setBoosterFn,
   type MatchRow,
@@ -45,7 +46,10 @@ function PlayPage() {
   const { me } = Route.useRouteContext();
   const guest = useGuest();
   const guestGate = useGuestGate();
-  const q = useQuery({ queryKey: ["matchday", guest ? "guest" : me.id], queryFn: () => getCurrentMatchday() });
+  const q = useQuery({
+    queryKey: ["matchday", guest ? "guest" : me.id],
+    queryFn: () => (guest ? getCurrentMatchdayPublic() : getCurrentMatchday()),
+  });
   const qc = useQueryClient();
 
   // Local draft state for all 6 cards
