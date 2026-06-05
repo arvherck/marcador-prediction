@@ -1,19 +1,7 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { meFn } from "@/lib/auth.functions";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
-  beforeLoad: async () => {
-    try {
-      const me = await meFn();
-      if (me) {
-        if (!me.profile) throw redirect({ to: "/onboarding" });
-        throw redirect({ to: "/play" });
-      }
-    } catch (e) {
-      // re-throw redirects
-      if (e && typeof e === "object" && "isRedirect" in e) throw e;
-    }
-  },
+
   head: () => {
     const url = "https://marcador-prediction.lovable.app/";
     const image = "https://marcador-prediction.lovable.app/og-marcador.jpg";

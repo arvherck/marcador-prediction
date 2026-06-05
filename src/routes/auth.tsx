@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { signInFn, signUpFn } from "@/lib/auth.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { setGuest, clearGuest } from "@/lib/guest";
 
 export const Route = createFileRoute("/auth")({
@@ -32,12 +32,27 @@ function AuthPage() {
   const navigate = useNavigate();
   const router = useRouter();
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) navigate({ to: "/play", replace: true });
+    });
+  }, [navigate]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      if (mode === "signup") await signUpFn({ data: { email, password } });
-      else await signInFn({ data: { email, password } });
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/play` },
+        });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
       clearGuest();
       toast.success("Welcome to Marcador.");
       await router.invalidate();
@@ -48,6 +63,7 @@ function AuthPage() {
       setLoading(false);
     }
   };
+
 
   const continueAsGuest = () => {
     setGuest(true);
