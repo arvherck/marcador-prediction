@@ -156,16 +156,28 @@ function PlayPage() {
       {q.data && (
         <>
           {!guest && <TournamentBanner />}
-          <header className="mb-5">
-            <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
-              {q.data.matchday.name}
+          <header className="mb-5 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
+                {q.data.matchday.name}
+              </div>
+              <h1 className="font-display font-bold text-3xl md:text-4xl mt-1 leading-tight">
+                {q.data.matchday.name}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-2">
+                Predictions lock at kickoff. Apply one 2× booster per matchday.
+              </p>
             </div>
-            <h1 className="font-display font-bold text-3xl md:text-4xl mt-1 leading-tight">
-              {q.data.matchday.name}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-2">
-              Predictions lock at kickoff. Apply one 2× booster per matchday.
-            </p>
+            {(me.profile?.current_streak ?? 0) >= 2 && (
+              <div
+                className="shrink-0 inline-flex items-center gap-1 rounded-xl bg-card border border-border px-2.5 py-1.5 text-amber-glow font-bold tabular-nums"
+                title={`${me.profile?.current_streak} matchday streak`}
+                aria-label={`${me.profile?.current_streak} matchday streak`}
+              >
+                <span aria-hidden>🔥</span>
+                <span>{me.profile?.current_streak}</span>
+              </div>
+            )}
           </header>
 
           <div className="mb-5">
