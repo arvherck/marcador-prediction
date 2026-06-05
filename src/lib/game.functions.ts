@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type MatchRow = {
   id: number;
@@ -21,69 +22,66 @@ export type MatchRow = {
   locked: boolean;
 };
 
-export const getCurrentMatchday = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./db");
-  const { loadCurrentUser } = await import("./auth.server");
-  const me = await loadCurrentUser();
-
-  const md = await pool.query(
-    `SELECT * FROM matchdays
-     ORDER BY (is_scored) ASC, starts_at ASC
-     LIMIT 1`,
-  );
-  if (!md.rows.length) return null;
-  const matchday = md.rows[0];
-
-  const matches = await pool.query(
-    `SELECT m.*, p.home_goals AS p_home, p.away_goals AS p_away,
-            p.first_scorer AS p_first, p.booster AS p_booster, p.points AS p_points
-     FROM matches m
-     LEFT JOIN predictions p
-       ON p.match_id = m.id AND p.user_id = $1
-     WHERE m.matchday_id = $2
-     ORDER BY m.kickoff_at ASC, m.id ASC`,
-    [me?.id ?? "00000000-0000-0000-0000-000000000000", matchday.id],
-  );
-
-  const now = Date.now();
-  const rows: MatchRow[] = matches.rows.map((r) => {
-    const row = r as {
-      id: number; matchday_id: number; home_team: string; away_team: string;
-      kickoff_at: string; home_score: number | null; away_score: number | null;
-      first_scorer: string | null; is_final: boolean;
-      p_home: number | null; p_away: number | null; p_first: string | null;
-      p_booster: boolean | null; p_points: number | null;
-    };
-    return {
-      id: row.id,
-      matchday_id: row.matchday_id,
-      home_team: row.home_team,
-      away_team: row.away_team,
-      kickoff_at: row.kickoff_at,
-      home_score: row.home_score,
-      away_score: row.away_score,
-      first_scorer: row.first_scorer,
-      is_final: row.is_final,
-      locked: new Date(row.kickoff_at).getTime() <= now,
-      prediction:
-        row.p_home !== null && row.p_home !== undefined
-          ? {
-              home_goals: row.p_home,
-              away_goals: row.p_away ?? 0,
-              first_scorer: row.p_first ?? "none",
-              booster: row.p_booster ?? false,
-              points: row.p_points,
-            }
-          : null,
-    };
-  });
-
-  return { matchday, matches: rows };
-});
-
 const scorerEnum = z.enum(["home", "away", "none"]);
 
+export const getCurrentMatchday = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: mds, error: mdErr } = await supabase
+      .from("matchdays")
+      .select("*")
+      .order("is_scored", { ascending: true })
+      .order("starts_at", { ascending: true })
+      .limit(1);
+    if (mdErr) throw new Error(mdErr.message);
+    const matchday = mds?.[0];
+    if (!matchday) return null;
+
+    const [{ data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
+      supabase
+        .from("matches")
+        .select("*")
+        .eq("matchday_id", matchday.id)
+        .order("kickoff_at", { ascending: true })
+        .order("id", { ascending: true }),
+      supabase.from("predictions").select("*").eq("user_id", userId),
+    ]);
+    if (mErr) throw new Error(mErr.message);
+    if (pErr) throw new Error(pErr.message);
+
+    const predByMatch = new Map<number, (typeof preds)[number]>();
+    for (const p of preds ?? []) predByMatch.set(p.match_id, p);
+    const now = Date.now();
+    const rows: MatchRow[] = (matches ?? []).map((m) => {
+      const p = predByMatch.get(m.id);
+      return {
+        id: m.id,
+        matchday_id: m.matchday_id,
+        home_team: m.home_team,
+        away_team: m.away_team,
+        kickoff_at: m.kickoff_at,
+        home_score: m.home_score,
+        away_score: m.away_score,
+        first_scorer: m.first_scorer,
+        is_final: m.is_final,
+        locked: new Date(m.kickoff_at).getTime() <= now,
+        prediction: p
+          ? {
+              home_goals: p.home_goals,
+              away_goals: p.away_goals,
+              first_scorer: p.first_scorer,
+              booster: p.booster,
+              points: p.points,
+            }
+          : null,
+      };
+    });
+    return { matchday, matches: rows };
+  });
+
 export const savePredictionFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(
     z.object({
       match_id: z.number().int(),
@@ -92,105 +90,99 @@ export const savePredictionFn = createServerFn({ method: "POST" })
       first_scorer: scorerEnum,
     }),
   )
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    const match = await pool.query(
-      "SELECT kickoff_at FROM matches WHERE id=$1",
-      [data.match_id],
-    );
-    if (!match.rows.length) throw new Error("Match not found.");
-    if (new Date(match.rows[0].kickoff_at).getTime() <= Date.now())
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: match, error: mErr } = await supabase
+      .from("matches")
+      .select("kickoff_at")
+      .eq("id", data.match_id)
+      .maybeSingle();
+    if (mErr) throw new Error(mErr.message);
+    if (!match) throw new Error("Match not found.");
+    if (new Date(match.kickoff_at).getTime() <= Date.now())
       throw new Error("Predictions are locked for this match.");
-    await pool.query(
-      `INSERT INTO predictions (user_id, match_id, home_goals, away_goals, first_scorer)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (user_id, match_id) DO UPDATE
-       SET home_goals=EXCLUDED.home_goals,
-           away_goals=EXCLUDED.away_goals,
-           first_scorer=EXCLUDED.first_scorer,
-           updated_at=now()`,
-      [me.id, data.match_id, data.home_goals, data.away_goals, data.first_scorer],
+    const { error } = await supabase.from("predictions").upsert(
+      {
+        user_id: userId,
+        match_id: data.match_id,
+        home_goals: data.home_goals,
+        away_goals: data.away_goals,
+        first_scorer: data.first_scorer,
+      },
+      { onConflict: "user_id,match_id" },
     );
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const setBoosterFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ matchday_id: z.number().int(), match_id: z.number().int() }))
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    // verify the match belongs to matchday and not locked
-    const m = await pool.query(
-      "SELECT kickoff_at FROM matches WHERE id=$1 AND matchday_id=$2",
-      [data.match_id, data.matchday_id],
-    );
-    if (!m.rows.length) throw new Error("Match not found.");
-    if (new Date(m.rows[0].kickoff_at).getTime() <= Date.now())
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: match, error: mErr } = await supabase
+      .from("matches")
+      .select("kickoff_at")
+      .eq("id", data.match_id)
+      .eq("matchday_id", data.matchday_id)
+      .maybeSingle();
+    if (mErr) throw new Error(mErr.message);
+    if (!match) throw new Error("Match not found.");
+    if (new Date(match.kickoff_at).getTime() <= Date.now())
       throw new Error("Too late to change booster — match has started.");
-    // ensure prediction exists
-    await pool.query(
-      `INSERT INTO predictions (user_id, match_id, home_goals, away_goals, first_scorer, booster)
-       VALUES ($1,$2,0,0,'none',true)
-       ON CONFLICT (user_id, match_id) DO NOTHING`,
-      [me.id, data.match_id],
-    );
-    // clear booster on other matches in this matchday, set on this one
-    await pool.query(
-      `UPDATE predictions p
-       SET booster=false
-       FROM matches m
-       WHERE p.match_id = m.id AND m.matchday_id=$1 AND p.user_id=$2`,
-      [data.matchday_id, me.id],
-    );
-    await pool.query(
-      `UPDATE predictions SET booster=true WHERE user_id=$1 AND match_id=$2`,
-      [me.id, data.match_id],
-    );
+
+    // Ensure prediction exists (with booster=true here)
+    const { data: existing } = await supabase
+      .from("predictions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("match_id", data.match_id)
+      .maybeSingle();
+    if (!existing) {
+      const { error } = await supabase.from("predictions").insert({
+        user_id: userId,
+        match_id: data.match_id,
+        home_goals: 0,
+        away_goals: 0,
+        first_scorer: "none",
+        booster: true,
+      });
+      if (error) throw new Error(error.message);
+    }
+
+    // Clear booster on other matches in this matchday for this user
+    const { data: mdMatches } = await supabase
+      .from("matches")
+      .select("id")
+      .eq("matchday_id", data.matchday_id);
+    const otherIds = (mdMatches ?? []).map((m) => m.id).filter((id) => id !== data.match_id);
+    if (otherIds.length) {
+      const { error: clrErr } = await supabase
+        .from("predictions")
+        .update({ booster: false })
+        .eq("user_id", userId)
+        .in("match_id", otherIds);
+      if (clrErr) throw new Error(clrErr.message);
+    }
+    const { error: setErr } = await supabase
+      .from("predictions")
+      .update({ booster: true })
+      .eq("user_id", userId)
+      .eq("match_id", data.match_id);
+    if (setErr) throw new Error(setErr.message);
     return { ok: true };
   });
 
 export const getLeaderboard = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ league_id: z.string().uuid().optional() }).optional())
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const leagueId = data?.league_id;
-    const params: unknown[] = [];
-    let scope = "";
-    if (leagueId) {
-      params.push(leagueId);
-      scope = `JOIN league_members lm ON lm.user_id = u.id AND lm.league_id = $1`;
-    }
-    // Most recent scored matchday (for "last MD" delta column)
-    const lastMd = await pool.query(
-      "SELECT id FROM matchdays WHERE is_scored=true ORDER BY starts_at DESC LIMIT 1",
-    );
-    const lastMdId = lastMd.rows[0]?.id ?? null;
-    const lastMdParamIdx = params.length + 1;
-    if (lastMdId !== null) params.push(lastMdId);
-    const lastMdJoin =
-      lastMdId !== null
-        ? `LEFT JOIN matchday_scores ms ON ms.user_id = u.id AND ms.matchday_id = $${lastMdParamIdx}`
-        : "";
-    const lastMdSelect = lastMdId !== null ? "COALESCE(ms.total_points,0)::int" : "0";
-    const { rows } = await pool.query(
-      `SELECT u.id, p.display_name, p.country, p.favourite_team,
-              COALESCE(SUM(pr.points),0)::int AS total_points,
-              COUNT(pr.id) FILTER (WHERE pr.points IS NOT NULL)::int AS scored_predictions,
-              ${lastMdSelect} AS last_md_points
-       FROM app_users u
-       JOIN profiles p ON p.user_id = u.id
-       ${scope}
-       ${lastMdJoin}
-       LEFT JOIN predictions pr ON pr.user_id = u.id
-       GROUP BY u.id, p.display_name, p.country, p.favourite_team${lastMdId !== null ? ", ms.total_points" : ""}
-       ORDER BY total_points DESC, p.display_name ASC
-       LIMIT 200`,
-      params,
-    );
-    return rows as Array<{
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: rows, error } = await supabase.rpc("global_leaderboard", {
+      _league_id: data?.league_id ?? null,
+    });
+    if (error) throw new Error(error.message);
+    return (rows ?? []) as Array<{
       id: string;
       display_name: string;
       country: string;
@@ -202,6 +194,7 @@ export const getLeaderboard = createServerFn({ method: "GET" })
   });
 
 export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(
     z
       .object({
@@ -210,54 +203,37 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
       })
       .optional(),
   )
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    let matchday: { id: number; name: string } | null = null;
-    if (data?.matchday_id) {
-      const r = await pool.query("SELECT id, name FROM matchdays WHERE id=$1", [
-        data.matchday_id,
-      ]);
-      matchday = r.rows[0] ?? null;
-    } else {
-      const r = await pool.query(
-        "SELECT id, name FROM matchdays WHERE is_scored=true ORDER BY starts_at DESC LIMIT 1",
-      );
-      matchday = r.rows[0] ?? null;
-    }
-    if (!matchday) return { matchday: null, rows: [] as Array<never> };
-
-    const params: unknown[] = [matchday.id];
-    let scope = "";
-    if (data?.league_id) {
-      params.push(data.league_id);
-      scope = `JOIN league_members lm ON lm.user_id = ms.user_id AND lm.league_id = $2`;
-    }
-    const { rows } = await pool.query(
-      `SELECT ms.user_id AS id, p.display_name, p.country, p.favourite_team,
-              ms.total_points::int AS total_points, ms.rank
-       FROM matchday_scores ms
-       JOIN profiles p ON p.user_id = ms.user_id
-       ${scope}
-       WHERE ms.matchday_id = $1
-       ORDER BY ms.total_points DESC, p.display_name ASC
-       LIMIT 200`,
-      params,
-    );
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: rows, error } = await supabase.rpc("matchday_leaderboard", {
+      _matchday_id: data?.matchday_id ?? null,
+      _league_id: data?.league_id ?? null,
+    });
+    if (error) throw new Error(error.message);
+    const list = (rows ?? []) as Array<{
+      matchday_id: number;
+      matchday_name: string;
+      id: string;
+      display_name: string;
+      country: string;
+      favourite_team: string;
+      total_points: number;
+      rank: number | null;
+    }>;
+    if (!list.length) return { matchday: null, rows: [] as Array<never> };
     return {
-      matchday,
-      rows: rows as Array<{
-        id: string;
-        display_name: string;
-        country: string;
-        favourite_team: string;
-        total_points: number;
-        rank: number | null;
-      }>,
+      matchday: { id: list[0].matchday_id, name: list[0].matchday_name },
+      rows: list.map(({ id, display_name, country, favourite_team, total_points, rank }) => ({
+        id,
+        display_name,
+        country,
+        favourite_team,
+        total_points,
+        rank,
+      })),
     };
   });
 
-
-// Leagues
 function genCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "";
@@ -268,36 +244,43 @@ function genCode() {
 const MAX_OWNED_LEAGUES = 3;
 
 export const createLeagueFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ name: z.string().trim().min(2).max(50) }))
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    const owned = await pool.query(
-      "SELECT COUNT(*)::int AS c FROM leagues WHERE owner_id=$1",
-      [me.id],
-    );
-    if (owned.rows[0].c >= MAX_OWNED_LEAGUES) {
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { count, error: cErr } = await supabase
+      .from("leagues")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", userId);
+    if (cErr) throw new Error(cErr.message);
+    if ((count ?? 0) >= MAX_OWNED_LEAGUES)
       throw new Error("You've reached the 3-league creation limit.");
-    }
+
     let code = genCode();
     for (let i = 0; i < 5; i++) {
-      const c = await pool.query("SELECT 1 FROM leagues WHERE invite_code=$1", [code]);
-      if (!c.rows.length) break;
+      const { data: existing } = await supabase
+        .from("leagues")
+        .select("id")
+        .eq("invite_code", code)
+        .maybeSingle();
+      if (!existing) break;
       code = genCode();
     }
-    const { rows } = await pool.query(
-      "INSERT INTO leagues (name, invite_code, owner_id) VALUES ($1,$2,$3) RETURNING id",
-      [data.name, code, me.id],
-    );
-    await pool.query(
-      "INSERT INTO league_members (league_id, user_id) VALUES ($1,$2)",
-      [rows[0].id, me.id],
-    );
-    return { id: rows[0].id, invite_code: code };
+    const { data: league, error: insErr } = await supabase
+      .from("leagues")
+      .insert({ name: data.name, invite_code: code, owner_id: userId })
+      .select("id")
+      .single();
+    if (insErr || !league) throw new Error(insErr?.message ?? "Failed to create league.");
+    const { error: memErr } = await supabase
+      .from("league_members")
+      .insert({ league_id: league.id, user_id: userId });
+    if (memErr) throw new Error(memErr.message);
+    return { id: league.id, invite_code: code };
   });
 
 export const joinLeagueFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(
     z
       .object({ invite_code: z.string().trim().min(4).max(16) })
@@ -307,79 +290,83 @@ export const joinLeagueFn = createServerFn({ method: "POST" })
         return { invite_code: code };
       }),
   )
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    const { rows } = await pool.query("SELECT id FROM leagues WHERE invite_code=$1", [
-      data.invite_code,
-    ]);
-    if (!rows.length) throw new Error("Invalid invite code.");
-    await pool.query(
-      `INSERT INTO league_members (league_id, user_id) VALUES ($1,$2)
-       ON CONFLICT DO NOTHING`,
-      [rows[0].id, me.id],
-    );
-    return { id: rows[0].id };
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: league } = await supabase
+      .from("leagues")
+      .select("id")
+      .eq("invite_code", data.invite_code)
+      .maybeSingle();
+    if (!league) throw new Error("Invalid invite code.");
+    const { error } = await supabase
+      .from("league_members")
+      .upsert(
+        { league_id: league.id, user_id: userId },
+        { onConflict: "league_id,user_id", ignoreDuplicates: true },
+      );
+    if (error) throw new Error(error.message);
+    return { id: league.id };
   });
 
-export const getMyLeagues = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./db");
-  const { loadCurrentUser } = await import("./auth.server");
-  const me = await loadCurrentUser();
-  if (!me) return [];
-  const { rows } = await pool.query(
-    `WITH league_totals AS (
-       SELECT lm.league_id, lm.user_id,
-              COALESCE(SUM(ms.total_points),0)::int AS total_points
-       FROM league_members lm
-       LEFT JOIN matchday_scores ms ON ms.user_id = lm.user_id
-       GROUP BY lm.league_id, lm.user_id
-     ),
-     ranked AS (
-       SELECT league_id, user_id, total_points,
-              RANK() OVER (PARTITION BY league_id ORDER BY total_points DESC) AS rnk,
-              SUM(CASE WHEN total_points > 0 THEN 1 ELSE 0 END)
-                OVER (PARTITION BY league_id) AS scored_members
-       FROM league_totals
-     )
-     SELECT l.id, l.name, l.invite_code, l.owner_id,
-            (SELECT COUNT(*)::int FROM league_members WHERE league_id=l.id) AS member_count,
-            COALESCE(r.total_points, 0)::int AS my_points,
-            CASE WHEN COALESCE(r.total_points,0) > 0 THEN r.rnk::int ELSE NULL END AS my_rank
-     FROM leagues l
-     JOIN league_members m ON m.league_id = l.id AND m.user_id = $1
-     LEFT JOIN ranked r ON r.league_id = l.id AND r.user_id = $1
-     ORDER BY l.created_at DESC`,
-    [me.id],
-  );
-  return rows as Array<{
-    id: string;
-    name: string;
-    invite_code: string;
-    owner_id: string;
-    member_count: number;
-    my_points: number;
-    my_rank: number | null;
-  }>;
-});
+export const getMyLeagues = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase } = context;
+    const { data, error } = await supabase.rpc("my_leagues");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as Array<{
+      id: string;
+      name: string;
+      invite_code: string;
+      owner_id: string;
+      member_count: number;
+      my_points: number;
+      my_rank: number | null;
+    }>;
+  });
 
+async function assertAdmin(supabase: ReturnType<typeof Object>, userId: string) {
+  // call has_role via RPC would be simpler; use direct lookup
+  const c = supabase as unknown as {
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (
+          a: string,
+          b: string,
+        ) => { eq: (a: string, b: string) => { maybeSingle: () => Promise<{ data: unknown }> } };
+      };
+    };
+  };
+  const { data } = await c.from("user_roles").select("role").eq("user_id", userId).eq("role", "admin").maybeSingle();
+  if (!data) throw new Error("Forbidden");
+}
 
-// Admin
-export const adminListMatchdays = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./db");
-  const { requireUser } = await import("./auth.server");
-  const me = await requireUser();
-  if (!me.is_admin) throw new Error("Forbidden");
-  const { rows } = await pool.query(
-    `SELECT md.*,
-            (SELECT json_agg(m ORDER BY m.kickoff_at) FROM matches m WHERE m.matchday_id=md.id) AS matches
-     FROM matchdays md ORDER BY md.starts_at ASC`,
-  );
-  return rows;
-});
+export const adminListMatchdays = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: mds, error } = await supabase
+      .from("matchdays")
+      .select("*")
+      .order("starts_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    const { data: ms, error: mErr } = await supabase
+      .from("matches")
+      .select("*")
+      .order("kickoff_at", { ascending: true });
+    if (mErr) throw new Error(mErr.message);
+    const byMd = new Map<number, typeof ms>();
+    for (const m of ms ?? []) {
+      const arr = byMd.get(m.matchday_id) ?? [];
+      arr.push(m);
+      byMd.set(m.matchday_id, arr);
+    }
+    return (mds ?? []).map((md) => ({ ...md, matches: byMd.get(md.id) ?? [] }));
+  });
 
 export const adminSetResultFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(
     z.object({
       match_id: z.number().int(),
@@ -388,105 +375,36 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
       first_scorer: scorerEnum,
     }),
   )
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    if (!me.is_admin) throw new Error("Forbidden");
-    await pool.query(
-      `UPDATE matches SET home_score=$1, away_score=$2, first_scorer=$3, is_final=true WHERE id=$4`,
-      [data.home_score, data.away_score, data.first_scorer, data.match_id],
-    );
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("matches")
+      .update({
+        home_score: data.home_score,
+        away_score: data.away_score,
+        first_scorer: data.first_scorer,
+        is_final: true,
+      })
+      .eq("id", data.match_id);
+    if (error) throw new Error(error.message);
     return { ok: true };
   });
 
 export const adminScoreMatchdayFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ matchday_id: z.number().int() }))
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    if (!me.is_admin) throw new Error("Forbidden");
-    const { rows: matches } = await pool.query(
-      "SELECT * FROM matches WHERE matchday_id=$1 AND is_final=true",
-      [data.matchday_id],
-    );
-    for (const m of matches) {
-      const { rows: preds } = await pool.query(
-        "SELECT * FROM predictions WHERE match_id=$1",
-        [m.id],
-      );
-      const totalPreds = preds.length;
-      // Tally scoreline frequency for underdog bonus
-      const tally = new Map<string, number>();
-      for (const p of preds) {
-        const key = `${p.home_goals}-${p.away_goals}`;
-        tally.set(key, (tally.get(key) ?? 0) + 1);
-      }
-      const actualResult =
-        m.home_score > m.away_score ? "H" : m.home_score < m.away_score ? "A" : "D";
-      for (const p of preds) {
-        let pts = 0;
-        const predResult =
-          p.home_goals > p.away_goals ? "H" : p.home_goals < p.away_goals ? "A" : "D";
-        const exactScore =
-          p.home_goals === m.home_score && p.away_goals === m.away_score;
-        if (exactScore || actualResult === predResult) pts += 3;
-        if (p.home_goals === m.home_score) pts += 2;
-        if (p.away_goals === m.away_score) pts += 2;
-        if (p.home_goals - p.away_goals === m.home_score - m.away_score) pts += 3;
-        if (p.first_scorer && p.first_scorer === m.first_scorer) pts += 3;
-        if (p.booster) pts *= 2;
-        // Underdog bonus: this prediction's scoreline is rare AND correct
-        if (exactScore && totalPreds > 0) {
-          const key = `${p.home_goals}-${p.away_goals}`;
-          const share = (tally.get(key) ?? 0) / totalPreds;
-          if (share < 0.1) pts += 5;
-        }
-        await pool.query("UPDATE predictions SET points=$1 WHERE id=$2", [pts, p.id]);
-      }
-    }
-
-    // Aggregate per-user totals for this matchday and upsert into matchday_scores
-    const { rows: totals } = await pool.query(
-      `SELECT p.user_id, COALESCE(SUM(p.points),0)::int AS total_points
-       FROM predictions p
-       JOIN matches m ON m.id = p.match_id
-       WHERE m.matchday_id = $1
-       GROUP BY p.user_id`,
-      [data.matchday_id],
-    );
-    // Compute ranks (dense by total_points desc)
-    const sorted = [...totals].sort((a, b) => b.total_points - a.total_points);
-    let rank = 0;
-    let prev: number | null = null;
-    let seen = 0;
-    const ranks = new Map<string, number>();
-    for (const row of sorted) {
-      seen += 1;
-      if (prev === null || row.total_points !== prev) {
-        rank = seen;
-        prev = row.total_points;
-      }
-      ranks.set(row.user_id, rank);
-    }
-    for (const row of totals) {
-      await pool.query(
-        `INSERT INTO matchday_scores (user_id, matchday_id, total_points, rank)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (user_id, matchday_id) DO UPDATE
-         SET total_points=EXCLUDED.total_points,
-             rank=EXCLUDED.rank,
-             updated_at=now()`,
-        [row.user_id, data.matchday_id, row.total_points, ranks.get(row.user_id) ?? null],
-      );
-    }
-
-    await pool.query("UPDATE matchdays SET is_scored=true WHERE id=$1", [data.matchday_id]);
-    return { ok: true, users_scored: totals.length };
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+    const { data: count, error } = await supabase.rpc("score_matchday", {
+      _matchday_id: data.matchday_id,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, users_scored: (count as number) ?? 0 };
   });
 
 export const adminAddMatchdayFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(
     z.object({
       name: z.string().trim().min(2).max(80),
@@ -502,29 +420,29 @@ export const adminAddMatchdayFn = createServerFn({ method: "POST" })
         .length(6),
     }),
   )
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    if (!me.is_admin) throw new Error("Forbidden");
-    const md = await pool.query(
-      "INSERT INTO matchdays (name, starts_at) VALUES ($1,$2) RETURNING id",
-      [data.name, data.starts_at],
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: md, error } = await supabase
+      .from("matchdays")
+      .insert({ name: data.name, starts_at: data.starts_at })
+      .select("id")
+      .single();
+    if (error || !md) throw new Error(error?.message ?? "Failed to create matchday.");
+    const { error: insErr } = await supabase.from("matches").insert(
+      data.matches.map((m) => ({
+        matchday_id: md.id,
+        home_team: m.home_team,
+        away_team: m.away_team,
+        kickoff_at: m.kickoff_at,
+      })),
     );
-    const mdId = md.rows[0].id;
-    for (const m of data.matches) {
-      await pool.query(
-        "INSERT INTO matches (matchday_id, home_team, away_team, kickoff_at) VALUES ($1,$2,$3,$4)",
-        [mdId, m.home_team, m.away_team, m.kickoff_at],
-      );
-    }
-    return { id: mdId };
+    if (insErr) throw new Error(insErr.message);
+    return { id: md.id };
   });
 
-// makeMeAdminFn was removed: it allowed any authenticated user to escalate
-// to admin if no admin row existed. Provision admins directly in the database.
-
 export const adminAddMatchFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(
     z.object({
       matchday_id: z.number().int(),
@@ -535,155 +453,169 @@ export const adminAddMatchFn = createServerFn({ method: "POST" })
       is_selected: z.boolean().optional().default(false),
     }),
   )
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    if (!me.is_admin) throw new Error("Forbidden");
-    const { rows } = await pool.query(
-      `INSERT INTO matches (matchday_id, home_team, away_team, kickoff_at, phase, is_selected)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-      [
-        data.matchday_id,
-        data.home_team,
-        data.away_team,
-        data.kickoff_at,
-        data.phase ?? null,
-        data.is_selected ?? false,
-      ],
-    );
-    return { id: rows[0].id };
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: row, error } = await supabase
+      .from("matches")
+      .insert({
+        matchday_id: data.matchday_id,
+        home_team: data.home_team,
+        away_team: data.away_team,
+        kickoff_at: data.kickoff_at,
+        phase: data.phase ?? null,
+        is_selected: data.is_selected ?? false,
+      })
+      .select("id")
+      .single();
+    if (error || !row) throw new Error(error?.message ?? "Failed to add match.");
+    return { id: row.id };
   });
 
 export const adminListPredictionsFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ matchday_id: z.number().int() }))
-  .handler(async ({ data }) => {
-    const { pool } = await import("./db");
-    const { requireUser } = await import("./auth.server");
-    const me = await requireUser();
-    if (!me.is_admin) throw new Error("Forbidden");
-    const { rows } = await pool.query(
-      `SELECT pr.id, pr.home_goals, pr.away_goals, pr.first_scorer AS pred_first_scorer,
-              pr.booster, pr.points,
-              m.id AS match_id, m.home_team, m.away_team, m.kickoff_at,
-              m.home_score, m.away_score, m.first_scorer AS actual_first_scorer, m.is_final,
-              p.display_name, u.email
-       FROM predictions pr
-       JOIN matches m ON m.id = pr.match_id
-       JOIN app_users u ON u.id = pr.user_id
-       LEFT JOIN profiles p ON p.user_id = pr.user_id
-       WHERE m.matchday_id = $1
-       ORDER BY m.kickoff_at ASC, m.id ASC, p.display_name ASC`,
-      [data.matchday_id],
-    );
-    return rows as Array<{
-      id: number;
-      home_goals: number;
-      away_goals: number;
-      pred_first_scorer: string | null;
-      booster: boolean;
-      points: number | null;
-      match_id: number;
-      home_team: string;
-      away_team: string;
-      kickoff_at: string;
-      home_score: number | null;
-      away_score: number | null;
-      actual_first_scorer: string | null;
-      is_final: boolean;
-      display_name: string | null;
-      email: string;
-    }>;
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: matches, error: mErr } = await supabase
+      .from("matches")
+      .select("*")
+      .eq("matchday_id", data.matchday_id);
+    if (mErr) throw new Error(mErr.message);
+    const matchIds = (matches ?? []).map((m) => m.id);
+    if (!matchIds.length) return [];
+    const { data: preds, error: pErr } = await supabase
+      .from("predictions")
+      .select("*")
+      .in("match_id", matchIds);
+    if (pErr) throw new Error(pErr.message);
+    const userIds = Array.from(new Set((preds ?? []).map((p) => p.user_id)));
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, display_name")
+      .in("user_id", userIds);
+    const profileMap = new Map<string, string>();
+    for (const p of profiles ?? []) profileMap.set(p.user_id, p.display_name);
+    const matchMap = new Map<number, (typeof matches)[number]>();
+    for (const m of matches ?? []) matchMap.set(m.id, m);
+    return (preds ?? [])
+      .map((p) => {
+        const m = matchMap.get(p.match_id)!;
+        return {
+          id: p.id,
+          home_goals: p.home_goals,
+          away_goals: p.away_goals,
+          pred_first_scorer: p.first_scorer,
+          booster: p.booster,
+          points: p.points,
+          match_id: m.id,
+          home_team: m.home_team,
+          away_team: m.away_team,
+          kickoff_at: m.kickoff_at,
+          home_score: m.home_score,
+          away_score: m.away_score,
+          actual_first_scorer: m.first_scorer,
+          is_final: m.is_final,
+          display_name: profileMap.get(p.user_id) ?? null,
+          email: "",
+        };
+      })
+      .sort((a, b) => a.kickoff_at.localeCompare(b.kickoff_at) || a.match_id - b.match_id);
   });
 
-export const getMyHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./db");
-  const { loadCurrentUser } = await import("./auth.server");
-  const me = await loadCurrentUser();
-  if (!me) return [];
-  const { rows } = await pool.query(
-    `SELECT md.id AS matchday_id, md.name AS matchday_name, md.starts_at,
-            m.id AS match_id, m.home_team, m.away_team,
-            m.home_score, m.away_score, m.first_scorer AS actual_first_scorer, m.is_final,
-            pr.home_goals AS pred_home, pr.away_goals AS pred_away,
-            pr.first_scorer AS pred_first, pr.booster, pr.points
-     FROM matchdays md
-     JOIN matches m ON m.matchday_id = md.id
-     LEFT JOIN predictions pr ON pr.match_id = m.id AND pr.user_id = $1
-     WHERE pr.id IS NOT NULL
-     ORDER BY md.starts_at DESC, m.kickoff_at ASC`,
-    [me.id],
-  );
-  // Group by matchday
-  const map = new Map<number, {
-    matchday_id: number;
-    matchday_name: string;
-    starts_at: string;
-    matches: Array<{
-      match_id: number;
-      home_team: string;
-      away_team: string;
-      home_score: number | null;
-      away_score: number | null;
-      actual_first_scorer: string | null;
-      is_final: boolean;
-      pred_home: number;
-      pred_away: number;
-      pred_first: string | null;
-      booster: boolean;
-      points: number | null;
-    }>;
-  }>();
-  for (const r of rows) {
-    const row = r as Record<string, unknown>;
-    const mdId = row.matchday_id as number;
-    if (!map.has(mdId)) {
-      map.set(mdId, {
-        matchday_id: mdId,
-        matchday_name: row.matchday_name as string,
-        starts_at: row.starts_at as string,
-        matches: [],
+export const getMyHistoryFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: preds, error } = await supabase
+      .from("predictions")
+      .select("*, match:matches(*, matchday:matchdays(*))")
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    type Row = (typeof preds)[number] & {
+      match: {
+        id: number;
+        home_team: string;
+        away_team: string;
+        home_score: number | null;
+        away_score: number | null;
+        first_scorer: string | null;
+        is_final: boolean;
+        matchday: { id: number; name: string; starts_at: string };
+      };
+    };
+    const map = new Map<
+      number,
+      {
+        matchday_id: number;
+        matchday_name: string;
+        starts_at: string;
+        matches: Array<{
+          match_id: number;
+          home_team: string;
+          away_team: string;
+          home_score: number | null;
+          away_score: number | null;
+          actual_first_scorer: string | null;
+          is_final: boolean;
+          pred_home: number;
+          pred_away: number;
+          pred_first: string | null;
+          booster: boolean;
+          points: number | null;
+        }>;
+      }
+    >();
+    for (const raw of (preds ?? []) as Row[]) {
+      const md = raw.match.matchday;
+      if (!map.has(md.id))
+        map.set(md.id, {
+          matchday_id: md.id,
+          matchday_name: md.name,
+          starts_at: md.starts_at,
+          matches: [],
+        });
+      map.get(md.id)!.matches.push({
+        match_id: raw.match.id,
+        home_team: raw.match.home_team,
+        away_team: raw.match.away_team,
+        home_score: raw.match.home_score,
+        away_score: raw.match.away_score,
+        actual_first_scorer: raw.match.first_scorer,
+        is_final: raw.match.is_final,
+        pred_home: raw.home_goals,
+        pred_away: raw.away_goals,
+        pred_first: raw.first_scorer,
+        booster: raw.booster,
+        points: raw.points,
       });
     }
-    map.get(mdId)!.matches.push({
-      match_id: row.match_id as number,
-      home_team: row.home_team as string,
-      away_team: row.away_team as string,
-      home_score: row.home_score as number | null,
-      away_score: row.away_score as number | null,
-      actual_first_scorer: row.actual_first_scorer as string | null,
-      is_final: row.is_final as boolean,
-      pred_home: row.pred_home as number,
-      pred_away: row.pred_away as number,
-      pred_first: row.pred_first as string | null,
-      booster: row.booster as boolean,
-      points: row.points as number | null,
-    });
-  }
-  return Array.from(map.values());
-});
+    return Array.from(map.values()).sort((a, b) => b.starts_at.localeCompare(a.starts_at));
+  });
 
-export const getMyMatchdayScoresFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { pool } = await import("./db");
-  const { loadCurrentUser } = await import("./auth.server");
-  const me = await loadCurrentUser();
-  if (!me) return [];
-  const { rows } = await pool.query(
-    `SELECT ms.matchday_id, md.name, md.starts_at,
-            ms.total_points::int AS total_points, ms.rank
-     FROM matchday_scores ms
-     JOIN matchdays md ON md.id = ms.matchday_id
-     WHERE ms.user_id = $1
-     ORDER BY md.starts_at ASC`,
-    [me.id],
-  );
-  return rows as Array<{
-    matchday_id: number;
-    name: string;
-    starts_at: string;
-    total_points: number;
-    rank: number | null;
-  }>;
-});
-
-
+export const getMyMatchdayScoresFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("matchday_scores")
+      .select("matchday_id, total_points, rank, matchday:matchdays(name, starts_at)")
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    type Row = {
+      matchday_id: number;
+      total_points: number;
+      rank: number | null;
+      matchday: { name: string; starts_at: string };
+    };
+    return ((data ?? []) as Row[])
+      .map((r) => ({
+        matchday_id: r.matchday_id,
+        name: r.matchday.name,
+        starts_at: r.matchday.starts_at,
+        total_points: r.total_points,
+        rank: r.rank,
+      }))
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  });
