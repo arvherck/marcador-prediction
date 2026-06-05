@@ -22,6 +22,7 @@ import {
   adminSaveGroupStandingsFn,
   type GroupWithStandings,
 } from "@/lib/groups.functions";
+import { ApiSyncPanel } from "@/components/admin/ApiSyncPanel";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
@@ -85,6 +86,8 @@ function AdminInner({ displayName }: { displayName?: string }) {
       <h1 className="font-display font-bold text-2xl md:text-3xl mb-6">
         Panel de Control
       </h1>
+
+      <ApiSyncPanel />
 
       <Section title="New matchday (6 matches)">
         <NewMatchdayForm
