@@ -23,6 +23,7 @@ import {
   type GroupWithStandings,
 } from "@/lib/groups.functions";
 import { ApiSyncPanel } from "@/components/admin/ApiSyncPanel";
+import { DonationsPanel } from "@/components/admin/DonationsPanel";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
@@ -127,6 +128,10 @@ function AdminInner({ displayName }: { displayName?: string }) {
 
       <Section title="Group standings">
         <GroupStandingsAdmin />
+      </Section>
+
+      <Section title="Donations">
+        <DonationsPanel />
       </Section>
     </AppShell>
   );

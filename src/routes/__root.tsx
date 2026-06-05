@@ -128,6 +128,19 @@ function RootComponent() {
   const [theme] = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("donated") === "true") {
+      import("sonner").then(({ toast }) => {
+        toast.success("Thank you for supporting Marcador! 🏆");
+      });
+      params.delete("donated");
+      const qs = params.toString();
+      const url = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+      window.history.replaceState({}, "", url);
+    }
+  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
