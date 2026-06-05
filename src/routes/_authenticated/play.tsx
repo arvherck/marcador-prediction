@@ -18,6 +18,7 @@ import {
   type MatchRow,
 } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
+import { supabase } from "@/integrations/supabase/client";
 
 
 export const Route = createFileRoute("/_authenticated/play")({
@@ -49,9 +50,13 @@ function PlayPage() {
   const guestGate = useGuestGate();
   const q = useQuery({
     queryKey: ["matchday", guest ? "guest" : me.id],
-    queryFn: () => (guest ? getCurrentMatchdayPublic() : getCurrentMatchday()),
+    queryFn: async () => {
+      if (guest) return getCurrentMatchdayPublic();
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) return null;
+      return getCurrentMatchday();
+    },
   });
-  const qc = useQueryClient();
 
   // Local draft state for all 6 cards
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
