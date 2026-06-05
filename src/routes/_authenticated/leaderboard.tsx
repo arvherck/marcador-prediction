@@ -18,6 +18,7 @@ import {
   getMatchdayLeaderboardPublic,
   getMyLeagues,
 } from "@/lib/game.functions";
+import { getDonorIdsFn } from "@/lib/donations.functions";
 import { useGuest } from "@/lib/guest";
 import { teamFlag } from "@/lib/teamFlags";
 
@@ -109,6 +110,8 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
         ? getLeaderboardPublic({ data: leagueId ? { league_id: leagueId } : {} })
         : getLeaderboard({ data: leagueId ? { league_id: leagueId } : {} }),
   });
+  const donors = useQuery({ queryKey: ["donor-ids"], queryFn: () => getDonorIdsFn() });
+  const donorSet = new Set<string>(donors.data ?? []);
 
   if (q.isLoading) return <SkeletonBoard />;
   const rows = (q.data ?? []) as OverallRow[];
@@ -126,6 +129,7 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
           favourite={row.favourite_team}
           primary={row.total_points}
           streak={row.current_streak}
+          donor={donorSet.has(row.id)}
           secondary={
             row.last_md_points > 0 ? `+${row.last_md_points} last MD` : "—"
           }
@@ -143,6 +147,8 @@ function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
         ? getMatchdayLeaderboardPublic({ data: {} })
         : getMatchdayLeaderboard({ data: {} }),
   });
+  const donors = useQuery({ queryKey: ["donor-ids"], queryFn: () => getDonorIdsFn() });
+  const donorSet = new Set<string>(donors.data ?? []);
 
   if (q.isLoading) return <SkeletonBoard />;
   const data = q.data;
@@ -174,6 +180,7 @@ function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
               country={row.country}
               favourite={row.favourite_team}
               primary={row.total_points}
+              donor={donorSet.has(row.id)}
             />
           ))}
         </Board>
@@ -244,6 +251,7 @@ function Row({
   primary,
   secondary,
   streak,
+  donor,
 }: {
   rank: number;
   isMe: boolean;
@@ -253,6 +261,7 @@ function Row({
   primary: number;
   secondary?: string;
   streak?: number;
+  donor?: boolean;
 }) {
   const isTop3 = rank <= 3;
   return (
@@ -280,6 +289,11 @@ function Row({
         <div className="min-w-0">
           <div className="font-semibold text-sm truncate flex items-center gap-2">
             {name}
+            {donor && (
+              <span className="text-amber-glow" title="Marcador Supporter" aria-label="Marcador Supporter">
+                ⭐
+              </span>
+            )}
             {isMe && (
               <span className="text-[10px] uppercase tracking-wider text-primary font-bold">
                 You
