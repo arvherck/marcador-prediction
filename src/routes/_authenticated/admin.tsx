@@ -22,6 +22,7 @@ import {
   adminSaveGroupStandingsFn,
   type GroupWithStandings,
 } from "@/lib/groups.functions";
+import { ApiSyncPanel } from "@/components/admin/ApiSyncPanel";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
