@@ -57,6 +57,7 @@ function PlayPage() {
       return getCurrentMatchday();
     },
   });
+  const qc = useQueryClient();
 
   // Local draft state for all 6 cards
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
