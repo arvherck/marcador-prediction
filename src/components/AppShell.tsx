@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 const tabs = [
   { to: "/play", label: "Play", icon: BallIcon, guest: true },
   { to: "/leaderboard", label: "Tabla", icon: TableIcon, guest: true },
+  { to: "/grupos", label: "Grupos", icon: GroupsIcon, guest: true },
   { to: "/leagues", label: "Ligas", icon: LeagueIcon, guest: false },
   { to: "/me", label: "Mi Marcador", icon: UserIcon, guest: false },
 ] as const;
