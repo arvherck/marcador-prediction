@@ -1,48 +1,86 @@
-## Dark/Light Mode Toggle
+# API-Football Integration for World Cup 2026
 
-### Theme strategy
-- Use Tailwind v4 class-based dark variant already configured (`@custom-variant dark (&:is(.dark *))`).
-- Move current dark color tokens out of `:root` into `.dark`. Add a light palette under `:root` using the brief's hex values (converted to oklch), keeping amber primary unchanged for both.
-- Replace the gradient `body` background with a theme-aware variant (light: subtle warm gradient over `#F5F0E8`; dark: existing pitch gradient).
+## Step 1 — Discovery call (first thing in build mode)
 
-### Persistence + no-flash
-- Inject a tiny inline script into `<head>` (via `head.scripts` in `__root.tsx`) that, before render, reads `localStorage["marcador_theme"]`, falls back to `prefers-color-scheme`, defaults to dark, and sets `html.className` to `dark` or `light`.
-- Remove the hard-coded `className="dark"` on `<html>` in `RootShell`.
-- Create `src/lib/theme.ts` with `getTheme()`, `setTheme(t)` (updates `html` class + localStorage), and a `useTheme()` hook subscribing to changes.
+Run a single server-side `curl` to `https://v3.football.api-sports.io/leagues?search=world` with header `x-apisports-key: $API_FOOTBALL_KEY` to find:
+- League `id` for "FIFA World Cup"
+- Available `season` (likely `2026`)
 
-### Toggle button
-- New `src/components/ThemeToggle.tsx` using `Sun`/`Moon` from `lucide-react`. Shows the icon for the *opposite* mode (sun in dark, moon in light). `transition-colors duration-200`.
-- Place in `AppShell` header between display name and Sign out button (and visible for guests too, before the Exit button).
+(Note: the correct host is `v3.football.api-sports.io`, not `v3.football-api.com` as in the brief — will verify in the discovery call.)
 
-### Profile sync (optional, signed-in users)
-- Migration: add `theme_preference text` nullable to `profiles`.
-- On sign-in / `meFn`: if profile has `theme_preference` and no localStorage value, apply it.
-- On toggle while signed in: fire-and-forget update to `profiles.theme_preference` via a new `setThemePreferenceFn` server function (`requireSupabaseAuth`).
+Hardcode the discovered `LEAGUE_ID` and `SEASON` as constants in `src/lib/api-football.ts`. Record the call in `api_usage` (counts as 1).
 
-### Sonner toaster
-- Make `<Toaster theme={...} />` react to current theme via `useTheme()`.
+## Step 2 — Database
 
-### Audit screens for light-mode legibility
-Most components already use semantic tokens (`bg-card`, `text-muted-foreground`, `border-border`), so the new tokens will flow through. Targeted sweep for any hard-coded dark-only classes (`bg-black`, `text-white`, `bg-white/5`, `border-white/10`, raw hex) across: landing, auth, onboarding, play, leaderboard, grupos, leagues, me, admin. Replace offenders with semantic tokens or `dark:` variants (e.g. `bg-white/5 dark:bg-white/5 bg-black/5`).
+Migration adding two tables (with GRANTs + RLS; admin-only writes via server functions using `supabaseAdmin`, so no anon/auth grants needed beyond admin read for the counter):
 
-### Files
-- edit `src/styles.css` (light tokens in `:root`, dark tokens moved into `.dark`, theme-aware body background)
-- edit `src/routes/__root.tsx` (no-flash inline script, drop static `dark` class, dynamic Toaster theme)
-- new `src/lib/theme.ts`
-- new `src/components/ThemeToggle.tsx`
-- edit `src/components/AppShell.tsx` (mount toggle)
-- new migration adding `profiles.theme_preference`
-- edit `src/lib/auth.functions.ts` (return + apply preference)
-- new `src/lib/theme.functions.ts` (`setThemePreferenceFn`)
-- sweep + minor edits to any screen using hard-coded dark-only colors
+- `api_cache`: `cache_key text unique`, `data jsonb`, `fetched_at timestamptz`, `expires_at timestamptz`
+- `api_usage`: `date date unique`, `calls_made int default 0`
 
-### Technical details
-- Light tokens (approx):
-  - `--background: oklch(0.96 0.012 80)` (#F5F0E8)
-  - `--card: oklch(1 0 0)` (#FFFFFF)
-  - `--foreground: oklch(0.18 0.025 60)` (#1A1209)
-  - `--muted-foreground: oklch(0.47 0.025 65)` (#6B5E4E)
-  - `--border: oklch(0.87 0.018 75)` (#E0D5C5)
-  - `--input: oklch(0.92 0.015 75)` (#EDE8DF)
-  - `--primary`, `--primary-foreground`, `--ring` unchanged (amber).
-- The no-flash script is small (~250 bytes) and uses `document.documentElement.classList.add(...)`.
+RLS: SELECT for authenticated admins only (checked via `has_role`); all writes via service role.
+
+## Step 3 — Server library `src/lib/api-football.server.ts`
+
+Server-only module (`.server.ts` so it never bundles to client). Uses `supabaseAdmin` + `process.env.API_FOOTBALL_KEY`.
+
+Core helper `cachedFetch(cacheKey, ttlSeconds, endpoint)`:
+1. Read `api_cache` by key — if `expires_at > now()`, return `data`.
+2. Check today's `api_usage.calls_made`:
+   - `>= 100` → throw "Daily API limit reached"
+   - `>= 90` → set a warning flag on the returned envelope
+3. `fetch` the endpoint, increment counter (upsert), upsert cache row with `expires_at = now() + ttl`.
+4. Return `{ data, cached: false, fetched_at, expires_at, warning? }`.
+
+Exposed functions:
+- `getFixtures()` — `/fixtures?league=ID&season=SEASON`, TTL 24h
+- `getLiveFixtures()` — `/fixtures?live=all&league=ID`, TTL 3min; guard: first query local `matches` table — only call if a match `kickoff_at` is within `[now-3h, now+10min]`, otherwise return empty
+- `getStandings()` — `/standings?league=ID&season=SEASON`, TTL 2h
+- `getSquads()` — `/players/squads?team=...` looped over 48 WC teams; returns count of API calls used; if `count > 5`, throw unless `confirmed=true` parameter passed
+
+Plus utility: `getApiUsageToday()` returning `{ calls_made, limit: 100 }`.
+
+## Step 4 — Server functions `src/lib/api-football.functions.ts`
+
+Admin-gated `createServerFn` wrappers (check `has_role('admin')` via `requireSupabaseAuth` context):
+- `syncFixturesFn`, `syncStandingsFn`, `syncLiveScoresFn`, `syncSquadsFn(confirmed: boolean)`
+- `getApiStatusFn` — returns counter + cache metadata (last fetched, expires) for each of the 4 endpoints
+
+Each sync function calls the corresponding cached fetcher and returns `{ cached, fetched_at, expires_at, count, warning? }`.
+
+## Step 5 — Admin Panel UI
+
+Add an **API Sync** section at the top of `src/routes/_authenticated/admin.tsx`:
+
+- Header: `API calls today: X / 100` with color states (green <90, amber 90–99, red 100)
+- Four buttons in a grid card:
+  - **Sync Fixtures** — shows "Cached · expires in 23h" etc.
+  - **Sync Standings** — shows expiry
+  - **Sync Live Scores** — disabled when no match is live/imminent (derived from local `matches`)
+  - **Sync Squads** — opens confirm dialog if estimated calls > 5
+- Each button uses `useMutation` → calls the server fn → toast on success/error → invalidates the status query
+- Live status query polls every 30s
+
+## Step 6 — Security & limits
+
+- API key only read inside `.server.ts` handlers via `process.env.API_FOOTBALL_KEY`
+- All buttons admin-gated server-side (server fn re-checks role; client also hides for non-admins)
+- Hard block at 100 calls; warning toast at 90
+- All endpoints write through `cachedFetch` — no direct API access
+
+## Files
+
+**New**
+- migration: `api_cache`, `api_usage` + RLS
+- `src/lib/api-football.server.ts`
+- `src/lib/api-football.functions.ts`
+- `src/components/admin/ApiSyncPanel.tsx`
+
+**Edited**
+- `src/routes/_authenticated/admin.tsx` — mount `ApiSyncPanel` at top
+- `src/integrations/supabase/types.ts` — regenerated after migration
+
+## Open questions
+
+1. After the discovery call, if **season 2026 is not yet in API-Football's data** (the WC is June 2026; the league row may exist with `season: 2026` already, or only friendlies/qualifiers may be present), should I fall back to the latest available season and surface a notice in admin, or fail loudly?
+2. Sync Squads loops 48 teams = 48 calls — that's half the daily budget. Should the button instead sync **one group at a time** (4 teams = 4 calls), or keep the all-at-once flow behind a confirm?
+3. Should successful syncs **also update local tables** (`matches.home_score/away_score/is_final` from fixtures, `wc_standings` from standings), or is this purely a read-through cache for now with manual admin entry continuing in parallel?
