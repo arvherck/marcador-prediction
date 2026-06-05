@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { meFn } from "@/lib/auth.functions";
-import type { CurrentUser } from "@/lib/auth.server";
+import { meFn, type CurrentUser } from "@/lib/auth.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 const GUEST_ALLOWED = new Set(["/play", "/leaderboard"]);
 
@@ -12,15 +12,16 @@ const GUEST_ME: CurrentUser = {
 };
 
 export const Route = createFileRoute("/_authenticated")({
+  ssr: false,
   beforeLoad: async ({ location }) => {
-    const me = await meFn();
-    if (me) {
-      if (!me.profile && location.pathname !== "/onboarding") {
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data.user) {
+      const me = await meFn();
+      if (me && !me.profile && location.pathname !== "/onboarding") {
         throw redirect({ to: "/onboarding" });
       }
-      return { me, isGuest: false };
+      return { me: me ?? GUEST_ME, isGuest: false };
     }
-    // No real user — allow guest for a limited subset (client-only check).
     if (typeof window !== "undefined") {
       try {
         const guest = window.sessionStorage.getItem("marcador_guest") === "1";
