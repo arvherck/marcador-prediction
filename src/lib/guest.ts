@@ -28,7 +28,7 @@ export function clearGuest() {
 }
 
 export function useGuest(): boolean {
-  const [v, setV] = useState<boolean>(false);
+  const [v, setV] = useState<boolean>(() => isGuest());
   useEffect(() => {
     setV(isGuest());
     const h = () => setV(isGuest());
