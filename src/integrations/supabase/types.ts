@@ -231,6 +231,7 @@ export type Database = {
           display_name: string
           favourite_team: string
           longest_streak: number
+          theme_preference: string | null
           updated_at: string
           user_id: string
         }
@@ -241,6 +242,7 @@ export type Database = {
           display_name: string
           favourite_team: string
           longest_streak?: number
+          theme_preference?: string | null
           updated_at?: string
           user_id: string
         }
@@ -251,6 +253,7 @@ export type Database = {
           display_name?: string
           favourite_team?: string
           longest_streak?: number
+          theme_preference?: string | null
           updated_at?: string
           user_id?: string
         }
