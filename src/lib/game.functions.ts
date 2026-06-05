@@ -521,16 +521,8 @@ export const adminAddMatchdayFn = createServerFn({ method: "POST" })
     return { id: mdId };
   });
 
-export const makeMeAdminFn = createServerFn({ method: "POST" }).handler(async () => {
-  // Bootstrap helper: first user can claim admin if no admin exists yet.
-  const { pool } = await import("./db");
-  const { requireUser } = await import("./auth.server");
-  const me = await requireUser();
-  const { rows } = await pool.query("SELECT COUNT(*)::int AS c FROM app_users WHERE is_admin=true");
-  if (rows[0].c > 0 && !me.is_admin) throw new Error("An admin already exists.");
-  await pool.query("UPDATE app_users SET is_admin=true WHERE id=$1", [me.id]);
-  return { ok: true };
-});
+// makeMeAdminFn was removed: it allowed any authenticated user to escalate
+// to admin if no admin row existed. Provision admins directly in the database.
 
 export const adminAddMatchFn = createServerFn({ method: "POST" })
   .inputValidator(
