@@ -56,6 +56,33 @@ export type Database = {
         }
         Relationships: []
       }
+      donations: {
+        Row: {
+          amount_cents: number
+          created_at: string
+          currency: string
+          id: string
+          stripe_session_id: string
+          user_id: string | null
+        }
+        Insert: {
+          amount_cents: number
+          created_at?: string
+          currency?: string
+          id?: string
+          stripe_session_id: string
+          user_id?: string | null
+        }
+        Update: {
+          amount_cents?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          stripe_session_id?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       league_members: {
         Row: {
           joined_at: string
@@ -271,6 +298,7 @@ export type Database = {
           created_at: string
           current_streak: number
           display_name: string
+          donor: boolean
           favourite_team: string
           longest_streak: number
           theme_preference: string | null
@@ -282,6 +310,7 @@ export type Database = {
           created_at?: string
           current_streak?: number
           display_name: string
+          donor?: boolean
           favourite_team: string
           longest_streak?: number
           theme_preference?: string | null
@@ -293,6 +322,7 @@ export type Database = {
           created_at?: string
           current_streak?: number
           display_name?: string
+          donor?: boolean
           favourite_team?: string
           longest_streak?: number
           theme_preference?: string | null
