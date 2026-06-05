@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { KickoffCountdown } from "@/components/KickoffCountdown";
 import { ShareModal } from "@/components/ShareModal";
+import { TournamentBanner } from "@/components/TournamentBanner";
 import { useGuestGate } from "@/components/GuestGate";
 import { useGuest } from "@/lib/guest";
 import {
@@ -148,6 +149,7 @@ function PlayPage() {
       )}
       {q.data && (
         <>
+          {!guest && <TournamentBanner />}
           <header className="mb-5">
             <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
               {q.data.matchday.name}

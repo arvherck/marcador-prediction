@@ -11,6 +11,12 @@ import {
   adminScoreMatchdayFn,
   adminSetResultFn,
 } from "@/lib/game.functions";
+import {
+  getTournamentStatus,
+  adminLockTournamentFn,
+  adminSetTournamentWinnerFn,
+} from "@/lib/tournament.functions";
+import { TEAMS_2026 } from "@/lib/teams";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
@@ -105,6 +111,10 @@ function AdminInner({ displayName }: { displayName?: string }) {
 
       <Section title="Predictions by matchday">
         <PredictionsViewer matchdays={matchdays} />
+      </Section>
+
+      <Section title="Tournament champion">
+        <TournamentAdmin />
       </Section>
     </AppShell>
   );
