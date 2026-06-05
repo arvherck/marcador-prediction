@@ -1,66 +1,37 @@
-# Fix login + onboarding (502 / Worker hang)
-
-## What's happening end-to-end
-
-1. `POST signInFn` succeeds (200, `{ ok: true }`) and the cookie is now sent (the previous `sameSite: "none"` fix worked).
-2. `GET meFn` immediately after sign-in returns **502** with the runtime error: *"The Workers runtime canceled this request because it detected that your Worker's code had hung and would never generate a response."*
-3. Same hang on every subsequent server function — including `completeOnboardingFn` on the onboarding page.
-
-So the auth/session logic is correct now; the database call inside the second server function never returns, and Cloudflare kills the request.
-
 ## Root cause
 
-`src/lib/lovable/database.ts` exports a **module-level `pg.Pool`**:
+The bug is not RLS. The `profiles` table already has the correct policies:
+
+- `profiles readable` — `SELECT TO authenticated USING (true)`
+- `users insert own profile` — `INSERT WITH CHECK (user_id = auth.uid())`
+- `users update own profile` — `UPDATE USING/WITH CHECK (user_id = auth.uid())`
+
+I also confirmed in the live DB that `user_id` is the PRIMARY KEY of `profiles` (so the `upsert(..., { onConflict: "user_id" })` in `completeOnboardingFn` works), and the existing test user (`gandalftheswole76@gmail.com`) DOES have a saved profile row. So `meFn` returns the profile correctly.
+
+The real bug is in `src/routes/auth.tsx`. After a successful `signInWithPassword`, line 59 unconditionally does:
 
 ```ts
-export const pool = new Pool({ connectionString: DATABASE_URL, ssl: true, max: 2, idleTimeoutMillis: 5000 })
+navigate({ to: "/onboarding" });
 ```
 
-On Cloudflare Workers (workerd + nodejs_compat), TCP sockets do **not** survive across requests. The first request in a fresh isolate opens a socket and works (that's why `signInFn` succeeds). Any later request reuses the cached `Pool`'s "idle" client whose underlying socket is already dead — `pool.query` waits forever for a response that will never come, so the Worker hangs and gets killed.
-
-This matches every observed symptom exactly: first DB call after a cold start works, every following one hangs.
+That sends every returning user straight to the onboarding form, even though `_authenticated`'s `beforeLoad` would have already routed them to `/play` (because `me.profile` exists). Onboarding is under `_authenticated`, and its guard only redirects *away* when the profile is missing — it does not redirect *toward* play when it isn't, so the form renders and the user re-enters their data.
 
 ## Fix
 
-Stop reusing connections across requests. Use a fresh `pg.Client` per query and end it when done.
+Change the post–sign-in destination in `src/routes/auth.tsx` from `/onboarding` to `/play`. The `_authenticated` layout's `beforeLoad` is already the single source of truth: it calls `meFn()` and redirects to `/onboarding` only when `me.profile` is null. Returning users keep their profile and land on `/play`; brand-new sign-ups have no profile yet and get correctly bounced to `/onboarding` by the guard.
 
-### 1. New helper `src/lib/db.ts`
+Specifically, in `submit()`:
 
 ```ts
-import { Client } from "pg";
-
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error("DATABASE_URL is required");
-
-export const pool = {
-  async query<T = any>(text: string, params?: any[]) {
-    const client = new Client({ connectionString: DATABASE_URL, ssl: true });
-    await client.connect();
-    try {
-      return await client.query<T>(text, params);
-    } finally {
-      await client.end().catch(() => {});
-    }
-  },
-};
+clearGuest();
+toast.success("Welcome to Marcador.");
+await router.invalidate();
+navigate({ to: "/play" });   // was "/onboarding"
 ```
 
-Same `pool.query(...)` shape, so no call-site rewrites needed.
-
-### 2. Repoint imports
-
-Replace `from "./lovable/database"` / `from "@/lib/lovable/database"` with `from "@/lib/db"` (or relative equivalent) in:
-
-- `src/lib/auth.server.ts`
-- `src/lib/auth.functions.ts`
-- `src/lib/game.functions.ts`
-
-Leave `src/lib/lovable/database.ts` untouched (it's auto-generated).
+No DB / RLS / migration changes are needed. No changes to `meFn` or `completeOnboardingFn`.
 
 ## Verification
 
-Use the preview browser:
-1. Sign in with the existing test account → should land on `/onboarding` (or `/play` if already onboarded), not hang.
-2. Submit the onboarding form → should redirect to `/play`.
-3. Confirm in network panel that `meFn` and `completeOnboardingFn` return 200, not 502.
-4. Reload `/play` to confirm the session survives and subsequent server fn calls (game data) also succeed.
+1. Sign in as the existing user — should land on `/play` directly (no onboarding form).
+2. Sign up a brand-new user — `_authenticated` guard sees `me.profile === null` and redirects to `/onboarding`; after submitting, `completeOnboardingFn` upserts on PK `user_id`, and subsequent sign-ins go straight to `/play`.

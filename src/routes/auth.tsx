@@ -56,7 +56,7 @@ function AuthPage() {
       clearGuest();
       toast.success("Welcome to Marcador.");
       await router.invalidate();
-      navigate({ to: "/onboarding" });
+      navigate({ to: "/play" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
