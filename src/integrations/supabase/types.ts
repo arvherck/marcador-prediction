@@ -227,24 +227,30 @@ export type Database = {
         Row: {
           country: string
           created_at: string
+          current_streak: number
           display_name: string
           favourite_team: string
+          longest_streak: number
           updated_at: string
           user_id: string
         }
         Insert: {
           country: string
           created_at?: string
+          current_streak?: number
           display_name: string
           favourite_team: string
+          longest_streak?: number
           updated_at?: string
           user_id: string
         }
         Update: {
           country?: string
           created_at?: string
+          current_streak?: number
           display_name?: string
           favourite_team?: string
+          longest_streak?: number
           updated_at?: string
           user_id?: string
         }
@@ -342,6 +348,7 @@ export type Database = {
         Args: { _league_id?: string }
         Returns: {
           country: string
+          current_streak: number
           display_name: string
           favourite_team: string
           id: string
