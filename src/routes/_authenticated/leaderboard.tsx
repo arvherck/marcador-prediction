@@ -85,10 +85,10 @@ function LeaderboardPage() {
         </TabsList>
 
         <TabsContent value="overall">
-          <OverallTab meId={me.id} />
+          <OverallTab meId={me.id} isGuest={guest} />
         </TabsContent>
         <TabsContent value="matchday">
-          <MatchdayTab meId={me.id} />
+          <MatchdayTab meId={me.id} isGuest={guest} />
         </TabsContent>
         {!guest && (
           <TabsContent value="leagues">
