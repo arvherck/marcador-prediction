@@ -610,3 +610,140 @@ function TournamentAdmin() {
     </div>
   );
 }
+
+function GroupStandingsAdmin() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["groups", "auth"], queryFn: () => getGroups() });
+  const groups = (q.data as GroupWithStandings[] | undefined) ?? [];
+  const [groupId, setGroupId] = useState<number>(1);
+  const selected = groups.find((g) => g.id === groupId);
+
+  type Draft = { id: string; team: string; won: number; drawn: number; lost: number; goals_for: number; goals_against: number };
+  const [drafts, setDrafts] = useState<Record<number, Draft[]>>({});
+
+  const currentDrafts: Draft[] =
+    drafts[groupId] ??
+    (selected
+      ? selected.standings.map((s) => ({
+          id: s.id,
+          team: s.team,
+          won: s.won,
+          drawn: s.drawn,
+          lost: s.lost,
+          goals_for: s.goals_for,
+          goals_against: s.goals_against,
+        }))
+      : []);
+
+  const setRow = (idx: number, patch: Partial<Draft>) => {
+    const next = currentDrafts.map((r, i) => (i === idx ? { ...r, ...patch } : r));
+    setDrafts((d) => ({ ...d, [groupId]: next }));
+  };
+
+  const save = useMutation({
+    mutationFn: () =>
+      adminSaveGroupStandingsFn({
+        data: {
+          group_id: groupId,
+          rows: currentDrafts.map((r) => ({
+            id: r.id,
+            won: r.won,
+            drawn: r.drawn,
+            lost: r.lost,
+            goals_for: r.goals_for,
+            goals_against: r.goals_against,
+          })),
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Group saved.");
+      setDrafts((d) => {
+        const next = { ...d };
+        delete next[groupId];
+        return next;
+      });
+      qc.invalidateQueries({ queryKey: ["groups"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (q.isLoading) return <p className="text-sm text-muted-foreground">Loading groups…</p>;
+  if (!groups.length) return <p className="text-sm text-muted-foreground">No groups found.</p>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <label className="text-sm text-muted-foreground">Group</label>
+        <select
+          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
+          value={groupId}
+          onChange={(e) => setGroupId(Number(e.target.value))}
+        >
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+        <table className="w-full text-sm tabular-nums">
+          <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            <tr>
+              <th className="text-left px-3 py-2">Team</th>
+              <th className="px-2 py-2">W</th>
+              <th className="px-2 py-2">D</th>
+              <th className="px-2 py-2">L</th>
+              <th className="px-2 py-2">GF</th>
+              <th className="px-2 py-2">GA</th>
+              <th className="px-2 py-2">P</th>
+              <th className="px-2 py-2">GD</th>
+              <th className="px-2 py-2">Pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {currentDrafts.map((r, i) => {
+              const played = r.won + r.drawn + r.lost;
+              const gd = r.goals_for - r.goals_against;
+              const pts = r.won * 3 + r.drawn;
+              return (
+                <tr key={r.id} className="border-t border-border">
+                  <td className="text-left px-3 py-2 font-medium">{r.team}</td>
+                  {(["won", "drawn", "lost", "goals_for", "goals_against"] as const).map((k) => (
+                    <td key={k} className="px-1 py-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        max={k.startsWith("goals") ? 200 : 50}
+                        value={r[k]}
+                        onChange={(e) =>
+                          setRow(i, { [k]: Math.max(0, Number(e.target.value) || 0) })
+                        }
+                        className="w-14 rounded-md border border-border bg-background px-2 py-1 text-center"
+                      />
+                    </td>
+                  ))}
+                  <td className="px-2 py-2 text-center text-muted-foreground">{played}</td>
+                  <td className="px-2 py-2 text-center text-muted-foreground">
+                    {gd > 0 ? `+${gd}` : gd}
+                  </td>
+                  <td className="px-2 py-2 text-center font-bold text-amber-glow">{pts}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => save.mutate()}
+        disabled={save.isPending}
+        className="rounded-xl bg-amber-gradient px-4 py-2 text-sm font-bold shadow-glow disabled:opacity-60"
+      >
+        {save.isPending ? "Saving…" : "Save group"}
+      </button>
+    </div>
+  );
+}
