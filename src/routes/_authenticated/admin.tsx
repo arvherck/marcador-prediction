@@ -17,6 +17,11 @@ import {
   adminSetTournamentWinnerFn,
 } from "@/lib/tournament.functions";
 import { TEAMS_2026 } from "@/lib/teams";
+import {
+  getGroups,
+  adminSaveGroupStandingsFn,
+  type GroupWithStandings,
+} from "@/lib/groups.functions";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
