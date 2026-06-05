@@ -125,6 +125,7 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
           country={row.country}
           favourite={row.favourite_team}
           primary={row.total_points}
+          streak={row.current_streak}
           secondary={
             row.last_md_points > 0 ? `+${row.last_md_points} last MD` : "—"
           }
