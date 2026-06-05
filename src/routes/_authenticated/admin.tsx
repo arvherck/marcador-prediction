@@ -121,6 +121,10 @@ function AdminInner({ displayName }: { displayName?: string }) {
       <Section title="Tournament champion">
         <TournamentAdmin />
       </Section>
+
+      <Section title="Group standings">
+        <GroupStandingsAdmin />
+      </Section>
     </AppShell>
   );
 }
