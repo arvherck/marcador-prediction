@@ -100,11 +100,13 @@ function LeaderboardPage() {
   );
 }
 
-function OverallTab({ meId, leagueId }: { meId: string; leagueId?: string }) {
+function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boolean; leagueId?: string }) {
   const q = useQuery({
-    queryKey: ["leaderboard", "overall", leagueId ?? "global"],
+    queryKey: ["leaderboard", "overall", leagueId ?? "global", isGuest ? "guest" : "auth"],
     queryFn: () =>
-      getLeaderboard({ data: leagueId ? { league_id: leagueId } : {} }),
+      isGuest
+        ? getLeaderboardPublic({ data: leagueId ? { league_id: leagueId } : {} })
+        : getLeaderboard({ data: leagueId ? { league_id: leagueId } : {} }),
   });
 
   if (q.isLoading) return <SkeletonBoard />;
