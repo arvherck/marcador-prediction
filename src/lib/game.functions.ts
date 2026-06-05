@@ -294,6 +294,7 @@ export const getLeaderboardPublic = createServerFn({ method: "GET" })
       total_points: number;
       scored_predictions: number;
       last_md_points: number;
+      current_streak: number;
     }>;
   });
 
