@@ -133,10 +133,13 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
   );
 }
 
-function MatchdayTab({ meId }: { meId: string }) {
+function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
   const q = useQuery({
-    queryKey: ["leaderboard", "matchday"],
-    queryFn: () => getMatchdayLeaderboard({ data: {} }),
+    queryKey: ["leaderboard", "matchday", isGuest ? "guest" : "auth"],
+    queryFn: () =>
+      isGuest
+        ? getMatchdayLeaderboardPublic({ data: {} })
+        : getMatchdayLeaderboard({ data: {} }),
   });
 
   if (q.isLoading) return <SkeletonBoard />;
