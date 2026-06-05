@@ -1,10 +1,11 @@
 import { Link, useLocation, useRouter } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useGuest, clearGuest } from "@/lib/guest";
 import { useGuestGate } from "@/components/GuestGate";
 import { supabase } from "@/integrations/supabase/client";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { DonateModal } from "@/components/DonateModal";
 
 const tabs = [
   { to: "/play", label: "Play", icon: BallIcon, guest: true },
@@ -28,6 +29,7 @@ export function AppShell({
   const router = useRouter();
   const guest = useGuest();
   const guestGate = useGuestGate();
+  const [donateOpen, setDonateOpen] = useState(false);
 
   const logout = async () => {
     if (guest) {
@@ -130,12 +132,23 @@ export function AppShell({
 
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-6">{children}</main>
 
+      <footer className="max-w-3xl mx-auto w-full px-4 py-4 text-center">
+        <button
+          type="button"
+          onClick={() => setDonateOpen(true)}
+          className="text-xs text-muted-foreground hover:text-amber-glow transition-colors"
+        >
+          Support Marcador
+        </button>
+      </footer>
+
       <nav className="fixed md:hidden bottom-0 inset-x-0 z-30 border-t border-border bg-background/95 backdrop-blur">
         <div className="grid grid-cols-4 max-w-md mx-auto">
           {tabs.map((t) => renderTab(t, "bottom"))}
         </div>
       </nav>
       {guestGate.modal}
+      <DonateModal open={donateOpen} onOpenChange={setDonateOpen} />
     </div>
   );
 }

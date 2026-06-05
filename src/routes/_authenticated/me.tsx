@@ -67,6 +67,11 @@ function MePage() {
         <p className="text-sm text-muted-foreground mt-2">
           {me.profile?.display_name} · {me.profile?.country} · {me.profile?.favourite_team}
         </p>
+        {me.profile?.donor && (
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-gradient/10 border border-primary/40 px-3 py-1 text-xs font-semibold text-amber-glow">
+            ⭐ Marcador Supporter
+          </div>
+        )}
         <div className="mt-4 inline-flex items-baseline gap-2 rounded-xl bg-card border border-border px-4 py-2">
           <span className="text-xs uppercase tracking-widest text-muted-foreground">Total</span>
           <span className="font-score font-bold text-3xl text-amber-glow">{total}</span>
