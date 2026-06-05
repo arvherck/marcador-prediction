@@ -178,9 +178,10 @@ export const getLeaderboard = createServerFn({ method: "GET" })
   .inputValidator(z.object({ league_id: z.string().uuid().optional() }).optional())
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const { data: rows, error } = await supabase.rpc("global_leaderboard", {
-      _league_id: data?.league_id ?? null,
-    });
+    const { data: rows, error } = await supabase.rpc(
+      "global_leaderboard",
+      data?.league_id ? { _league_id: data.league_id } : {},
+    );
     if (error) throw new Error(error.message);
     return (rows ?? []) as Array<{
       id: string;
