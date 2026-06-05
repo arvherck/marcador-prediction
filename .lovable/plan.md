@@ -1,86 +1,61 @@
-# API-Football Integration for World Cup 2026
+# Donations via Stripe
 
-## Step 1 — Discovery call (first thing in build mode)
+Voluntary, low-pressure donations using the existing `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` secrets. Stripe Checkout (hosted) for the payment flow — no custom card form. No features gated.
 
-Run a single server-side `curl` to `https://v3.football.api-sports.io/leagues?search=world` with header `x-apisports-key: $API_FOOTBALL_KEY` to find:
-- League `id` for "FIFA World Cup"
-- Available `season` (likely `2026`)
+## 1. Database (one migration)
 
-(Note: the correct host is `v3.football.api-sports.io`, not `v3.football-api.com` as in the brief — will verify in the discovery call.)
+- `profiles`: add `donor boolean not null default false`.
+- New `donations` table: `id uuid pk`, `user_id uuid null` (nullable for guests), `amount_cents int`, `currency text default 'eur'`, `stripe_session_id text unique`, `created_at timestamptz default now()`.
+- GRANTs: `authenticated` → `SELECT` on `donations` (admin-only via RLS), `service_role` → ALL.
+- RLS: `donations` readable only by admins (`has_role(auth.uid(),'admin')`); writes only via service role (webhook).
 
-Hardcode the discovered `LEAGUE_ID` and `SEASON` as constants in `src/lib/api-football.ts`. Record the call in `api_usage` (counts as 1).
+## 2. Server: Stripe Checkout
 
-## Step 2 — Database
+- Add `stripe` npm package.
+- `src/lib/donations.functions.ts`:
+  - `createDonationCheckoutFn({ amount_cents: number })` — `createServerFn` POST, validates amount ≥ 100 and ≤ 100000 with zod.
+    - Reads current user (optional — uses `supabase.auth.getUser()` via a soft auth helper; not gated by `requireSupabaseAuth` so guests work).
+    - Calls Stripe with `STRIPE_SECRET_KEY`: `mode: 'payment'`, EUR, one line item "Marcador Donation", `success_url = ${origin}/?donated=true`, `cancel_url = ${origin}/`, `metadata: { user_id: userId ?? 'guest' }`.
+    - Returns `{ url }`.
+- For the optional-auth user lookup, the server fn reads the bearer token via `getRequestHeader('Authorization')` and calls `supabase.auth.getUser(token)` manually (skipping `requireSupabaseAuth` which would 401 guests).
 
-Migration adding two tables (with GRANTs + RLS; admin-only writes via server functions using `supabaseAdmin`, so no anon/auth grants needed beyond admin read for the counter):
+## 3. Webhook (TanStack server route, not edge function)
 
-- `api_cache`: `cache_key text unique`, `data jsonb`, `fetched_at timestamptz`, `expires_at timestamptz`
-- `api_usage`: `date date unique`, `calls_made int default 0`
+User asked for a Supabase Edge Function, but per project conventions webhooks live in TanStack server routes. I'll put it at `src/routes/api/public/stripe-webhook.ts`:
 
-RLS: SELECT for authenticated admins only (checked via `has_role`); all writes via service role.
+- Reads raw body, verifies signature with `stripe.webhooks.constructEvent` and `STRIPE_WEBHOOK_SECRET`.
+- On `checkout.session.completed`:
+  - Insert into `donations` (idempotent on `stripe_session_id`).
+  - If `metadata.user_id` is a real UUID, update `profiles.donor = true` via `supabaseAdmin`.
+- Returns 200 / 400 on signature failure.
+- Requires `STRIPE_WEBHOOK_SECRET` secret — will request via `add_secret`. Webhook URL to give to Stripe: `https://project--ivtitpkkapywtrkpxbin.lovable.app/api/public/stripe-webhook`.
 
-## Step 3 — Server library `src/lib/api-football.server.ts`
+## 4. UI
 
-Server-only module (`.server.ts` so it never bundles to client). Uses `supabaseAdmin` + `process.env.API_FOOTBALL_KEY`.
+- **Footer link** (`src/components/AppShell.tsx`): small muted "Support Marcador" text, opens modal.
+- **`<DonateModal />`** (new): title "Support Marcador ⚽", subtitle, 2×2 grid of preset cards (☕ €3, 🍺 €5, 🍕 €10, 🏆 €25), custom EUR input (min 1), amber "Donate" button → calls `createDonationCheckoutFn` → `window.location.href = url`. Small print "Secure payment via Stripe. No account needed."
+- **Success toast**: in `__root.tsx` (or AppShell), on mount check `?donated=true` → sonner toast "Thank you for supporting Marcador! 🏆" → `router.navigate({ search: {} , replace: true })` to strip the param.
 
-Core helper `cachedFetch(cacheKey, ttlSeconds, endpoint)`:
-1. Read `api_cache` by key — if `expires_at > now()`, return `data`.
-2. Check today's `api_usage.calls_made`:
-   - `>= 100` → throw "Daily API limit reached"
-   - `>= 90` → set a warning flag on the returned envelope
-3. `fetch` the endpoint, increment counter (upsert), upsert cache row with `expires_at = now() + ttl`.
-4. Return `{ data, cached: false, fetched_at, expires_at, warning? }`.
+## 5. Donor recognition
 
-Exposed functions:
-- `getFixtures()` — `/fixtures?league=ID&season=SEASON`, TTL 24h
-- `getLiveFixtures()` — `/fixtures?live=all&league=ID`, TTL 3min; guard: first query local `matches` table — only call if a match `kickoff_at` is within `[now-3h, now+10min]`, otherwise return empty
-- `getStandings()` — `/standings?league=ID&season=SEASON`, TTL 2h
-- `getSquads()` — `/players/squads?team=...` looped over 48 WC teams; returns count of API calls used; if `count > 5`, throw unless `confirmed=true` parameter passed
+- Update `meFn` to return `donor`.
+- Update `global_leaderboard` SQL function to also return `donor boolean` from `profiles`.
+- Leaderboard row: render ⭐ next to display name when `donor`.
+- Mi Marcador (`/me`): show "⭐ Marcador Supporter" line if donor.
 
-Plus utility: `getApiUsageToday()` returning `{ calls_made, limit: 100 }`.
+## 6. Admin Panel — Donations section
 
-## Step 4 — Server functions `src/lib/api-football.functions.ts`
-
-Admin-gated `createServerFn` wrappers (check `has_role('admin')` via `requireSupabaseAuth` context):
-- `syncFixturesFn`, `syncStandingsFn`, `syncLiveScoresFn`, `syncSquadsFn(confirmed: boolean)`
-- `getApiStatusFn` — returns counter + cache metadata (last fetched, expires) for each of the 4 endpoints
-
-Each sync function calls the corresponding cached fetcher and returns `{ cached, fetched_at, expires_at, count, warning? }`.
-
-## Step 5 — Admin Panel UI
-
-Add an **API Sync** section at the top of `src/routes/_authenticated/admin.tsx`:
-
-- Header: `API calls today: X / 100` with color states (green <90, amber 90–99, red 100)
-- Four buttons in a grid card:
-  - **Sync Fixtures** — shows "Cached · expires in 23h" etc.
-  - **Sync Standings** — shows expiry
-  - **Sync Live Scores** — disabled when no match is live/imminent (derived from local `matches`)
-  - **Sync Squads** — opens confirm dialog if estimated calls > 5
-- Each button uses `useMutation` → calls the server fn → toast on success/error → invalidates the status query
-- Live status query polls every 30s
-
-## Step 6 — Security & limits
-
-- API key only read inside `.server.ts` handlers via `process.env.API_FOOTBALL_KEY`
-- All buttons admin-gated server-side (server fn re-checks role; client also hides for non-admins)
-- Hard block at 100 calls; warning toast at 90
-- All endpoints write through `cachedFetch` — no direct API access
-
-## Files
-
-**New**
-- migration: `api_cache`, `api_usage` + RLS
-- `src/lib/api-football.server.ts`
-- `src/lib/api-football.functions.ts`
-- `src/components/admin/ApiSyncPanel.tsx`
-
-**Edited**
-- `src/routes/_authenticated/admin.tsx` — mount `ApiSyncPanel` at top
-- `src/integrations/supabase/types.ts` — regenerated after migration
+At bottom of `_authenticated/admin.tsx`:
+- `getDonationStatsFn` (admin-gated): returns `{ total_cents, donor_count, recent: [{ amount_cents, created_at, display_name | null }] }` (joins `profiles`; null for guests).
+- Card with the three stats and a table of the last 20 donations.
 
 ## Open questions
 
-1. After the discovery call, if **season 2026 is not yet in API-Football's data** (the WC is June 2026; the league row may exist with `season: 2026` already, or only friendlies/qualifiers may be present), should I fall back to the latest available season and surface a notice in admin, or fail loudly?
-2. Sync Squads loops 48 teams = 48 calls — that's half the daily budget. Should the button instead sync **one group at a time** (4 teams = 4 calls), or keep the all-at-once flow behind a confirm?
-3. Should successful syncs **also update local tables** (`matches.home_score/away_score/is_final` from fixtures, `wc_standings` from standings), or is this purely a read-through cache for now with manual admin entry continuing in parallel?
+1. **Edge Function vs TanStack server route for the webhook?** Project convention is server routes under `src/routes/api/public/`. I'll use that unless you specifically want a Supabase Edge Function.
+2. **`STRIPE_WEBHOOK_SECRET`** isn't in your secrets yet — I'll request it after you approve the plan, with instructions for creating the Stripe webhook endpoint and copying the signing secret.
+3. **Currency** locked to EUR — confirm?
+
+## Files
+
+New: migration, `src/lib/donations.functions.ts`, `src/routes/api/public/stripe-webhook.ts`, `src/components/DonateModal.tsx`, `src/components/admin/DonationsPanel.tsx`.
+Edited: `src/components/AppShell.tsx` (footer + success toast), `src/lib/auth.functions.ts` (return donor), `src/routes/_authenticated/admin.tsx`, `src/routes/_authenticated/me.tsx`, `src/routes/_authenticated/leaderboard.tsx`, regenerated `types.ts`.
