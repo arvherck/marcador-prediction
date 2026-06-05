@@ -17,6 +17,16 @@ export const Route = createFileRoute("/_authenticated")({
     const { data, error } = await supabase.auth.getUser();
     if (!error && data.user) {
       const me = await meFn();
+      if (me?.profile?.theme_preference && typeof window !== "undefined") {
+        try {
+          if (!window.localStorage.getItem("marcador_theme")) {
+            const { setTheme } = await import("@/lib/theme");
+            setTheme(me.profile.theme_preference);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
       if (me && !me.profile && location.pathname !== "/onboarding") {
         throw redirect({ to: "/onboarding" });
       }
