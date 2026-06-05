@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useGuest, clearGuest } from "@/lib/guest";
 import { useGuestGate } from "@/components/GuestGate";
 import { supabase } from "@/integrations/supabase/client";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const tabs = [
   { to: "/play", label: "Play", icon: BallIcon, guest: true },
@@ -116,9 +117,10 @@ export function AppShell({
                 </span>
               )
             )}
+            <ThemeToggle />
             <button
               onClick={logout}
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-200"
             >
               {guest ? "Exit" : "Sign out"}
             </button>

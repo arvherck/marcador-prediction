@@ -41,7 +41,49 @@
 :root {
   --radius: 0.875rem;
 
-  /* Dark stadium-at-night base */
+  /* Light — warm off-white scoreboard */
+  --background: oklch(0.955 0.012 80);
+  --foreground: oklch(0.20 0.025 55);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.20 0.025 55);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.20 0.025 55);
+
+  --primary: oklch(0.78 0.16 70);
+  --primary-foreground: oklch(0.18 0.02 60);
+
+  --secondary: oklch(0.92 0.015 75);
+  --secondary-foreground: oklch(0.20 0.025 55);
+
+  --muted: oklch(0.93 0.013 75);
+  --muted-foreground: oklch(0.48 0.025 60);
+
+  --accent: oklch(0.62 0.2 28);
+  --accent-foreground: oklch(0.98 0.01 80);
+
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.98 0.005 80);
+
+  --success: oklch(0.62 0.16 145);
+  --success-foreground: oklch(0.98 0.01 80);
+
+  --border: oklch(0.86 0.018 75);
+  --input: oklch(0.91 0.015 75);
+  --ring: oklch(0.78 0.16 70);
+
+  --gradient-amber: linear-gradient(135deg, oklch(0.78 0.16 70), oklch(0.72 0.2 50));
+  --gradient-pitch: radial-gradient(
+    ellipse at top,
+    oklch(0.98 0.015 80) 0%,
+    oklch(0.94 0.018 75) 70%
+  );
+  --shadow-glow: 0 0 40px -10px oklch(0.78 0.16 70 / 0.45);
+  --shadow-card: 0 8px 24px -12px oklch(0.20 0.02 60 / 0.18);
+}
+
+.dark {
   --background: oklch(0.16 0.018 60);
   --foreground: oklch(0.97 0.012 80);
 
@@ -51,7 +93,6 @@
   --popover: oklch(0.21 0.022 60);
   --popover-foreground: oklch(0.97 0.012 80);
 
-  /* Amber — scoreboard glow */
   --primary: oklch(0.82 0.17 75);
   --primary-foreground: oklch(0.18 0.02 60);
 
@@ -61,7 +102,7 @@
   --muted: oklch(0.24 0.02 60);
   --muted-foreground: oklch(0.7 0.025 70);
 
-  --accent: oklch(0.62 0.2 28); /* warm crimson accent */
+  --accent: oklch(0.62 0.2 28);
   --accent-foreground: oklch(0.98 0.01 80);
 
   --destructive: oklch(0.6 0.22 25);
@@ -84,11 +125,6 @@
   --shadow-card: 0 8px 24px -12px oklch(0.05 0 0 / 0.6);
 }
 
-.dark {
-  --background: oklch(0.16 0.018 60);
-  --foreground: oklch(0.97 0.012 80);
-}
-
 @layer base {
   * {
     border-color: var(--color-border);
@@ -100,6 +136,7 @@
     min-height: 100vh;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    transition: background-color 200ms ease, color 200ms ease;
   }
   h1,
   h2,
