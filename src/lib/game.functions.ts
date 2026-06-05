@@ -235,6 +235,107 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
     };
   });
 
+// ---------- Public (guest) reads — no auth middleware, supabaseAdmin server-only ----------
+
+export const getCurrentMatchdayPublic = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: mds, error: mdErr } = await supabaseAdmin
+      .from("matchdays")
+      .select("*")
+      .order("is_scored", { ascending: true })
+      .order("starts_at", { ascending: true })
+      .limit(1);
+    if (mdErr) throw new Error(mdErr.message);
+    const matchday = mds?.[0];
+    if (!matchday) return null;
+
+    const { data: matches, error: mErr } = await supabaseAdmin
+      .from("matches")
+      .select("*")
+      .eq("matchday_id", matchday.id)
+      .order("kickoff_at", { ascending: true })
+      .order("id", { ascending: true });
+    if (mErr) throw new Error(mErr.message);
+
+    const now = Date.now();
+    const rows: MatchRow[] = (matches ?? []).map((m) => ({
+      id: m.id,
+      matchday_id: m.matchday_id,
+      home_team: m.home_team,
+      away_team: m.away_team,
+      kickoff_at: m.kickoff_at,
+      home_score: m.home_score,
+      away_score: m.away_score,
+      first_scorer: m.first_scorer,
+      is_final: m.is_final,
+      locked: new Date(m.kickoff_at).getTime() <= now,
+      prediction: null,
+    }));
+    return { matchday, matches: rows };
+  },
+);
+
+export const getLeaderboardPublic = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ league_id: z.string().uuid().optional() }).optional())
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows, error } = await supabaseAdmin.rpc(
+      "global_leaderboard",
+      data?.league_id ? { _league_id: data.league_id } : {},
+    );
+    if (error) throw new Error(error.message);
+    return (rows ?? []) as Array<{
+      id: string;
+      display_name: string;
+      country: string;
+      favourite_team: string;
+      total_points: number;
+      scored_predictions: number;
+      last_md_points: number;
+    }>;
+  });
+
+export const getMatchdayLeaderboardPublic = createServerFn({ method: "GET" })
+  .inputValidator(
+    z
+      .object({
+        matchday_id: z.number().int().optional(),
+        league_id: z.string().uuid().optional(),
+      })
+      .optional(),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const args: { _matchday_id?: number; _league_id?: string } = {};
+    if (data?.matchday_id != null) args._matchday_id = data.matchday_id;
+    if (data?.league_id) args._league_id = data.league_id;
+    const { data: rows, error } = await supabaseAdmin.rpc("matchday_leaderboard", args);
+    if (error) throw new Error(error.message);
+    const list = (rows ?? []) as Array<{
+      matchday_id: number;
+      matchday_name: string;
+      id: string;
+      display_name: string;
+      country: string;
+      favourite_team: string;
+      total_points: number;
+      rank: number | null;
+    }>;
+    if (!list.length) return { matchday: null, rows: [] as Array<never> };
+    return {
+      matchday: { id: list[0].matchday_id, name: list[0].matchday_name },
+      rows: list.map(({ id, display_name, country, favourite_team, total_points, rank }) => ({
+        id,
+        display_name,
+        country,
+        favourite_team,
+        total_points,
+        rank,
+      })),
+    };
+  });
+
 function genCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "";
