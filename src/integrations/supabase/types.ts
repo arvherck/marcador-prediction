@@ -322,6 +322,77 @@ export type Database = {
         }
         Relationships: []
       }
+      wc_groups: {
+        Row: {
+          created_at: string
+          id: number
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id: number
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          name?: string
+        }
+        Relationships: []
+      }
+      wc_standings: {
+        Row: {
+          drawn: number
+          goal_difference: number | null
+          goals_against: number
+          goals_for: number
+          group_id: number
+          id: string
+          lost: number
+          played: number
+          points: number | null
+          team: string
+          updated_at: string
+          won: number
+        }
+        Insert: {
+          drawn?: number
+          goal_difference?: number | null
+          goals_against?: number
+          goals_for?: number
+          group_id: number
+          id?: string
+          lost?: number
+          played?: number
+          points?: number | null
+          team: string
+          updated_at?: string
+          won?: number
+        }
+        Update: {
+          drawn?: number
+          goal_difference?: number | null
+          goals_against?: number
+          goals_for?: number
+          group_id?: number
+          id?: string
+          lost?: number
+          played?: number
+          points?: number | null
+          team?: string
+          updated_at?: string
+          won?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wc_standings_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "wc_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       public_profiles: {

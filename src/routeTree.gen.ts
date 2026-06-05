@@ -18,6 +18,7 @@ import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authentic
 import { Route as AuthenticatedMeRouteImport } from './routes/_authenticated/me'
 import { Route as AuthenticatedLeaguesRouteImport } from './routes/_authenticated/leagues'
 import { Route as AuthenticatedLeaderboardRouteImport } from './routes/_authenticated/leaderboard'
+import { Route as AuthenticatedGruposRouteImport } from './routes/_authenticated/grupos'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as AuthenticatedLeaguesJoinRouteImport } from './routes/_authenticated/leagues.join'
 import { Route as AuthenticatedLeaguesIdRouteImport } from './routes/_authenticated/leagues.$id'
@@ -67,6 +68,11 @@ const AuthenticatedLeaderboardRoute =
     path: '/leaderboard',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
+const AuthenticatedGruposRoute = AuthenticatedGruposRouteImport.update({
+  id: '/grupos',
+  path: '/grupos',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/grupos': typeof AuthenticatedGruposRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/leagues': typeof AuthenticatedLeaguesRouteWithChildren
   '/me': typeof AuthenticatedMeRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/grupos': typeof AuthenticatedGruposRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/leagues': typeof AuthenticatedLeaguesRouteWithChildren
   '/me': typeof AuthenticatedMeRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/_authenticated/grupos': typeof AuthenticatedGruposRoute
   '/_authenticated/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/_authenticated/leagues': typeof AuthenticatedLeaguesRouteWithChildren
   '/_authenticated/me': typeof AuthenticatedMeRoute
@@ -132,6 +141,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/admin'
+    | '/grupos'
     | '/leaderboard'
     | '/leagues'
     | '/me'
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/admin'
+    | '/grupos'
     | '/leaderboard'
     | '/leagues'
     | '/me'
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/sitemap.xml'
     | '/_authenticated/admin'
+    | '/_authenticated/grupos'
     | '/_authenticated/leaderboard'
     | '/_authenticated/leagues'
     | '/_authenticated/me'
@@ -240,6 +252,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLeaderboardRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/grupos': {
+      id: '/_authenticated/grupos'
+      path: '/grupos'
+      fullPath: '/grupos'
+      preLoaderRoute: typeof AuthenticatedGruposRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -279,6 +298,7 @@ const AuthenticatedLeaguesRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedGruposRoute: typeof AuthenticatedGruposRoute
   AuthenticatedLeaderboardRoute: typeof AuthenticatedLeaderboardRoute
   AuthenticatedLeaguesRoute: typeof AuthenticatedLeaguesRouteWithChildren
   AuthenticatedMeRoute: typeof AuthenticatedMeRoute
@@ -288,6 +308,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
+  AuthenticatedGruposRoute: AuthenticatedGruposRoute,
   AuthenticatedLeaderboardRoute: AuthenticatedLeaderboardRoute,
   AuthenticatedLeaguesRoute: AuthenticatedLeaguesRouteWithChildren,
   AuthenticatedMeRoute: AuthenticatedMeRoute,
