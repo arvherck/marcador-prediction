@@ -87,6 +87,8 @@ function AdminInner({ displayName }: { displayName?: string }) {
         Panel de Control
       </h1>
 
+      <ApiSyncPanel />
+
       <Section title="New matchday (6 matches)">
         <NewMatchdayForm
           onCreated={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
