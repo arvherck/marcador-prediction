@@ -13,7 +13,9 @@ import {
 } from "@/components/ui/select";
 import {
   getLeaderboard,
+  getLeaderboardPublic,
   getMatchdayLeaderboard,
+  getMatchdayLeaderboardPublic,
   getMyLeagues,
 } from "@/lib/game.functions";
 import { useGuest } from "@/lib/guest";
