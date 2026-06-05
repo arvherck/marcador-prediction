@@ -1,48 +1,48 @@
-## Root cause
+# Tournament Winner Prediction
 
-Empty black boxes aren't (only) an RLS problem. The Play screen calls `getCurrentMatchday`, the Leaderboard calls `getLeaderboard` / `getMatchdayLeaderboard` — **every one of those server functions is `.middleware([requireSupabaseAuth])`**. A guest has no Supabase session, so the bearer attacher sends no `Authorization` header, the middleware throws `Unauthorized`, the query returns no data, and the cards render with no content.
+One-time pick of the 2026 World Cup champion. Worth +50 bonus points if correct. Locks before the first kickoff.
 
-Adding `anon` RLS policies alone won't fix it — the request never reaches the database.
+## Note
+Your message was cut off after "replace the banner with". I'm assuming the locked-in state shows the user's pick (team name) and, after the final is set by admin, a result badge (✅ +50 / ❌ 0). Tell me if you wanted something different.
 
-## Fix
+## Database (one migration)
 
-Two parts: (a) make the read paths work for guests at the server-fn layer, (b) add the anon-readable RLS policies the user requested as defense-in-depth and so a future direct-from-browser read would also work.
+**`tournament_predictions`**
+- `id` uuid PK, `user_id` uuid UNIQUE FK→profiles(user_id), `predicted_winner` text, `points_awarded` int null, `created_at` timestamptz
+- RLS: user can SELECT/INSERT own row (no UPDATE — one shot). Admin SELECT all.
+- GRANT select, insert to authenticated; ALL to service_role.
 
-### 1. Public read server functions (no auth middleware)
+**`tournament_settings`** (singleton, id=1)
+- `actual_winner` text null, `predictions_locked` bool default false, `updated_at` timestamptz
+- RLS: SELECT to anon + authenticated. UPDATE only via admin server fn (no policy).
+- Seed row with id=1.
 
-In `src/lib/game.functions.ts`, add three new public server fns that import `supabaseAdmin` inside the handler (per the TanStack Supabase rules — server-only import lives inside `.handler()`):
+**Constant** `TEAMS_2026` (32 teams, alphabetical) in `src/lib/teams.ts`. Used by UI dropdown and server-side validation (z.enum).
 
-- `getCurrentMatchdayPublic()` — same query shape as `getCurrentMatchday`, but **omits predictions** entirely (every match's `prediction` is `null`, `locked` still computed from kickoff). No `requireSupabaseAuth`.
-- `getLeaderboardPublic({ league_id? })` — calls the existing `global_leaderboard` RPC via `supabaseAdmin`. League scoping stays available but unused for guests.
-- `getMatchdayLeaderboardPublic({ matchday_id?, league_id? })` — same for `matchday_leaderboard` RPC.
+## Server functions (`src/lib/tournament.functions.ts`)
 
-These use `supabaseAdmin` (service role) but only project the same safe columns the authenticated versions already return. They are pure reads. No writes are exposed publicly.
+- `getTournamentStatus` (auth) → `{ myPick: {predicted_winner, points_awarded} | null, locked: boolean, actualWinner: string | null }`
+- `getTournamentStatusPublic` (no auth, supabaseAdmin) → `{ locked, actualWinner }` for guests
+- `submitTournamentPickFn` (auth) → validates team in TEAMS_2026, checks `predictions_locked=false`, inserts (will fail on unique violation if already picked)
+- `adminLockTournamentFn` (auth + assertAdmin) → sets `predictions_locked=true`
+- `adminSetTournamentWinnerFn` (auth + assertAdmin) → input: winner team; sets `actual_winner`, then UPDATE `tournament_predictions` SET `points_awarded = CASE WHEN predicted_winner=winner THEN 50 ELSE 0 END`
 
-### 2. Route guest queries through the public fns
+## Leaderboard integration
 
-- `src/routes/_authenticated/play.tsx`: switch the `useQuery` `queryFn` to `guest ? getCurrentMatchdayPublic() : getCurrentMatchday()`. Existing guest-gated submit/booster buttons already block writes via `guestGate.require(...)`, so no write-path change is needed.
-- `src/routes/_authenticated/leaderboard.tsx`: same swap for `getLeaderboard` and `getMatchdayLeaderboard`. The "My leagues" tab is already hidden when `guest` is true, so `getMyLeagues` stays auth-only.
+Update `global_leaderboard` SQL function: add `COALESCE((SELECT points_awarded FROM tournament_predictions WHERE user_id=p.user_id), 0)` to `total_points`. Bonus only counts once admin scores it (null until then).
 
-### 3. Database — anon RLS policies (defense-in-depth, as requested)
+## UI
 
-One migration via the migration tool:
+**Play screen banner** (`src/routes/_authenticated/play.tsx`, above matchday card)
+- Hidden for guests (or show locked read-only state)
+- States:
+  1. No pick + not locked → Card with title "Pick your champion", Select (32 teams alphabetical), "Lock in my pick" button → calls `submitTournamentPickFn`, then invalidates query
+  2. Has pick, no result yet → Card "Your champion: 🏆 {team}" + small "Locked in" subtitle
+  3. Has pick + actualWinner set → Same card + badge: correct shows "+50 bonus points", wrong shows "Better luck next time"
+  4. Locked + no pick → Muted card "Tournament predictions are closed"
 
-- `matchdays`: `CREATE POLICY "matchdays readable to anon" ON public.matchdays FOR SELECT TO anon USING (true);` plus `GRANT SELECT ON public.matchdays TO anon;`
-- `matches`: `CREATE POLICY "matches readable to anon" ON public.matches FOR SELECT TO anon USING (true);` plus `GRANT SELECT ON public.matches TO anon;`
-- `matchday_scores`: `CREATE POLICY "matchday_scores readable to anon" ON public.matchday_scores FOR SELECT TO anon USING (true);` plus `GRANT SELECT ON public.matchday_scores TO anon;`
-- `profiles`: **do not** expose the base table to `anon` (it has `favourite_team`, which the user excluded). Instead create a `security_invoker` view `public.public_profiles` exposing only `user_id, display_name, country`, grant `SELECT` to `anon` and `authenticated` on the view. No new policy on `profiles` itself. The leaderboard RPCs are `SECURITY DEFINER` and keep working unchanged.
+**Admin tab** (`src/routes/_authenticated/admin.tsx`): add "Tournament" section with Lock button + Set Winner dropdown + Apply.
 
-No write policies, no insert/update/delete grants for `anon` — guests stay read-only at the DB layer too.
-
-### 4. Untouched
-
-- `src/routes/_authenticated.tsx` guest sessionStorage flow — unchanged.
-- All write/mutation server fns (`savePredictionFn`, `setBoosterFn`, `createLeagueFn`, etc.) keep `requireSupabaseAuth` — guests still get prompted to sign up when they hit a write.
-- `meFn`, `completeOnboardingFn`, admin fns — unchanged.
-
-## Verification
-
-1. Sign out, click "Continue as guest", open `/play` — 6 match cards render with team names, flags, kickoff times, and zeroed steppers; the bottom CTA shows "Sign up to predict".
-2. Try to tap booster or change a score and submit — the existing `guestGate` modal still appears.
-3. Open `/leaderboard` as a guest — Overall and Matchday tabs populate from the public RPCs; "My leagues" tab is absent.
-4. Sign in normally — Play screen still shows the user's saved predictions and the submit bar (authenticated path unchanged).
+## Files
+- new: `supabase/migrations/<ts>_tournament.sql`, `src/lib/tournament.functions.ts`, `src/lib/teams.ts`, `src/components/TournamentBanner.tsx`
+- edited: `src/routes/_authenticated/play.tsx`, `src/routes/_authenticated/admin.tsx`
