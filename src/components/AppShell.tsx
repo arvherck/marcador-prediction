@@ -1,9 +1,9 @@
 import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { signOutFn } from "@/lib/auth.functions";
 import { toast } from "sonner";
 import { useGuest, clearGuest } from "@/lib/guest";
 import { useGuestGate } from "@/components/GuestGate";
+import { supabase } from "@/integrations/supabase/client";
 
 const tabs = [
   { to: "/play", label: "Play", icon: BallIcon, guest: true },
@@ -33,11 +33,12 @@ export function AppShell({
       router.navigate({ to: "/" });
       return;
     }
-    await signOutFn();
+    await supabase.auth.signOut();
     toast.success("Signed out.");
     await router.invalidate();
     router.navigate({ to: "/" });
   };
+
 
   const renderTab = (t: typeof tabs[number], variant: "top" | "bottom") => {
     const Icon = t.icon;
