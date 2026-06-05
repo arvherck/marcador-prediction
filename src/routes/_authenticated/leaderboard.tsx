@@ -48,6 +48,7 @@ type OverallRow = {
   favourite_team: string;
   total_points: number;
   last_md_points: number;
+  current_streak: number;
 };
 
 type MatchdayRow = {
