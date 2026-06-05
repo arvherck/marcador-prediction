@@ -522,3 +522,82 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
     </details>
   );
 }
+
+function TournamentAdmin() {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["tournament-status"],
+    queryFn: () => getTournamentStatus(),
+  });
+  const [winner, setWinner] = useState("");
+
+  const lock = useMutation({
+    mutationFn: (locked: boolean) => adminLockTournamentFn({ data: { locked } }),
+    onSuccess: () => {
+      toast.success("Tournament lock updated.");
+      qc.invalidateQueries({ queryKey: ["tournament-status"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const setW = useMutation({
+    mutationFn: () => adminSetTournamentWinnerFn({ data: { winner } }),
+    onSuccess: (r) => {
+      toast.success(`Winner set. Scored ${r.scored} prediction(s).`);
+      qc.invalidateQueries({ queryKey: ["tournament-status"] });
+      qc.invalidateQueries({ queryKey: ["leaderboard"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const locked = q.data?.locked ?? false;
+  const actual = q.data?.actualWinner ?? null;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="font-semibold text-sm">Predictions lock</div>
+          <div className="text-xs text-muted-foreground">
+            {locked ? "Closed — no new picks allowed." : "Open — users can still pick."}
+          </div>
+        </div>
+        <button
+          onClick={() => lock.mutate(!locked)}
+          disabled={lock.isPending}
+          className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+        >
+          {locked ? "Unlock" : "Lock predictions"}
+        </button>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <div className="font-semibold text-sm mb-1">Actual winner</div>
+        <div className="text-xs text-muted-foreground mb-2">
+          {actual ? `Current: ${actual}` : "Not set. Setting this awards +50 to correct picks."}
+        </div>
+        <div className="flex gap-2">
+          <select
+            value={winner}
+            onChange={(e) => setWinner(e.target.value)}
+            className="flex-1 rounded-lg bg-input border border-border px-3 py-2 text-sm"
+          >
+            <option value="">Select winner…</option>
+            {TEAMS_2026.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setW.mutate()}
+            disabled={!winner || setW.isPending}
+            className="rounded-lg bg-amber-gradient px-3 py-2 text-xs font-bold disabled:opacity-40"
+          >
+            {setW.isPending ? "Scoring…" : "Set & score"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
