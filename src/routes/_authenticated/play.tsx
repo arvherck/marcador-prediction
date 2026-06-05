@@ -11,6 +11,7 @@ import { useGuestGate } from "@/components/GuestGate";
 import { useGuest } from "@/lib/guest";
 import {
   getCurrentMatchday,
+  getCurrentMatchdayPublic,
   savePredictionFn,
   setBoosterFn,
   type MatchRow,
