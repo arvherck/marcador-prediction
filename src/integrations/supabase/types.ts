@@ -207,7 +207,6 @@ export type Database = {
           host_country: string | null
           id: number
           is_final: boolean
-          is_selected: boolean
           kickoff_at: string
           matchday_id: number
           phase: string | null
@@ -225,7 +224,6 @@ export type Database = {
           host_country?: string | null
           id?: number
           is_final?: boolean
-          is_selected?: boolean
           kickoff_at: string
           matchday_id: number
           phase?: string | null
@@ -243,7 +241,6 @@ export type Database = {
           host_country?: string | null
           id?: number
           is_final?: boolean
-          is_selected?: boolean
           kickoff_at?: string
           matchday_id?: number
           phase?: string | null

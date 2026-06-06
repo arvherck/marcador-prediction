@@ -43,7 +43,6 @@ type Match = {
   first_scorer: string | null;
   is_final: boolean;
   phase: string | null;
-  is_selected: boolean;
   teams_confirmed?: boolean;
 };
 type Matchday = {
@@ -52,6 +51,7 @@ type Matchday = {
   starts_at: string;
   is_scored: boolean;
   matches: Match[] | null;
+  prediction_count?: number;
 };
 
 const PHASES = [
@@ -96,7 +96,7 @@ function AdminInner({ displayName }: { displayName?: string }) {
 
       <ApiSyncPanel />
 
-      <Section title="New matchday (6 matches)">
+      <Section title="New matchday">
         <NewMatchdayForm
           onCreated={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
         />
@@ -179,7 +179,7 @@ function AddMatchForm({
   const [away, setAway] = useState("");
   const [kickoff, setKickoff] = useState("");
   const [phase, setPhase] = useState<string>(PHASES[0]);
-  const [isSelected, setIsSelected] = useState(false);
+  const [confirmed, setConfirmed] = useState(true);
 
   const add = useMutation({
     mutationFn: () =>
@@ -190,7 +190,7 @@ function AddMatchForm({
           away_team: away,
           kickoff_at: new Date(kickoff).toISOString(),
           phase,
-          is_selected: isSelected,
+          teams_confirmed: confirmed,
         },
       }),
     onSuccess: () => {
@@ -198,7 +198,7 @@ function AddMatchForm({
       setHome("");
       setAway("");
       setKickoff("");
-      setIsSelected(false);
+      setConfirmed(true);
       onAdded();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
@@ -254,10 +254,10 @@ function AddMatchForm({
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
-          checked={isSelected}
-          onChange={(e) => setIsSelected(e.target.checked)}
+          checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)}
         />
-        One of the 6 selected matches
+        Teams confirmed (open for predictions)
       </label>
       <button
         onClick={() => add.mutate()}
@@ -282,13 +282,15 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
+  const total = md.matches?.length ?? 0;
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="px-4 py-3 flex items-center justify-between border-b border-border">
         <div>
           <div className="font-semibold">{md.name}</div>
           <div className="text-xs text-muted-foreground">
-            {new Date(md.starts_at).toLocaleString()}
+            {new Date(md.starts_at).toLocaleString()} · {total} match{total === 1 ? "" : "es"} ·{" "}
+            {md.prediction_count ?? 0} predicted by users
           </div>
         </div>
         {md.is_scored ? (
@@ -367,11 +369,10 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
         </div>
         <div className="text-[11px] text-muted-foreground">
           {m.phase ?? "—"}
-          {m.is_selected && " · ⭐ selected"}
           {confirmed ? " · ✅ teams confirmed" : " · ⚠️ teams TBD"}
         </div>
         {!confirmed && (
-          <div className="mt-2 flex items-center gap-1.5">
+          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
             <input
               value={homeName}
               onChange={(e) => setHomeName(e.target.value)}
@@ -386,11 +387,17 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
               className="flex-1 min-w-0 rounded bg-input border border-border px-2 py-1 text-xs"
             />
             <button
-              onClick={() => renameTeams.mutate()}
-              disabled={renameTeams.isPending || (homeName === m.home_team && awayName === m.away_team)}
-              className="rounded bg-primary text-primary-foreground px-2 py-1 text-xs font-bold disabled:opacity-40"
+              onClick={() => {
+                if (homeName !== m.home_team || awayName !== m.away_team) {
+                  renameTeams.mutate();
+                } else {
+                  setConfirmed.mutate(true);
+                }
+              }}
+              disabled={renameTeams.isPending || setConfirmed.isPending}
+              className="rounded bg-amber-gradient text-primary-foreground px-2 py-1 text-xs font-bold disabled:opacity-40"
             >
-              Save teams
+              Confirm teams
             </button>
           </div>
         )}
@@ -530,9 +537,6 @@ function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
 function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
   const [startsAt, setStartsAt] = useState("");
-  const [matches, setMatches] = useState(
-    Array.from({ length: 6 }).map(() => ({ home_team: "", away_team: "", kickoff_at: "" })),
-  );
 
   const create = useMutation({
     mutationFn: () =>
@@ -540,18 +544,12 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
         data: {
           name,
           starts_at: new Date(startsAt).toISOString(),
-          matches: matches.map((m) => ({
-            home_team: m.home_team,
-            away_team: m.away_team,
-            kickoff_at: new Date(m.kickoff_at).toISOString(),
-          })),
         },
       }),
     onSuccess: () => {
-      toast.success("Matchday created.");
+      toast.success("Matchday created. Add matches below.");
       setName("");
       setStartsAt("");
-      setMatches(Array.from({ length: 6 }).map(() => ({ home_team: "", away_team: "", kickoff_at: "" })));
       onCreated();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
@@ -559,10 +557,10 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <details className="rounded-2xl border border-border bg-card p-4">
-      <summary className="cursor-pointer font-semibold">Create matchday with 6 matches</summary>
+      <summary className="cursor-pointer font-semibold">Create empty matchday</summary>
       <div className="mt-4 space-y-2">
         <input
-          placeholder="Matchday name"
+          placeholder="Matchday name (e.g. Matchday 4)"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
@@ -573,43 +571,9 @@ function NewMatchdayForm({ onCreated }: { onCreated: () => void }) {
           onChange={(e) => setStartsAt(e.target.value)}
           className="w-full rounded-lg bg-input border border-border px-3 py-2 text-sm"
         />
-        {matches.map((m, i) => (
-          <div key={i} className="grid grid-cols-[1fr_1fr_1.4fr] gap-2">
-            <input
-              placeholder="Home"
-              value={m.home_team}
-              onChange={(e) =>
-                setMatches((arr) =>
-                  arr.map((x, j) => (j === i ? { ...x, home_team: e.target.value } : x)),
-                )
-              }
-              className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
-            />
-            <input
-              placeholder="Away"
-              value={m.away_team}
-              onChange={(e) =>
-                setMatches((arr) =>
-                  arr.map((x, j) => (j === i ? { ...x, away_team: e.target.value } : x)),
-                )
-              }
-              className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
-            />
-            <input
-              type="datetime-local"
-              value={m.kickoff_at}
-              onChange={(e) =>
-                setMatches((arr) =>
-                  arr.map((x, j) => (j === i ? { ...x, kickoff_at: e.target.value } : x)),
-                )
-              }
-              className="rounded-lg bg-input border border-border px-3 py-2 text-sm"
-            />
-          </div>
-        ))}
         <button
           onClick={() => create.mutate()}
-          disabled={create.isPending}
+          disabled={create.isPending || !name || !startsAt}
           className="mt-2 w-full rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold disabled:opacity-40"
         >
           Create matchday

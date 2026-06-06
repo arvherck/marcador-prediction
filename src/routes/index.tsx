@@ -10,7 +10,7 @@ export const Route = createFileRoute("/")({
     const image = "https://marcador-prediction.lovable.app/og-marcador.jpg";
     const title = "Marcador — World Cup 2026 Predictions";
     const description =
-      "Predict every World Cup 2026 match, boost a call, and climb the global scoreboard. Six fixtures a matchday, points for results and exact scores.";
+      "Predict every World Cup 2026 match. Exact scores, first scorer, and a 2× booster per matchday. Climb the global scoreboard.";
     return {
       meta: [
         { title },
@@ -78,11 +78,11 @@ function Landing() {
               World Cup 2026 · Canada · Mexico · USA
             </div>
             <h1 className="font-display font-bold text-5xl md:text-7xl leading-[1.02] tracking-tight">
-              The <span className="text-amber-glow">scoreboard</span> for every prediction.
+              Predict every match. <span className="text-amber-glow">Every matchday.</span>
             </h1>
             <p className="mt-6 text-lg text-muted-foreground max-w-md">
-              Six matches each matchday. Predict the exact score and the first team to find the net.
-              Double your call with a booster. Climb the table.
+              Call the exact score and the first team to find the net for every World Cup 2026
+              fixture. Double a pick with a booster. Climb the table.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
