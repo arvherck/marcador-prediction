@@ -266,6 +266,7 @@ export const getCurrentMatchdayPublic = createServerFn({ method: "GET" }).handle
       .from("matches")
       .select("*")
       .eq("matchday_id", matchday.id)
+      .eq("is_selected", true)
       .order("kickoff_at", { ascending: true })
       .order("id", { ascending: true });
     if (mErr) throw new Error(mErr.message);
