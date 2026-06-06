@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Lock, Zap, Trophy, Share2 } from "lucide-react";
+import { z } from "zod";
+import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { KickoffCountdown } from "@/components/KickoffCountdown";
@@ -10,6 +12,7 @@ import { ShareModal } from "@/components/ShareModal";
 import { TournamentBanner } from "@/components/TournamentBanner";
 import { useGuestGate } from "@/components/GuestGate";
 import { useGuest } from "@/lib/guest";
+import { AllMatchesView } from "@/components/play/AllMatchesView";
 import {
   getCurrentMatchday,
   getCurrentMatchdayPublic,
