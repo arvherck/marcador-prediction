@@ -44,6 +44,7 @@ type Match = {
   is_final: boolean;
   phase: string | null;
   is_selected: boolean;
+  teams_confirmed?: boolean;
 };
 type Matchday = {
   id: number;
