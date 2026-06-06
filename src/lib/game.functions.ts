@@ -289,6 +289,7 @@ export const getCurrentMatchdayPublic = createServerFn({ method: "GET" }).handle
       host_country: (m as { host_country: string | null }).host_country ?? null,
       group_letter: (m as { group_letter: string | null }).group_letter ?? null,
       phase: m.phase ?? null,
+      teams_confirmed: (m as { teams_confirmed?: boolean }).teams_confirmed ?? true,
       locked: new Date(m.kickoff_at).getTime() <= now,
       prediction: null,
     }));
