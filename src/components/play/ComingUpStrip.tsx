@@ -40,7 +40,7 @@ export function ComingUpStrip({
         className="flex gap-2 overflow-x-auto pb-2 snap-x scroll-px-2 [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: "none" }}
       >
-        {days.map((d, i) => {
+        {days.map((d) => {
           const isActive = activeKeys.has(d.key);
           const isPast = diffInDays(d.date, new Date()) < 0;
           const isToday = diffInDays(d.date, new Date()) === 0;
