@@ -777,3 +777,130 @@ export const getFixtureStatsPublic = createServerFn({ method: "GET" }).handler(
     return { matches: matchCount ?? 0, matchdays: mdCount ?? 0 };
   },
 );
+
+// ---------- All Matches (full schedule) prediction mode ----------
+
+export const getAllMatchdays = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [{ data: mds, error: mdErr }, { data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
+      supabase.from("matchdays").select("id, name, starts_at, is_scored").order("id", { ascending: true }),
+      supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final"),
+      supabase.from("predictions").select("match_id").eq("user_id", userId),
+    ]);
+    if (mdErr) throw new Error(mdErr.message);
+    if (mErr) throw new Error(mErr.message);
+    if (pErr) throw new Error(pErr.message);
+    const predSet = new Set((preds ?? []).map((p) => p.match_id));
+    const now = Date.now();
+    const byMd = new Map<number, { available: number; predicted: number }>();
+    for (const m of matches ?? []) {
+      const row = byMd.get(m.matchday_id) ?? { available: 0, predicted: 0 };
+      const tc = (m as { teams_confirmed?: boolean }).teams_confirmed ?? true;
+      const kickoffFuture = new Date(m.kickoff_at).getTime() > now;
+      if (tc && (kickoffFuture || m.is_final)) row.available += 1;
+      if (predSet.has(m.id)) row.predicted += 1;
+      byMd.set(m.matchday_id, row);
+    }
+    return (mds ?? []).map((md) => {
+      const r = byMd.get(md.id) ?? { available: 0, predicted: 0 };
+      return {
+        id: md.id,
+        name: md.name,
+        starts_at: md.starts_at,
+        is_scored: md.is_scored,
+        predicted: r.predicted,
+        available: r.available,
+      };
+    });
+  });
+
+export const getMatchdayAllMatches = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ matchday_id: z.number().int() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const [{ data: md, error: mdErr }, { data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
+      supabase.from("matchdays").select("*").eq("id", data.matchday_id).maybeSingle(),
+      supabase
+        .from("matches")
+        .select("*")
+        .eq("matchday_id", data.matchday_id)
+        .order("kickoff_at", { ascending: true })
+        .order("id", { ascending: true }),
+      supabase.from("predictions").select("*").eq("user_id", userId),
+    ]);
+    if (mdErr) throw new Error(mdErr.message);
+    if (mErr) throw new Error(mErr.message);
+    if (pErr) throw new Error(pErr.message);
+    if (!md) return null;
+    const predByMatch = new Map<number, (typeof preds)[number]>();
+    for (const p of preds ?? []) predByMatch.set(p.match_id, p);
+    const now = Date.now();
+    const rows: MatchRow[] = (matches ?? []).map((m) => {
+      const p = predByMatch.get(m.id);
+      return {
+        id: m.id,
+        matchday_id: m.matchday_id,
+        home_team: m.home_team,
+        away_team: m.away_team,
+        kickoff_at: m.kickoff_at,
+        home_score: m.home_score,
+        away_score: m.away_score,
+        first_scorer: m.first_scorer,
+        is_final: m.is_final,
+        stadium: (m as { stadium: string | null }).stadium ?? null,
+        city: (m as { city: string | null }).city ?? null,
+        host_country: (m as { host_country: string | null }).host_country ?? null,
+        group_letter: (m as { group_letter: string | null }).group_letter ?? null,
+        phase: m.phase ?? null,
+        teams_confirmed: (m as { teams_confirmed?: boolean }).teams_confirmed ?? true,
+        locked: new Date(m.kickoff_at).getTime() <= now,
+        prediction: p
+          ? {
+              home_goals: p.home_goals,
+              away_goals: p.away_goals,
+              first_scorer: p.first_scorer,
+              booster: p.booster,
+              points: p.points,
+            }
+          : null,
+      };
+    });
+    return { matchday: md, matches: rows };
+  });
+
+export const adminSetTeamsConfirmedFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ match_id: z.number().int(), confirmed: z.boolean() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("matches")
+      .update({ teams_confirmed: data.confirmed })
+      .eq("id", data.match_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminUpdateMatchTeamsFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      match_id: z.number().int(),
+      home_team: z.string().trim().min(1).max(80),
+      away_team: z.string().trim().min(1).max(80),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("matches")
+      .update({ home_team: data.home_team, away_team: data.away_team })
+      .eq("id", data.match_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
