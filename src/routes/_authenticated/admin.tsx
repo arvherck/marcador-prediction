@@ -89,6 +89,8 @@ function AdminInner({ displayName }: { displayName?: string }) {
         Panel de Control
       </h1>
 
+      <FixtureImportBanner />
+
       <ApiSyncPanel />
 
       <Section title="New matchday (6 matches)">
