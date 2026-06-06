@@ -17,6 +17,7 @@ export type MatchRow = {
   host_country: string | null;
   group_letter: string | null;
   phase: string | null;
+  teams_confirmed: boolean;
   prediction: {
     home_goals: number;
     away_goals: number;
