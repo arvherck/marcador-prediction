@@ -190,11 +190,42 @@ function PlayPage() {
             )}
           </header>
 
-          <div className="mb-5">
-            <KickoffCountdown kickoffAt={nextKickoff} />
-          </div>
+          {!guest && (
+            <div className="mb-4 inline-flex rounded-xl border border-border bg-card p-1 text-xs font-bold">
+              <button
+                onClick={() =>
+                  navigate({ search: (prev) => ({ ...prev, view: "featured" }) })
+                }
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  view === "featured"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Featured (6)
+              </button>
+              <button
+                onClick={() =>
+                  navigate({ search: (prev) => ({ ...prev, view: "all" }) })
+                }
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  view === "all"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                All Matches
+              </button>
+            </div>
+          )}
 
-          {q.data.matches.length === 0 ? (
+          {view === "featured" && (
+            <div className="mb-5">
+              <KickoffCountdown kickoffAt={nextKickoff} />
+            </div>
+          )}
+
+          {view === "featured" && (q.data.matches.length === 0 ? (
             <EmptyBall
               title="This matchday has no fixtures yet"
               sub="The admin hasn't published them."
@@ -213,6 +244,10 @@ function PlayPage() {
                 />
               ))}
             </div>
+          ))}
+
+          {view === "all" && !guest && (
+            <AllMatchesView initialMatchdayId={q.data.matchday.id} />
           )}
 
           {q.data.matches.length > 0 && <ScoringLegend />}
