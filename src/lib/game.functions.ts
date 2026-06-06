@@ -280,6 +280,11 @@ export const getCurrentMatchdayPublic = createServerFn({ method: "GET" }).handle
       away_score: m.away_score,
       first_scorer: m.first_scorer,
       is_final: m.is_final,
+      stadium: (m as { stadium: string | null }).stadium ?? null,
+      city: (m as { city: string | null }).city ?? null,
+      host_country: (m as { host_country: string | null }).host_country ?? null,
+      group_letter: (m as { group_letter: string | null }).group_letter ?? null,
+      phase: m.phase ?? null,
       locked: new Date(m.kickoff_at).getTime() <= now,
       prediction: null,
     }));
