@@ -48,6 +48,7 @@ export const getCurrentMatchday = createServerFn({ method: "GET" })
         .from("matches")
         .select("*")
         .eq("matchday_id", matchday.id)
+        .eq("is_selected", true)
         .order("kickoff_at", { ascending: true })
         .order("id", { ascending: true }),
       supabase.from("predictions").select("*").eq("user_id", userId),
