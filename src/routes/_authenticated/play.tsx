@@ -24,7 +24,12 @@ import { teamFlag } from "@/lib/teamFlags";
 import { supabase } from "@/integrations/supabase/client";
 
 
+const searchSchema = z.object({
+  view: fallback(z.enum(["featured", "all"]), "featured").default("featured"),
+});
+
 export const Route = createFileRoute("/_authenticated/play")({
+  validateSearch: zodValidator(searchSchema),
   head: () => {
     const url = "https://marcador-prediction.lovable.app/play";
     const title = "This matchday · Marcador";
