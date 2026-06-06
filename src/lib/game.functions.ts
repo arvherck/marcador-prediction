@@ -738,3 +738,37 @@ export const getMyMatchdayScoresFn = createServerFn({ method: "GET" })
       }))
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   });
+
+export const getUpcomingMatchesPublic = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabaseAdmin
+      .from("matches")
+      .select("id, home_team, away_team, kickoff_at, stadium, city")
+      .gt("kickoff_at", nowIso)
+      .eq("is_final", false)
+      .order("kickoff_at", { ascending: true })
+      .limit(3);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as Array<{
+      id: number;
+      home_team: string;
+      away_team: string;
+      kickoff_at: string;
+      stadium: string | null;
+      city: string | null;
+    }>;
+  },
+);
+
+export const getFixtureStatsPublic = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ count: matchCount }, { count: mdCount }] = await Promise.all([
+      supabaseAdmin.from("matches").select("id", { count: "exact", head: true }),
+      supabaseAdmin.from("matchdays").select("id", { count: "exact", head: true }),
+    ]);
+    return { matches: matchCount ?? 0, matchdays: mdCount ?? 0 };
+  },
+);
