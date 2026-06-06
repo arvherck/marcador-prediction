@@ -54,6 +54,8 @@ type Draft = { home: number; away: number; scorer: Scorer; dirty: boolean };
 
 function PlayPage() {
   const { me } = Route.useRouteContext();
+  const { view } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const guest = useGuest();
   const guestGate = useGuestGate();
   const q = useQuery({
