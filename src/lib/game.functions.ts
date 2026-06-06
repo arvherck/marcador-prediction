@@ -12,6 +12,11 @@ export type MatchRow = {
   away_score: number | null;
   first_scorer: string | null;
   is_final: boolean;
+  stadium: string | null;
+  city: string | null;
+  host_country: string | null;
+  group_letter: string | null;
+  phase: string | null;
   prediction: {
     home_goals: number;
     away_goals: number;
