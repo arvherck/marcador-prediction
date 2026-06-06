@@ -199,41 +199,53 @@ export type Database = {
         Row: {
           away_score: number | null
           away_team: string
+          city: string | null
           first_scorer: string | null
+          group_letter: string | null
           home_score: number | null
           home_team: string
+          host_country: string | null
           id: number
           is_final: boolean
           is_selected: boolean
           kickoff_at: string
           matchday_id: number
           phase: string | null
+          stadium: string | null
         }
         Insert: {
           away_score?: number | null
           away_team: string
+          city?: string | null
           first_scorer?: string | null
+          group_letter?: string | null
           home_score?: number | null
           home_team: string
+          host_country?: string | null
           id?: number
           is_final?: boolean
           is_selected?: boolean
           kickoff_at: string
           matchday_id: number
           phase?: string | null
+          stadium?: string | null
         }
         Update: {
           away_score?: number | null
           away_team?: string
+          city?: string | null
           first_scorer?: string | null
+          group_letter?: string | null
           home_score?: number | null
           home_team?: string
+          host_country?: string | null
           id?: number
           is_final?: boolean
           is_selected?: boolean
           kickoff_at?: string
           matchday_id?: number
           phase?: string | null
+          stadium?: string | null
         }
         Relationships: [
           {
