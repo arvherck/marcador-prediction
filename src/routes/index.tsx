@@ -1,4 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { getUpcomingMatchesPublic } from "@/lib/game.functions";
+
 
 export const Route = createFileRoute("/")({
 
