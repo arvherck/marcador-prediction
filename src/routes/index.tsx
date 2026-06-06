@@ -129,33 +129,74 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MiniMatch({
-  home,
-  away,
-  hs,
-  as,
-  boost,
-}: {
-  home: string;
-  away: string;
-  hs: number;
-  as: number;
-  boost?: boolean;
-}) {
+function UpcomingPreview() {
+  const q = useQuery({
+    queryKey: ["upcoming-public"],
+    queryFn: () => getUpcomingMatchesPublic(),
+    staleTime: 60_000,
+  });
+  const matches = q.data ?? [];
   return (
-    <div className="flex items-center justify-between rounded-xl bg-background/60 border border-border px-3 py-2.5">
-      <span className="text-sm font-medium truncate">{home}</span>
-      <div className="flex items-center gap-2">
-        <span className="font-score text-lg">{hs}</span>
-        <span className="text-muted-foreground text-xs">·</span>
-        <span className="font-score text-lg">{as}</span>
-        {boost && (
-          <span className="ml-2 rounded-md bg-primary/15 text-primary text-[10px] font-bold px-1.5 py-0.5">
-            2×
-          </span>
-        )}
+    <div className="rounded-2xl bg-card border border-border p-6 shadow-card">
+      <div className="flex items-center justify-between text-xs uppercase tracking-widest text-muted-foreground">
+        <span>Next up</span>
+        <span className="text-primary">Live preview</span>
       </div>
-      <span className="text-sm font-medium truncate text-right">{away}</span>
+      <div className="mt-4 space-y-3 min-h-[156px]">
+        {q.isLoading && (
+          <>
+            <div className="h-12 rounded-xl bg-background/60 border border-border animate-pulse" />
+            <div className="h-12 rounded-xl bg-background/60 border border-border animate-pulse" />
+            <div className="h-12 rounded-xl bg-background/60 border border-border animate-pulse" />
+          </>
+        )}
+        {!q.isLoading && matches.length === 0 && (
+          <div className="text-sm text-muted-foreground">
+            Fixtures coming soon.
+          </div>
+        )}
+        {matches.map((m) => (
+          <MiniMatch key={m.id} match={m} />
+        ))}
+      </div>
+      <div className="mt-5 pt-5 border-t border-border flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">Predict to score</span>
+        <span className="font-score text-2xl text-amber-glow">+3 / +2</span>
+      </div>
+    </div>
+  );
+}
+
+function MiniMatch({
+  match,
+}: {
+  match: {
+    home_team: string;
+    away_team: string;
+    kickoff_at: string;
+    stadium: string | null;
+    city: string | null;
+  };
+}) {
+  const ko = new Date(match.kickoff_at);
+  const when = ko.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const venue = [match.stadium, match.city].filter(Boolean).join(" · ");
+  return (
+    <div className="rounded-xl bg-background/60 border border-border px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium truncate">{match.home_team}</span>
+        <span className="text-muted-foreground text-xs shrink-0">vs</span>
+        <span className="text-sm font-medium truncate text-right">{match.away_team}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+        <span className="truncate">{venue}</span>
+        <span className="shrink-0 tabular-nums">{when}</span>
+      </div>
     </div>
   );
 }
