@@ -10,6 +10,8 @@ import {
   adminListPredictionsFn,
   adminScoreMatchdayFn,
   adminSetResultFn,
+  adminSetTeamsConfirmedFn,
+  adminUpdateMatchTeamsFn,
   getFixtureStatsPublic,
 } from "@/lib/game.functions";
 import {
