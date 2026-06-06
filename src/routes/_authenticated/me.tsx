@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
-import { getMyHistoryFn, getMyMatchdayScoresFn } from "@/lib/game.functions";
+import { getMyHistoryFn, getMyMatchdayScoresFn, getMyProfileStatsFn } from "@/lib/game.functions";
+import { teamFlag } from "@/lib/teamFlags";
 
 export const Route = createFileRoute("/_authenticated/me")({
   head: () => {
@@ -54,6 +55,7 @@ function MePage() {
   const { me } = Route.useRouteContext();
   const history = useQuery({ queryKey: ["my-history"], queryFn: () => getMyHistoryFn() });
   const scores = useQuery({ queryKey: ["my-scores"], queryFn: () => getMyMatchdayScoresFn() });
+  const stats = useQuery({ queryKey: ["my-stats"], queryFn: () => getMyProfileStatsFn() });
 
   const total = (scores.data as Score[] | undefined)?.reduce((a, b) => a + b.total_points, 0) ?? 0;
 
@@ -83,6 +85,12 @@ function MePage() {
         />
       </header>
 
+      {stats.data && (
+        <Section title="At a glance">
+          <StatsGrid stats={stats.data} />
+        </Section>
+      )}
+
       <Section title="Points per matchday">
         <BarChart data={(scores.data as Score[] | undefined) ?? []} />
       </Section>
@@ -104,6 +112,73 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="font-display font-semibold text-lg mb-3">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function StatsGrid({
+  stats,
+}: {
+  stats: {
+    predicted: number;
+    total: number;
+    accuracy_pct: number | null;
+    most_predicted_winner: { team: string; count: number } | null;
+  };
+}) {
+  const pct = stats.total ? Math.round((stats.predicted / stats.total) * 100) : 0;
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="text-xs uppercase tracking-widest text-muted-foreground">
+          Predictions submitted
+        </div>
+        <div className="mt-2 flex items-baseline gap-2">
+          <span className="font-score font-bold text-3xl text-amber-glow tabular-nums">
+            {stats.predicted}
+          </span>
+          <span className="text-muted-foreground text-sm">/ {stats.total} matches</span>
+        </div>
+        <div className="mt-3 h-1.5 rounded-full bg-secondary overflow-hidden">
+          <div
+            className="h-full bg-amber-gradient"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="text-xs uppercase tracking-widest text-muted-foreground">
+          Accuracy rate
+        </div>
+        <div className="mt-2 font-score font-bold text-3xl text-amber-glow tabular-nums">
+          {stats.accuracy_pct == null ? "—" : `${stats.accuracy_pct}%`}
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          {stats.accuracy_pct == null
+            ? "Wait for scored matches"
+            : "of scored picks earned points"}
+        </div>
+      </div>
+      <div className="rounded-2xl border border-border bg-card p-4">
+        <div className="text-xs uppercase tracking-widest text-muted-foreground">
+          Most picked winner
+        </div>
+        {stats.most_predicted_winner ? (
+          <div className="mt-2">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{teamFlag(stats.most_predicted_winner.team)}</span>
+              <span className="font-display font-bold text-lg truncate">
+                {stats.most_predicted_winner.team}
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              picked in {stats.most_predicted_winner.count} of your predictions
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 text-sm text-muted-foreground">No winners predicted yet.</div>
+        )}
+      </div>
+    </div>
   );
 }
 
