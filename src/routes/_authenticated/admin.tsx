@@ -149,6 +149,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function FixtureImportBanner() {
+  const q = useQuery({
+    queryKey: ["fixture-stats"],
+    queryFn: () => getFixtureStatsPublic(),
+    staleTime: 60_000,
+  });
+  if (!q.data) return null;
+  return (
+    <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm font-medium text-foreground">
+      <span className="text-primary font-bold">{q.data.matches}</span> matches imported across{" "}
+      <span className="text-primary font-bold">{q.data.matchdays}</span> matchdays
+    </div>
+  );
+}
+
 function AddMatchForm({
   matchdays,
   onAdded,
