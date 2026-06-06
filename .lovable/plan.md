@@ -1,52 +1,69 @@
+# All Matches Prediction Mode
 
-## Plan: Import Real 2026 World Cup Fixtures
+Expand predictions beyond the 6 featured matches per matchday so users can predict every match where teams are known.
 
-### 1. Database schema migration
-Add new nullable columns to `public.matches`:
-- `stadium TEXT`
-- `city TEXT`
-- `host_country TEXT`
-- `group_letter TEXT`
+## 1. Database
 
-(Other existing columns — `phase`, `is_selected`, `home_score`, `away_score`, `first_scorer`, `is_final` — already cover the rest.)
+Migration on `public.matches`:
+- Add `teams_confirmed boolean NOT NULL DEFAULT false`.
+- Backfill: `teams_confirmed = true` for all matchdays 1–3 (group stage, 72 matches). Knockout matches (matchdays 4–9) stay `false` until admin updates them.
+- Add a trigger `auto_confirm_teams_on_update`: if `home_team` or `away_team` changes and neither new value matches a placeholder pattern (`Winner %`, `Loser %`, `RU %`, `1%`, `2%`, `3%`, `TBD%`), set `teams_confirmed = true`.
 
-### 2. Data wipe + import (single SQL transaction via insert tool)
-- `DELETE FROM predictions;` (FK cascade safety — they reference matches)
-- `DELETE FROM matchday_scores;` (reference matchdays)
-- `DELETE FROM matches;`
-- `DELETE FROM matchdays;`
-- Reset sequences for `matchdays_id_seq` and `matches_id_seq`.
-- Insert 9 matchdays with fixed IDs 1–9 and the names specified. `starts_at` = MIN(kickoff_utc) per matchday from the CSV.
-- Insert 104 matches with `matchday_id`, `home_team`, `away_team`, `kickoff_at` (UTC), `phase` (round), `stadium`, `city`, `host_country`, `group_letter` (empty string treated as NULL for knockouts), scores NULL, `is_final=false`, `is_selected` per rule 4.
+No changes to predictions / scoring schema. The existing scoring function already iterates every match in a matchday, so full-schedule predictions are automatically included in `matchday_scores` and the global leaderboard — no engine changes needed.
 
-I'll generate the SQL by parsing the CSV in a script then feeding it through the insert tool.
+Add a server-side validation trigger on `predictions` to reject inserts/updates when the target match has `teams_confirmed = false` or `kickoff_at <= now()`.
 
-### 3. `is_selected` auto-selection logic
-- **Matchday 1**: first 6 by `kickoff_at`.
-- **Matchdays 2 & 3**: pick 6 spread across distinct groups — order by kickoff, greedy pick one per unique group letter until 6 chosen (12 groups available, so always possible).
-- **Matchdays 4–9 (knockouts)**: all matches `is_selected = true`.
+## 2. Server functions (`src/lib/game.functions.ts`)
 
-### 4. Frontend updates
+- `getAllMatchesForMatchday(matchdayId)` — returns every match in the matchday with venue, kickoff, `teams_confirmed`, current score, plus the user's prediction if any.
+- `getMatchdayProgress()` — returns `[{ matchday_id, name, predicted_count, total_available }]` for the tab bar (available = `teams_confirmed AND kickoff_at > now()` OR scored).
+- `upsertPrediction({ match_id, home_goals, away_goals, first_scorer, booster })` — single-match upsert used by debounced auto-save. Enforces: match teams confirmed, kickoff in future, only one booster per matchday across all that user's predictions in that matchday.
+- Update `getMatchdayData` / `getCurrentMatchday` — unchanged (still `is_selected = true` for the featured view).
 
-**Landing page (`src/routes/index.tsx`)** — live preview section
-- Replace placeholder/static scores with a server-fn query for the next 3 matches where `kickoff_at > now()` ordered ascending. Render team names, kickoff, stadium · city.
+## 3. UI — Play screen (`src/routes/_authenticated/play.tsx`)
 
-**Play screen (`src/routes/_authenticated/play.tsx`)**
-- Update active-matchday logic to: smallest `matchday_id` whose matches include at least one future `kickoff_at` AND `is_scored = false`.
-- On each match card, add a small subtext line below team names: `{stadium} · {city}`.
+Top of page: segmented toggle `Featured (6) | All Matches`. Default = Featured. Selection persisted in URL search param `?view=featured|all` via `validateSearch`.
 
-**Admin panel (`src/routes/_authenticated/admin.tsx`)**
-- Add a small confirmation banner / stat: "104 matches imported across 9 matchdays" — derived from a count query so it stays accurate.
+### Featured view
+Unchanged.
 
-### 5. Types
-`src/integrations/supabase/types.ts` will be regenerated after the migration is approved; UI code can then use the new columns.
+### All Matches view
+- Horizontal scroll tab bar of matchdays: `MD1 (6/6)`, `MD2 (2/16)`, …, with the current active matchday selected by default. Counts come from `getMatchdayProgress`.
+- Grid of compact `MatchPredictionCard` components for the selected matchday:
+  - Home / away team, kickoff (local time), `{stadium} · {city}` subtext.
+  - Two number inputs (0–20) for goals.
+  - First-scorer selector (Home / Away / No goal).
+  - Booster toggle — disabled with tooltip if already used on another match in the matchday.
+  - Auto-save: 1s debounce per card, calls `upsertPrediction`. Status pill cycles `Saving… → Saved ✓` (or `Error – retry`).
+  - If `kickoff_at <= now()`: card locked, padlock icon, shows final/live score if present.
+  - If `teams_confirmed = false`: card greyed, body replaced with "Teams TBD", inputs disabled.
 
-### Technical notes
-- CSV has 104 rows + header; parsed in Python on the sandbox before issuing inserts.
-- All times in CSV are already UTC; stored as `timestamptz`.
-- `group_letter` left NULL when CSV's `group` is blank (knockouts).
-- No changes to scoring logic, RLS, or grants — schema additions are purely additive nullable columns.
+New file: `src/components/play/MatchPredictionCard.tsx` (compact variant) + `src/components/play/AllMatchesView.tsx`.
 
-### Out of scope
-- Bracket progression / auto-filling knockout team names later.
-- Timezone conversion UI (display stays UTC-aware via existing components).
+## 4. Admin (`src/routes/_authenticated/admin.tsx` + `DonationsPanel`-style panel)
+
+New `MatchesPanel`:
+- Table of matches filtered by matchday: teams, kickoff, `is_selected`, `teams_confirmed` toggle, editable home/away team fields for knockouts.
+- Toggling `teams_confirmed` calls `adminSetTeamsConfirmed({ match_id, confirmed })`.
+- Editing a knockout team name calls `adminUpdateMatchTeams({ match_id, home_team, away_team })`; the DB trigger flips `teams_confirmed` automatically when both values look real.
+
+### Realtime notification
+On the All Matches view, subscribe to `postgres_changes` on `matches` (UPDATE where `teams_confirmed` flips false→true). On event, show a toast: `New match available to predict: {home} vs {away}` and invalidate the matchday progress query.
+
+## 5. Scoring & leaderboard
+
+No code changes — `score_matchday` already loops every match with `is_final = true` in the matchday and writes per-user totals into `matchday_scores`, which the global leaderboard sums. Confirm by reading the function (already in context) — full-schedule predictions are picked up for free.
+
+Booster rule (one per matchday) is enforced at write time in `upsertPrediction`, not at scoring time.
+
+## 6. Out of scope
+
+- No bracket auto-progression. Admin manually edits knockout team names.
+- No push notifications — only in-app toast via Supabase realtime for users with the page open.
+- No bulk-prediction shortcuts (e.g. "predict 1-1 for all").
+
+## Technical notes
+
+- Files touched: 1 migration; `src/lib/game.functions.ts`; `src/routes/_authenticated/play.tsx`; new `src/components/play/AllMatchesView.tsx`, `MatchPredictionCard.tsx`, `MatchdayTabs.tsx`; `src/routes/_authenticated/admin.tsx` + new `MatchesPanel.tsx`.
+- Types regenerated after migration.
+- Realtime: enable `REPLICA IDENTITY FULL` and add `matches` to `supabase_realtime` publication in the migration.
