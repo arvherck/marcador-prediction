@@ -145,7 +145,7 @@ function PlayPage() {
 
       <div className="mb-4 inline-flex rounded-xl border border-border bg-card p-1 text-xs font-bold">
         <button
-          onClick={() => navigate({ search: (p) => ({ ...p, view: "date" }) })}
+          onClick={() => navigate({ search: (p: z.infer<typeof searchSchema>) => ({ ...p, view: "date" as const }) })}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
             view === "date"
               ? "bg-primary text-primary-foreground"
@@ -155,7 +155,7 @@ function PlayPage() {
           <Calendar size={14} /> By date
         </button>
         <button
-          onClick={() => navigate({ search: (p) => ({ ...p, view: "matchday" }) })}
+          onClick={() => navigate({ search: (p: z.infer<typeof searchSchema>) => ({ ...p, view: "matchday" as const }) })}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
             view === "matchday"
               ? "bg-primary text-primary-foreground"
@@ -192,7 +192,7 @@ function PlayPage() {
           }
           matches={matches}
           activeMd={md ?? null}
-          onActive={(id) => navigate({ search: (p) => ({ ...p, md: id }) })}
+          onActive={(id) => navigate({ search: (p: z.infer<typeof searchSchema>) => ({ ...p, md: id }) })}
           guest={guest}
           onGuestAction={guestAction}
         />
