@@ -30,68 +30,192 @@ export type MatchRow = {
 
 const scorerEnum = z.enum(["home", "away", "none"]);
 
-export const getCurrentMatchday = createServerFn({ method: "GET" })
+function mapMatch(
+  m: {
+    id: number;
+    matchday_id: number;
+    home_team: string;
+    away_team: string;
+    kickoff_at: string;
+    home_score: number | null;
+    away_score: number | null;
+    first_scorer: string | null;
+    is_final: boolean;
+    phase: string | null;
+    stadium?: string | null;
+    city?: string | null;
+    host_country?: string | null;
+    group_letter?: string | null;
+    teams_confirmed?: boolean;
+  },
+  p: {
+    home_goals: number;
+    away_goals: number;
+    first_scorer: string;
+    booster: boolean;
+    points: number | null;
+  } | undefined,
+  now: number,
+): MatchRow {
+  return {
+    id: m.id,
+    matchday_id: m.matchday_id,
+    home_team: m.home_team,
+    away_team: m.away_team,
+    kickoff_at: m.kickoff_at,
+    home_score: m.home_score,
+    away_score: m.away_score,
+    first_scorer: m.first_scorer,
+    is_final: m.is_final,
+    stadium: m.stadium ?? null,
+    city: m.city ?? null,
+    host_country: m.host_country ?? null,
+    group_letter: m.group_letter ?? null,
+    phase: m.phase ?? null,
+    teams_confirmed: m.teams_confirmed ?? true,
+    locked: new Date(m.kickoff_at).getTime() <= now,
+    prediction: p
+      ? {
+          home_goals: p.home_goals,
+          away_goals: p.away_goals,
+          first_scorer: p.first_scorer,
+          booster: p.booster,
+          points: p.points,
+        }
+      : null,
+  };
+}
+
+// ---------- Authenticated reads ----------
+
+export const getAllMatches = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const { data: mds, error: mdErr } = await supabase
-      .from("matchdays")
-      .select("*")
-      .order("is_scored", { ascending: true })
-      .order("starts_at", { ascending: true })
-      .limit(1);
-    if (mdErr) throw new Error(mdErr.message);
-    const matchday = mds?.[0];
-    if (!matchday) return null;
-
     const [{ data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
       supabase
         .from("matches")
         .select("*")
-        .eq("matchday_id", matchday.id)
-        .eq("is_selected", true)
         .order("kickoff_at", { ascending: true })
         .order("id", { ascending: true }),
       supabase.from("predictions").select("*").eq("user_id", userId),
     ]);
     if (mErr) throw new Error(mErr.message);
     if (pErr) throw new Error(pErr.message);
-
     const predByMatch = new Map<number, (typeof preds)[number]>();
     for (const p of preds ?? []) predByMatch.set(p.match_id, p);
     const now = Date.now();
-    const rows: MatchRow[] = (matches ?? []).map((m) => {
-      const p = predByMatch.get(m.id);
+    const rows: MatchRow[] = (matches ?? []).map((m) => mapMatch(m, predByMatch.get(m.id), now));
+    return rows;
+  });
+
+export const getAllMatchesPublic = createServerFn({ method: "GET" }).handler(async () => {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: matches, error } = await supabaseAdmin
+    .from("matches")
+    .select("*")
+    .order("kickoff_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) throw new Error(error.message);
+  const now = Date.now();
+  return (matches ?? []).map((m) => mapMatch(m, undefined, now));
+});
+
+export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [
+      { data: mds, error: mdErr },
+      { data: matches, error: mErr },
+      { data: preds, error: pErr },
+    ] = await Promise.all([
+      supabase
+        .from("matchdays")
+        .select("id, name, starts_at, is_scored")
+        .order("starts_at", { ascending: true }),
+      supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final"),
+      supabase.from("predictions").select("match_id").eq("user_id", userId),
+    ]);
+    if (mdErr) throw new Error(mdErr.message);
+    if (mErr) throw new Error(mErr.message);
+    if (pErr) throw new Error(pErr.message);
+    const predSet = new Set((preds ?? []).map((p) => p.match_id));
+    const byMd = new Map<number, { total: number; available: number; predicted: number }>();
+    for (const m of matches ?? []) {
+      const tc = (m as { teams_confirmed?: boolean }).teams_confirmed ?? true;
+      const row = byMd.get(m.matchday_id) ?? { total: 0, available: 0, predicted: 0 };
+      row.total += 1;
+      if (tc) row.available += 1;
+      if (predSet.has(m.id)) row.predicted += 1;
+      byMd.set(m.matchday_id, row);
+    }
+    return (mds ?? []).map((md) => {
+      const r = byMd.get(md.id) ?? { total: 0, available: 0, predicted: 0 };
       return {
-        id: m.id,
-        matchday_id: m.matchday_id,
-        home_team: m.home_team,
-        away_team: m.away_team,
-        kickoff_at: m.kickoff_at,
-        home_score: m.home_score,
-        away_score: m.away_score,
-        first_scorer: m.first_scorer,
-        is_final: m.is_final,
-        stadium: (m as { stadium: string | null }).stadium ?? null,
-        city: (m as { city: string | null }).city ?? null,
-        host_country: (m as { host_country: string | null }).host_country ?? null,
-        group_letter: (m as { group_letter: string | null }).group_letter ?? null,
-        phase: m.phase ?? null,
-        teams_confirmed: (m as { teams_confirmed?: boolean }).teams_confirmed ?? true,
-        locked: new Date(m.kickoff_at).getTime() <= now,
-        prediction: p
-          ? {
-              home_goals: p.home_goals,
-              away_goals: p.away_goals,
-              first_scorer: p.first_scorer,
-              booster: p.booster,
-              points: p.points,
-            }
-          : null,
+        id: md.id,
+        name: md.name,
+        starts_at: md.starts_at,
+        is_scored: md.is_scored,
+        total: r.total,
+        available: r.available,
+        predicted: r.predicted,
       };
     });
-    return { matchday, matches: rows };
   });
+
+export const getPlayOverview = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const nowIso = new Date().toISOString();
+    const [
+      { count: totalConfirmed },
+      { count: openCount },
+      { data: nextRow },
+      { data: predRows },
+    ] = await Promise.all([
+      supabase
+        .from("matches")
+        .select("id", { count: "exact", head: true })
+        .eq("teams_confirmed", true),
+      supabase
+        .from("matches")
+        .select("id", { count: "exact", head: true })
+        .eq("teams_confirmed", true)
+        .gt("kickoff_at", nowIso),
+      supabase
+        .from("matches")
+        .select("kickoff_at, home_team, away_team")
+        .eq("teams_confirmed", true)
+        .gt("kickoff_at", nowIso)
+        .order("kickoff_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("predictions")
+        .select("match_id, match:matches(teams_confirmed)")
+        .eq("user_id", userId),
+    ]);
+    const predicted = (predRows ?? []).filter(
+      (p) => (p.match as { teams_confirmed?: boolean } | null)?.teams_confirmed !== false,
+    ).length;
+    return {
+      total: totalConfirmed ?? 0,
+      open: openCount ?? 0,
+      predicted,
+      remaining: Math.max(0, (openCount ?? 0) - predicted),
+      next: nextRow
+        ? {
+            kickoff_at: nextRow.kickoff_at,
+            home_team: nextRow.home_team,
+            away_team: nextRow.away_team,
+          }
+        : null,
+    };
+  });
+
+// ---------- Write paths ----------
 
 export const savePredictionFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -105,15 +229,6 @@ export const savePredictionFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: match, error: mErr } = await supabase
-      .from("matches")
-      .select("kickoff_at")
-      .eq("id", data.match_id)
-      .maybeSingle();
-    if (mErr) throw new Error(mErr.message);
-    if (!match) throw new Error("Match not found.");
-    if (new Date(match.kickoff_at).getTime() <= Date.now())
-      throw new Error("Predictions are locked for this match.");
     const { error } = await supabase.from("predictions").upsert(
       {
         user_id: userId,
@@ -135,16 +250,17 @@ export const setBoosterFn = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const { data: match, error: mErr } = await supabase
       .from("matches")
-      .select("kickoff_at")
+      .select("kickoff_at, teams_confirmed")
       .eq("id", data.match_id)
       .eq("matchday_id", data.matchday_id)
       .maybeSingle();
     if (mErr) throw new Error(mErr.message);
     if (!match) throw new Error("Match not found.");
+    if ((match as { teams_confirmed?: boolean }).teams_confirmed === false)
+      throw new Error("Teams not confirmed yet.");
     if (new Date(match.kickoff_at).getTime() <= Date.now())
       throw new Error("Too late to change booster — match has started.");
 
-    // Ensure prediction exists (with booster=true here)
     const { data: existing } = await supabase
       .from("predictions")
       .select("id")
@@ -163,7 +279,6 @@ export const setBoosterFn = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
 
-    // Clear booster on other matches in this matchday for this user
     const { data: mdMatches } = await supabase
       .from("matches")
       .select("id")
@@ -185,6 +300,8 @@ export const setBoosterFn = createServerFn({ method: "POST" })
     if (setErr) throw new Error(setErr.message);
     return { ok: true };
   });
+
+// ---------- Leaderboards ----------
 
 export const getLeaderboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -249,54 +366,6 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
     };
   });
 
-// ---------- Public (guest) reads — no auth middleware, supabaseAdmin server-only ----------
-
-export const getCurrentMatchdayPublic = createServerFn({ method: "GET" }).handler(
-  async () => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: mds, error: mdErr } = await supabaseAdmin
-      .from("matchdays")
-      .select("*")
-      .order("is_scored", { ascending: true })
-      .order("starts_at", { ascending: true })
-      .limit(1);
-    if (mdErr) throw new Error(mdErr.message);
-    const matchday = mds?.[0];
-    if (!matchday) return null;
-
-    const { data: matches, error: mErr } = await supabaseAdmin
-      .from("matches")
-      .select("*")
-      .eq("matchday_id", matchday.id)
-      .eq("is_selected", true)
-      .order("kickoff_at", { ascending: true })
-      .order("id", { ascending: true });
-    if (mErr) throw new Error(mErr.message);
-
-    const now = Date.now();
-    const rows: MatchRow[] = (matches ?? []).map((m) => ({
-      id: m.id,
-      matchday_id: m.matchday_id,
-      home_team: m.home_team,
-      away_team: m.away_team,
-      kickoff_at: m.kickoff_at,
-      home_score: m.home_score,
-      away_score: m.away_score,
-      first_scorer: m.first_scorer,
-      is_final: m.is_final,
-      stadium: (m as { stadium: string | null }).stadium ?? null,
-      city: (m as { city: string | null }).city ?? null,
-      host_country: (m as { host_country: string | null }).host_country ?? null,
-      group_letter: (m as { group_letter: string | null }).group_letter ?? null,
-      phase: m.phase ?? null,
-      teams_confirmed: (m as { teams_confirmed?: boolean }).teams_confirmed ?? true,
-      locked: new Date(m.kickoff_at).getTime() <= now,
-      prediction: null,
-    }));
-    return { matchday, matches: rows };
-  },
-);
-
 export const getLeaderboardPublic = createServerFn({ method: "GET" })
   .inputValidator(z.object({ league_id: z.string().uuid().optional() }).optional())
   .handler(async ({ data }) => {
@@ -357,6 +426,8 @@ export const getMatchdayLeaderboardPublic = createServerFn({ method: "GET" })
       })),
     };
   });
+
+// ---------- Leagues ----------
 
 function genCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -449,8 +520,9 @@ export const getMyLeagues = createServerFn({ method: "GET" })
     }>;
   });
 
+// ---------- Admin ----------
+
 async function assertAdmin(supabase: ReturnType<typeof Object>, userId: string) {
-  // call has_role via RPC would be simpler; use direct lookup
   const c = supabase as unknown as {
     from: (t: string) => {
       select: (s: string) => {
@@ -480,13 +552,28 @@ export const adminListMatchdays = createServerFn({ method: "GET" })
       .select("*")
       .order("kickoff_at", { ascending: true });
     if (mErr) throw new Error(mErr.message);
+    const { data: predCounts, error: pcErr } = await supabase
+      .from("predictions")
+      .select("match_id");
+    if (pcErr) throw new Error(pcErr.message);
+    const predsByMatch = new Map<number, number>();
+    for (const p of predCounts ?? []) {
+      predsByMatch.set(p.match_id, (predsByMatch.get(p.match_id) ?? 0) + 1);
+    }
     const byMd = new Map<number, typeof ms>();
     for (const m of ms ?? []) {
       const arr = byMd.get(m.matchday_id) ?? [];
       arr.push(m);
       byMd.set(m.matchday_id, arr);
     }
-    return (mds ?? []).map((md) => ({ ...md, matches: byMd.get(md.id) ?? [] }));
+    return (mds ?? []).map((md) => {
+      const matches = byMd.get(md.id) ?? [];
+      const predCount = matches.reduce(
+        (sum, m) => sum + (predsByMatch.get(m.id) ?? 0),
+        0,
+      );
+      return { ...md, matches, prediction_count: predCount };
+    });
   });
 
 export const adminSetResultFn = createServerFn({ method: "POST" })
@@ -533,15 +620,6 @@ export const adminAddMatchdayFn = createServerFn({ method: "POST" })
     z.object({
       name: z.string().trim().min(2).max(80),
       starts_at: z.string(),
-      matches: z
-        .array(
-          z.object({
-            home_team: z.string().trim().min(2),
-            away_team: z.string().trim().min(2),
-            kickoff_at: z.string(),
-          }),
-        )
-        .length(6),
     }),
   )
   .handler(async ({ data, context }) => {
@@ -553,15 +631,6 @@ export const adminAddMatchdayFn = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error || !md) throw new Error(error?.message ?? "Failed to create matchday.");
-    const { error: insErr } = await supabase.from("matches").insert(
-      data.matches.map((m) => ({
-        matchday_id: md.id,
-        home_team: m.home_team,
-        away_team: m.away_team,
-        kickoff_at: m.kickoff_at,
-      })),
-    );
-    if (insErr) throw new Error(insErr.message);
     return { id: md.id };
   });
 
@@ -574,7 +643,7 @@ export const adminAddMatchFn = createServerFn({ method: "POST" })
       away_team: z.string().trim().min(1),
       kickoff_at: z.string(),
       phase: z.string().trim().max(40).optional().nullable(),
-      is_selected: z.boolean().optional().default(false),
+      teams_confirmed: z.boolean().optional().default(true),
     }),
   )
   .handler(async ({ data, context }) => {
@@ -588,7 +657,7 @@ export const adminAddMatchFn = createServerFn({ method: "POST" })
         away_team: data.away_team,
         kickoff_at: data.kickoff_at,
         phase: data.phase ?? null,
-        is_selected: data.is_selected ?? false,
+        teams_confirmed: data.teams_confirmed ?? true,
       })
       .select("id")
       .single();
@@ -647,6 +716,42 @@ export const adminListPredictionsFn = createServerFn({ method: "GET" })
       })
       .sort((a, b) => a.kickoff_at.localeCompare(b.kickoff_at) || a.match_id - b.match_id);
   });
+
+export const adminSetTeamsConfirmedFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ match_id: z.number().int(), confirmed: z.boolean() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("matches")
+      .update({ teams_confirmed: data.confirmed })
+      .eq("id", data.match_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminUpdateMatchTeamsFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      match_id: z.number().int(),
+      home_team: z.string().trim().min(1).max(80),
+      away_team: z.string().trim().min(1).max(80),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("matches")
+      .update({ home_team: data.home_team, away_team: data.away_team })
+      .eq("id", data.match_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- History / Profile ----------
 
 export const getMyHistoryFn = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -744,6 +849,58 @@ export const getMyMatchdayScoresFn = createServerFn({ method: "GET" })
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   });
 
+export const getMyProfileStatsFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const [{ count: totalMatches }, { data: preds, error: pErr }] = await Promise.all([
+      supabase
+        .from("matches")
+        .select("id", { count: "exact", head: true })
+        .eq("teams_confirmed", true),
+      supabase
+        .from("predictions")
+        .select("home_goals, away_goals, points, match:matches(home_team, away_team, is_final)")
+        .eq("user_id", userId),
+    ]);
+    if (pErr) throw new Error(pErr.message);
+    type Pred = {
+      home_goals: number;
+      away_goals: number;
+      points: number | null;
+      match: { home_team: string; away_team: string; is_final: boolean } | null;
+    };
+    const list = (preds ?? []) as Pred[];
+    const scored = list.filter((p) => p.points != null);
+    const withPoints = scored.filter((p) => (p.points ?? 0) > 0);
+    const winnerCount = new Map<string, number>();
+    for (const p of list) {
+      const m = p.match;
+      if (!m) continue;
+      const winner =
+        p.home_goals > p.away_goals
+          ? m.home_team
+          : p.away_goals > p.home_goals
+          ? m.away_team
+          : null;
+      if (winner) winnerCount.set(winner, (winnerCount.get(winner) ?? 0) + 1);
+    }
+    let mostPredictedWinner: { team: string; count: number } | null = null;
+    for (const [team, count] of winnerCount) {
+      if (!mostPredictedWinner || count > mostPredictedWinner.count) {
+        mostPredictedWinner = { team, count };
+      }
+    }
+    return {
+      predicted: list.length,
+      total: totalMatches ?? 0,
+      accuracy_pct: scored.length ? Math.round((withPoints.length / scored.length) * 100) : null,
+      most_predicted_winner: mostPredictedWinner,
+    };
+  });
+
+// ---------- Public reads ----------
+
 export const getUpcomingMatchesPublic = createServerFn({ method: "GET" }).handler(
   async () => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -753,6 +910,7 @@ export const getUpcomingMatchesPublic = createServerFn({ method: "GET" }).handle
       .select("id, home_team, away_team, kickoff_at, stadium, city")
       .gt("kickoff_at", nowIso)
       .eq("is_final", false)
+      .eq("teams_confirmed", true)
       .order("kickoff_at", { ascending: true })
       .limit(3);
     if (error) throw new Error(error.message);
@@ -777,130 +935,3 @@ export const getFixtureStatsPublic = createServerFn({ method: "GET" }).handler(
     return { matches: matchCount ?? 0, matchdays: mdCount ?? 0 };
   },
 );
-
-// ---------- All Matches (full schedule) prediction mode ----------
-
-export const getAllMatchdays = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const [{ data: mds, error: mdErr }, { data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
-      supabase.from("matchdays").select("id, name, starts_at, is_scored").order("id", { ascending: true }),
-      supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final"),
-      supabase.from("predictions").select("match_id").eq("user_id", userId),
-    ]);
-    if (mdErr) throw new Error(mdErr.message);
-    if (mErr) throw new Error(mErr.message);
-    if (pErr) throw new Error(pErr.message);
-    const predSet = new Set((preds ?? []).map((p) => p.match_id));
-    const now = Date.now();
-    const byMd = new Map<number, { available: number; predicted: number }>();
-    for (const m of matches ?? []) {
-      const row = byMd.get(m.matchday_id) ?? { available: 0, predicted: 0 };
-      const tc = (m as { teams_confirmed?: boolean }).teams_confirmed ?? true;
-      const kickoffFuture = new Date(m.kickoff_at).getTime() > now;
-      if (tc && (kickoffFuture || m.is_final)) row.available += 1;
-      if (predSet.has(m.id)) row.predicted += 1;
-      byMd.set(m.matchday_id, row);
-    }
-    return (mds ?? []).map((md) => {
-      const r = byMd.get(md.id) ?? { available: 0, predicted: 0 };
-      return {
-        id: md.id,
-        name: md.name,
-        starts_at: md.starts_at,
-        is_scored: md.is_scored,
-        predicted: r.predicted,
-        available: r.available,
-      };
-    });
-  });
-
-export const getMatchdayAllMatches = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ matchday_id: z.number().int() }))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const [{ data: md, error: mdErr }, { data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
-      supabase.from("matchdays").select("*").eq("id", data.matchday_id).maybeSingle(),
-      supabase
-        .from("matches")
-        .select("*")
-        .eq("matchday_id", data.matchday_id)
-        .order("kickoff_at", { ascending: true })
-        .order("id", { ascending: true }),
-      supabase.from("predictions").select("*").eq("user_id", userId),
-    ]);
-    if (mdErr) throw new Error(mdErr.message);
-    if (mErr) throw new Error(mErr.message);
-    if (pErr) throw new Error(pErr.message);
-    if (!md) return null;
-    const predByMatch = new Map<number, (typeof preds)[number]>();
-    for (const p of preds ?? []) predByMatch.set(p.match_id, p);
-    const now = Date.now();
-    const rows: MatchRow[] = (matches ?? []).map((m) => {
-      const p = predByMatch.get(m.id);
-      return {
-        id: m.id,
-        matchday_id: m.matchday_id,
-        home_team: m.home_team,
-        away_team: m.away_team,
-        kickoff_at: m.kickoff_at,
-        home_score: m.home_score,
-        away_score: m.away_score,
-        first_scorer: m.first_scorer,
-        is_final: m.is_final,
-        stadium: (m as { stadium: string | null }).stadium ?? null,
-        city: (m as { city: string | null }).city ?? null,
-        host_country: (m as { host_country: string | null }).host_country ?? null,
-        group_letter: (m as { group_letter: string | null }).group_letter ?? null,
-        phase: m.phase ?? null,
-        teams_confirmed: (m as { teams_confirmed?: boolean }).teams_confirmed ?? true,
-        locked: new Date(m.kickoff_at).getTime() <= now,
-        prediction: p
-          ? {
-              home_goals: p.home_goals,
-              away_goals: p.away_goals,
-              first_scorer: p.first_scorer,
-              booster: p.booster,
-              points: p.points,
-            }
-          : null,
-      };
-    });
-    return { matchday: md, matches: rows };
-  });
-
-export const adminSetTeamsConfirmedFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(z.object({ match_id: z.number().int(), confirmed: z.boolean() }))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    await assertAdmin(supabase, userId);
-    const { error } = await supabase
-      .from("matches")
-      .update({ teams_confirmed: data.confirmed })
-      .eq("id", data.match_id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-export const adminUpdateMatchTeamsFn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator(
-    z.object({
-      match_id: z.number().int(),
-      home_team: z.string().trim().min(1).max(80),
-      away_team: z.string().trim().min(1).max(80),
-    }),
-  )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    await assertAdmin(supabase, userId);
-    const { error } = await supabase
-      .from("matches")
-      .update({ home_team: data.home_team, away_team: data.away_team })
-      .eq("id", data.match_id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
