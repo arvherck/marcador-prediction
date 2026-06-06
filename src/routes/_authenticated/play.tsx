@@ -1,8 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Lock, Zap, Trophy, Share2 } from "lucide-react";
+import { z } from "zod";
+import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { KickoffCountdown } from "@/components/KickoffCountdown";
@@ -10,6 +12,7 @@ import { ShareModal } from "@/components/ShareModal";
 import { TournamentBanner } from "@/components/TournamentBanner";
 import { useGuestGate } from "@/components/GuestGate";
 import { useGuest } from "@/lib/guest";
+import { AllMatchesView } from "@/components/play/AllMatchesView";
 import {
   getCurrentMatchday,
   getCurrentMatchdayPublic,
@@ -21,7 +24,12 @@ import { teamFlag } from "@/lib/teamFlags";
 import { supabase } from "@/integrations/supabase/client";
 
 
+const searchSchema = z.object({
+  view: fallback(z.enum(["featured", "all"]), "featured").default("featured"),
+});
+
 export const Route = createFileRoute("/_authenticated/play")({
+  validateSearch: zodValidator(searchSchema),
   head: () => {
     const url = "https://marcador-prediction.lovable.app/play";
     const title = "This matchday · Marcador";
@@ -46,6 +54,8 @@ type Draft = { home: number; away: number; scorer: Scorer; dirty: boolean };
 
 function PlayPage() {
   const { me } = Route.useRouteContext();
+  const { view } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const guest = useGuest();
   const guestGate = useGuestGate();
   const q = useQuery({
@@ -180,11 +190,38 @@ function PlayPage() {
             )}
           </header>
 
-          <div className="mb-5">
-            <KickoffCountdown kickoffAt={nextKickoff} />
-          </div>
+          {!guest && (
+            <div className="mb-4 inline-flex rounded-xl border border-border bg-card p-1 text-xs font-bold">
+              <button
+                onClick={() => navigate({ search: { view: "featured" } })}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  view === "featured"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Featured (6)
+              </button>
+              <button
+                onClick={() => navigate({ search: { view: "all" } })}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  view === "all"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                All Matches
+              </button>
+            </div>
+          )}
 
-          {q.data.matches.length === 0 ? (
+          {view === "featured" && (
+            <div className="mb-5">
+              <KickoffCountdown kickoffAt={nextKickoff} />
+            </div>
+          )}
+
+          {view === "featured" && (q.data.matches.length === 0 ? (
             <EmptyBall
               title="This matchday has no fixtures yet"
               sub="The admin hasn't published them."
@@ -203,12 +240,16 @@ function PlayPage() {
                 />
               ))}
             </div>
+          ))}
+
+          {view === "all" && !guest && (
+            <AllMatchesView initialMatchdayId={q.data.matchday.id} />
           )}
 
           {q.data.matches.length > 0 && <ScoringLegend />}
 
-          {/* Sticky submit bar (hidden for guests) */}
-          {q.data.matches.length > 0 && !guest && (
+          {/* Sticky submit bar (hidden for guests and All Matches view) */}
+          {view === "featured" && q.data.matches.length > 0 && !guest && (
             <div className="fixed inset-x-0 bottom-16 md:bottom-6 z-30 px-4 pointer-events-none">
               <div className="max-w-2xl mx-auto pointer-events-auto flex gap-2">
                 <button

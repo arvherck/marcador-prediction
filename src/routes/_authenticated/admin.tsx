@@ -10,6 +10,8 @@ import {
   adminListPredictionsFn,
   adminScoreMatchdayFn,
   adminSetResultFn,
+  adminSetTeamsConfirmedFn,
+  adminUpdateMatchTeamsFn,
   getFixtureStatsPublic,
 } from "@/lib/game.functions";
 import {
@@ -42,6 +44,7 @@ type Match = {
   is_final: boolean;
   phase: string | null;
   is_selected: boolean;
+  teams_confirmed?: boolean;
 };
 type Matchday = {
   id: number;
@@ -332,17 +335,75 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
+  const [homeName, setHomeName] = useState(m.home_team);
+  const [awayName, setAwayName] = useState(m.away_team);
+  const confirmed = m.teams_confirmed !== false;
+  const setConfirmed = useMutation({
+    mutationFn: (val: boolean) =>
+      adminSetTeamsConfirmedFn({ data: { match_id: m.id, confirmed: val } }),
+    onSuccess: () => {
+      toast.success("Teams confirmation updated.");
+      onChange();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+  const renameTeams = useMutation({
+    mutationFn: () =>
+      adminUpdateMatchTeamsFn({
+        data: { match_id: m.id, home_team: homeName, away_team: awayName },
+      }),
+    onSuccess: () => {
+      toast.success("Teams updated.");
+      onChange();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
   return (
     <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
-      <div className="flex-1 min-w-[160px] text-sm">
+      <div className="flex-1 min-w-[200px] text-sm">
         <div className="font-medium">
           {m.home_team} <span className="text-muted-foreground">vs</span> {m.away_team}
         </div>
         <div className="text-[11px] text-muted-foreground">
           {m.phase ?? "—"}
           {m.is_selected && " · ⭐ selected"}
+          {confirmed ? " · ✅ teams confirmed" : " · ⚠️ teams TBD"}
         </div>
+        {!confirmed && (
+          <div className="mt-2 flex items-center gap-1.5">
+            <input
+              value={homeName}
+              onChange={(e) => setHomeName(e.target.value)}
+              placeholder="Home team"
+              className="flex-1 min-w-0 rounded bg-input border border-border px-2 py-1 text-xs"
+            />
+            <span className="text-muted-foreground text-xs">vs</span>
+            <input
+              value={awayName}
+              onChange={(e) => setAwayName(e.target.value)}
+              placeholder="Away team"
+              className="flex-1 min-w-0 rounded bg-input border border-border px-2 py-1 text-xs"
+            />
+            <button
+              onClick={() => renameTeams.mutate()}
+              disabled={renameTeams.isPending || (homeName === m.home_team && awayName === m.away_team)}
+              className="rounded bg-primary text-primary-foreground px-2 py-1 text-xs font-bold disabled:opacity-40"
+            >
+              Save teams
+            </button>
+          </div>
+        )}
       </div>
+      <label className="flex items-center gap-1.5 text-xs">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(e) => setConfirmed.mutate(e.target.checked)}
+          disabled={setConfirmed.isPending}
+        />
+        Teams confirmed
+      </label>
       <input
         type="number"
         min={0}
