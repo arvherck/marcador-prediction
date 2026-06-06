@@ -12,6 +12,11 @@ export type MatchRow = {
   away_score: number | null;
   first_scorer: string | null;
   is_final: boolean;
+  stadium: string | null;
+  city: string | null;
+  host_country: string | null;
+  group_letter: string | null;
+  phase: string | null;
   prediction: {
     home_goals: number;
     away_goals: number;
@@ -43,6 +48,7 @@ export const getCurrentMatchday = createServerFn({ method: "GET" })
         .from("matches")
         .select("*")
         .eq("matchday_id", matchday.id)
+        .eq("is_selected", true)
         .order("kickoff_at", { ascending: true })
         .order("id", { ascending: true }),
       supabase.from("predictions").select("*").eq("user_id", userId),
@@ -65,6 +71,11 @@ export const getCurrentMatchday = createServerFn({ method: "GET" })
         away_score: m.away_score,
         first_scorer: m.first_scorer,
         is_final: m.is_final,
+        stadium: (m as { stadium: string | null }).stadium ?? null,
+        city: (m as { city: string | null }).city ?? null,
+        host_country: (m as { host_country: string | null }).host_country ?? null,
+        group_letter: (m as { group_letter: string | null }).group_letter ?? null,
+        phase: m.phase ?? null,
         locked: new Date(m.kickoff_at).getTime() <= now,
         prediction: p
           ? {
@@ -255,6 +266,7 @@ export const getCurrentMatchdayPublic = createServerFn({ method: "GET" }).handle
       .from("matches")
       .select("*")
       .eq("matchday_id", matchday.id)
+      .eq("is_selected", true)
       .order("kickoff_at", { ascending: true })
       .order("id", { ascending: true });
     if (mErr) throw new Error(mErr.message);
@@ -270,6 +282,11 @@ export const getCurrentMatchdayPublic = createServerFn({ method: "GET" }).handle
       away_score: m.away_score,
       first_scorer: m.first_scorer,
       is_final: m.is_final,
+      stadium: (m as { stadium: string | null }).stadium ?? null,
+      city: (m as { city: string | null }).city ?? null,
+      host_country: (m as { host_country: string | null }).host_country ?? null,
+      group_letter: (m as { group_letter: string | null }).group_letter ?? null,
+      phase: m.phase ?? null,
       locked: new Date(m.kickoff_at).getTime() <= now,
       prediction: null,
     }));
@@ -723,3 +740,37 @@ export const getMyMatchdayScoresFn = createServerFn({ method: "GET" })
       }))
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   });
+
+export const getUpcomingMatchesPublic = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabaseAdmin
+      .from("matches")
+      .select("id, home_team, away_team, kickoff_at, stadium, city")
+      .gt("kickoff_at", nowIso)
+      .eq("is_final", false)
+      .order("kickoff_at", { ascending: true })
+      .limit(3);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as Array<{
+      id: number;
+      home_team: string;
+      away_team: string;
+      kickoff_at: string;
+      stadium: string | null;
+      city: string | null;
+    }>;
+  },
+);
+
+export const getFixtureStatsPublic = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ count: matchCount }, { count: mdCount }] = await Promise.all([
+      supabaseAdmin.from("matches").select("id", { count: "exact", head: true }),
+      supabaseAdmin.from("matchdays").select("id", { count: "exact", head: true }),
+    ]);
+    return { matches: matchCount ?? 0, matchdays: mdCount ?? 0 };
+  },
+);

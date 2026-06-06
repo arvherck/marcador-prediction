@@ -1,61 +1,52 @@
-# Donations via Stripe
 
-Voluntary, low-pressure donations using the existing `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` secrets. Stripe Checkout (hosted) for the payment flow — no custom card form. No features gated.
+## Plan: Import Real 2026 World Cup Fixtures
 
-## 1. Database (one migration)
+### 1. Database schema migration
+Add new nullable columns to `public.matches`:
+- `stadium TEXT`
+- `city TEXT`
+- `host_country TEXT`
+- `group_letter TEXT`
 
-- `profiles`: add `donor boolean not null default false`.
-- New `donations` table: `id uuid pk`, `user_id uuid null` (nullable for guests), `amount_cents int`, `currency text default 'eur'`, `stripe_session_id text unique`, `created_at timestamptz default now()`.
-- GRANTs: `authenticated` → `SELECT` on `donations` (admin-only via RLS), `service_role` → ALL.
-- RLS: `donations` readable only by admins (`has_role(auth.uid(),'admin')`); writes only via service role (webhook).
+(Other existing columns — `phase`, `is_selected`, `home_score`, `away_score`, `first_scorer`, `is_final` — already cover the rest.)
 
-## 2. Server: Stripe Checkout
+### 2. Data wipe + import (single SQL transaction via insert tool)
+- `DELETE FROM predictions;` (FK cascade safety — they reference matches)
+- `DELETE FROM matchday_scores;` (reference matchdays)
+- `DELETE FROM matches;`
+- `DELETE FROM matchdays;`
+- Reset sequences for `matchdays_id_seq` and `matches_id_seq`.
+- Insert 9 matchdays with fixed IDs 1–9 and the names specified. `starts_at` = MIN(kickoff_utc) per matchday from the CSV.
+- Insert 104 matches with `matchday_id`, `home_team`, `away_team`, `kickoff_at` (UTC), `phase` (round), `stadium`, `city`, `host_country`, `group_letter` (empty string treated as NULL for knockouts), scores NULL, `is_final=false`, `is_selected` per rule 4.
 
-- Add `stripe` npm package.
-- `src/lib/donations.functions.ts`:
-  - `createDonationCheckoutFn({ amount_cents: number })` — `createServerFn` POST, validates amount ≥ 100 and ≤ 100000 with zod.
-    - Reads current user (optional — uses `supabase.auth.getUser()` via a soft auth helper; not gated by `requireSupabaseAuth` so guests work).
-    - Calls Stripe with `STRIPE_SECRET_KEY`: `mode: 'payment'`, EUR, one line item "Marcador Donation", `success_url = ${origin}/?donated=true`, `cancel_url = ${origin}/`, `metadata: { user_id: userId ?? 'guest' }`.
-    - Returns `{ url }`.
-- For the optional-auth user lookup, the server fn reads the bearer token via `getRequestHeader('Authorization')` and calls `supabase.auth.getUser(token)` manually (skipping `requireSupabaseAuth` which would 401 guests).
+I'll generate the SQL by parsing the CSV in a script then feeding it through the insert tool.
 
-## 3. Webhook (TanStack server route, not edge function)
+### 3. `is_selected` auto-selection logic
+- **Matchday 1**: first 6 by `kickoff_at`.
+- **Matchdays 2 & 3**: pick 6 spread across distinct groups — order by kickoff, greedy pick one per unique group letter until 6 chosen (12 groups available, so always possible).
+- **Matchdays 4–9 (knockouts)**: all matches `is_selected = true`.
 
-User asked for a Supabase Edge Function, but per project conventions webhooks live in TanStack server routes. I'll put it at `src/routes/api/public/stripe-webhook.ts`:
+### 4. Frontend updates
 
-- Reads raw body, verifies signature with `stripe.webhooks.constructEvent` and `STRIPE_WEBHOOK_SECRET`.
-- On `checkout.session.completed`:
-  - Insert into `donations` (idempotent on `stripe_session_id`).
-  - If `metadata.user_id` is a real UUID, update `profiles.donor = true` via `supabaseAdmin`.
-- Returns 200 / 400 on signature failure.
-- Requires `STRIPE_WEBHOOK_SECRET` secret — will request via `add_secret`. Webhook URL to give to Stripe: `https://project--ivtitpkkapywtrkpxbin.lovable.app/api/public/stripe-webhook`.
+**Landing page (`src/routes/index.tsx`)** — live preview section
+- Replace placeholder/static scores with a server-fn query for the next 3 matches where `kickoff_at > now()` ordered ascending. Render team names, kickoff, stadium · city.
 
-## 4. UI
+**Play screen (`src/routes/_authenticated/play.tsx`)**
+- Update active-matchday logic to: smallest `matchday_id` whose matches include at least one future `kickoff_at` AND `is_scored = false`.
+- On each match card, add a small subtext line below team names: `{stadium} · {city}`.
 
-- **Footer link** (`src/components/AppShell.tsx`): small muted "Support Marcador" text, opens modal.
-- **`<DonateModal />`** (new): title "Support Marcador ⚽", subtitle, 2×2 grid of preset cards (☕ €3, 🍺 €5, 🍕 €10, 🏆 €25), custom EUR input (min 1), amber "Donate" button → calls `createDonationCheckoutFn` → `window.location.href = url`. Small print "Secure payment via Stripe. No account needed."
-- **Success toast**: in `__root.tsx` (or AppShell), on mount check `?donated=true` → sonner toast "Thank you for supporting Marcador! 🏆" → `router.navigate({ search: {} , replace: true })` to strip the param.
+**Admin panel (`src/routes/_authenticated/admin.tsx`)**
+- Add a small confirmation banner / stat: "104 matches imported across 9 matchdays" — derived from a count query so it stays accurate.
 
-## 5. Donor recognition
+### 5. Types
+`src/integrations/supabase/types.ts` will be regenerated after the migration is approved; UI code can then use the new columns.
 
-- Update `meFn` to return `donor`.
-- Update `global_leaderboard` SQL function to also return `donor boolean` from `profiles`.
-- Leaderboard row: render ⭐ next to display name when `donor`.
-- Mi Marcador (`/me`): show "⭐ Marcador Supporter" line if donor.
+### Technical notes
+- CSV has 104 rows + header; parsed in Python on the sandbox before issuing inserts.
+- All times in CSV are already UTC; stored as `timestamptz`.
+- `group_letter` left NULL when CSV's `group` is blank (knockouts).
+- No changes to scoring logic, RLS, or grants — schema additions are purely additive nullable columns.
 
-## 6. Admin Panel — Donations section
-
-At bottom of `_authenticated/admin.tsx`:
-- `getDonationStatsFn` (admin-gated): returns `{ total_cents, donor_count, recent: [{ amount_cents, created_at, display_name | null }] }` (joins `profiles`; null for guests).
-- Card with the three stats and a table of the last 20 donations.
-
-## Open questions
-
-1. **Edge Function vs TanStack server route for the webhook?** Project convention is server routes under `src/routes/api/public/`. I'll use that unless you specifically want a Supabase Edge Function.
-2. **`STRIPE_WEBHOOK_SECRET`** isn't in your secrets yet — I'll request it after you approve the plan, with instructions for creating the Stripe webhook endpoint and copying the signing secret.
-3. **Currency** locked to EUR — confirm?
-
-## Files
-
-New: migration, `src/lib/donations.functions.ts`, `src/routes/api/public/stripe-webhook.ts`, `src/components/DonateModal.tsx`, `src/components/admin/DonationsPanel.tsx`.
-Edited: `src/components/AppShell.tsx` (footer + success toast), `src/lib/auth.functions.ts` (return donor), `src/routes/_authenticated/admin.tsx`, `src/routes/_authenticated/me.tsx`, `src/routes/_authenticated/leaderboard.tsx`, regenerated `types.ts`.
+### Out of scope
+- Bracket progression / auto-filling knockout team names later.
+- Timezone conversion UI (display stays UTC-aware via existing components).

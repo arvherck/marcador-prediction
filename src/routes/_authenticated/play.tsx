@@ -359,6 +359,12 @@ function MatchCard({
           <TeamSide name={match.away_team} alignRight />
         </div>
 
+        {(match.stadium || match.city) && (
+          <div className="mt-2 text-center text-[11px] text-muted-foreground truncate">
+            {[match.stadium, match.city].filter(Boolean).join(" · ")}
+          </div>
+        )}
+
         {/* Actual result */}
         {hasResult && (
           <div className="mt-3 flex items-center justify-center gap-2 text-xs">

@@ -10,6 +10,7 @@ import {
   adminListPredictionsFn,
   adminScoreMatchdayFn,
   adminSetResultFn,
+  getFixtureStatsPublic,
 } from "@/lib/game.functions";
 import {
   getTournamentStatus,
@@ -88,6 +89,8 @@ function AdminInner({ displayName }: { displayName?: string }) {
         Panel de Control
       </h1>
 
+      <FixtureImportBanner />
+
       <ApiSyncPanel />
 
       <Section title="New matchday (6 matches)">
@@ -143,6 +146,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="font-display font-semibold text-lg mb-3">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function FixtureImportBanner() {
+  const q = useQuery({
+    queryKey: ["fixture-stats"],
+    queryFn: () => getFixtureStatsPublic(),
+    staleTime: 60_000,
+  });
+  if (!q.data) return null;
+  return (
+    <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm font-medium text-foreground">
+      <span className="text-primary font-bold">{q.data.matches}</span> matches imported across{" "}
+      <span className="text-primary font-bold">{q.data.matchdays}</span> matchdays
+    </div>
   );
 }
 
