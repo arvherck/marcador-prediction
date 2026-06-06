@@ -91,8 +91,6 @@ export function ComingUpStrip({
                   }
                 />
               )}
-              {/* unused index to silence noUnused */}
-              <span className="hidden">{i}</span>
             </button>
           );
         })}
