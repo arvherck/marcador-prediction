@@ -107,21 +107,7 @@ function Landing() {
           </div>
 
           <div className="relative">
-            <div className="rounded-2xl bg-card border border-border p-6 shadow-card">
-              <div className="flex items-center justify-between text-xs uppercase tracking-widest text-muted-foreground">
-                <span>Matchday 1</span>
-                <span className="text-primary">Live preview</span>
-              </div>
-              <div className="mt-4 space-y-3">
-                <MiniMatch home="Mexico" away="Canada" hs={2} as={1} />
-                <MiniMatch home="USA" away="Argentina" hs={1} as={2} boost />
-                <MiniMatch home="Brazil" away="Spain" hs={3} as={2} />
-              </div>
-              <div className="mt-5 pt-5 border-t border-border flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Your projection</span>
-                <span className="font-score text-2xl text-amber-glow">+18 pts</span>
-              </div>
-            </div>
+            <UpcomingPreview />
             <div className="absolute -inset-6 -z-10 bg-amber-gradient opacity-20 blur-3xl rounded-full" />
           </div>
         </div>
