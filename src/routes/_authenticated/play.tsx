@@ -193,9 +193,7 @@ function PlayPage() {
           {!guest && (
             <div className="mb-4 inline-flex rounded-xl border border-border bg-card p-1 text-xs font-bold">
               <button
-                onClick={() =>
-                  navigate({ search: (prev) => ({ ...prev, view: "featured" }) })
-                }
+                onClick={() => navigate({ search: { view: "featured" } })}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   view === "featured"
                     ? "bg-primary text-primary-foreground"
@@ -205,9 +203,7 @@ function PlayPage() {
                 Featured (6)
               </button>
               <button
-                onClick={() =>
-                  navigate({ search: (prev) => ({ ...prev, view: "all" }) })
-                }
+                onClick={() => navigate({ search: { view: "all" } })}
                 className={`px-3 py-1.5 rounded-lg transition ${
                   view === "all"
                     ? "bg-primary text-primary-foreground"
