@@ -653,10 +653,57 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
         away_score: data.away_score,
         first_scorer: data.first_scorer,
         is_final: true,
+        status: "completed",
       })
       .eq("id", data.match_id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const adminSetMatchStatusFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      match_id: z.number().int(),
+      status: z.enum(["upcoming", "live", "completed", "cancelled"]),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const patch: Record<string, unknown> = { status: data.status };
+    if (data.status === "upcoming") {
+      patch.is_final = false;
+      patch.home_score = null;
+      patch.away_score = null;
+      patch.first_scorer = null;
+    }
+    const { error } = await supabase
+      .from("matches")
+      .update(patch)
+      .eq("id", data.match_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminMatchdayScoringSummaryFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ matchday_id: z.number().int() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: rows, error } = await supabase
+      .from("predictions")
+      .select("points, matches!inner(matchday_id)")
+      .eq("matches.matchday_id", data.matchday_id)
+      .not("points", "is", null);
+    if (error) throw new Error(error.message);
+    const list = (rows ?? []) as Array<{ points: number | null }>;
+    const scored = list.length;
+    const avg = scored
+      ? Math.round((list.reduce((s, r) => s + (r.points ?? 0), 0) / scored) * 10) / 10
+      : 0;
+    return { predictions_scored: scored, avg_points: avg };
   });
 
 export const adminScoreMatchdayFn = createServerFn({ method: "POST" })
