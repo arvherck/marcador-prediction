@@ -145,24 +145,48 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
         .from("matchdays")
         .select("id, name, starts_at, is_scored")
         .order("starts_at", { ascending: true }),
-      supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final"),
+      supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final, status"),
       supabase.from("predictions").select("match_id").eq("user_id", userId),
     ]);
     if (mdErr) throw new Error(mdErr.message);
     if (mErr) throw new Error(mErr.message);
     if (pErr) throw new Error(pErr.message);
     const predSet = new Set((preds ?? []).map((p) => p.match_id));
-    const byMd = new Map<number, { total: number; available: number; predicted: number }>();
+    type Counts = {
+      total: number;
+      available: number;
+      predicted: number;
+      upcoming: number;
+      live: number;
+      completed: number;
+      cancelled: number;
+    };
+    const now = Date.now();
+    const empty = (): Counts => ({
+      total: 0,
+      available: 0,
+      predicted: 0,
+      upcoming: 0,
+      live: 0,
+      completed: 0,
+      cancelled: 0,
+    });
+    const byMd = new Map<number, Counts>();
     for (const m of matches ?? []) {
       const tc = (m as { teams_confirmed?: boolean }).teams_confirmed ?? true;
-      const row = byMd.get(m.matchday_id) ?? { total: 0, available: 0, predicted: 0 };
+      const status = ((m as { status?: string | null }).status ?? "upcoming") as MatchStatus;
+      const kickoffPassed = new Date(m.kickoff_at).getTime() <= now;
+      const eff: MatchStatus =
+        status === "upcoming" && kickoffPassed ? "live" : status;
+      const row = byMd.get(m.matchday_id) ?? empty();
       row.total += 1;
       if (tc) row.available += 1;
       if (predSet.has(m.id)) row.predicted += 1;
+      row[eff] += 1;
       byMd.set(m.matchday_id, row);
     }
     return (mds ?? []).map((md) => {
-      const r = byMd.get(md.id) ?? { total: 0, available: 0, predicted: 0 };
+      const r = byMd.get(md.id) ?? empty();
       return {
         id: md.id,
         name: md.name,
@@ -171,6 +195,13 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
         total: r.total,
         available: r.available,
         predicted: r.predicted,
+        status_counts: {
+          upcoming: r.upcoming,
+          live: r.live,
+          completed: r.completed,
+          cancelled: r.cancelled,
+        },
+        completed_count: r.completed,
       };
     });
   });
