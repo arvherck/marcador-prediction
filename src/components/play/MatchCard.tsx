@@ -212,13 +212,22 @@ export function MatchCard({
             away={away}
             onChange={(side, delta) => {
               if (!touch()) return;
-              if (side === "h") setHome(Math.max(0, Math.min(20, home + delta)));
-              else setAway(Math.max(0, Math.min(20, away + delta)));
+              if (side === "h") apply({ home: Math.max(0, Math.min(20, home + delta)) }, "home");
+              else apply({ away: Math.max(0, Math.min(20, away + delta)) }, "away");
             }}
             locked={disabled}
+            scoresLocked={scorer === "none"}
+            homeDecDisabled={scorer === "home" && home <= 1}
+            awayDecDisabled={scorer === "away" && away <= 1}
           />
           <TeamSide name={match.away_team} alignRight />
         </div>
+
+        {hint && !disabled && (
+          <div className="mt-2 text-center text-[11px] text-muted-foreground italic">
+            {hint}
+          </div>
+        )}
 
         {(match.stadium || match.city) && (
           <div className="mt-2 text-center text-[11px] text-muted-foreground truncate">
