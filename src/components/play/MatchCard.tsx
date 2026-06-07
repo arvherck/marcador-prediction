@@ -8,8 +8,8 @@ import {
   type MatchRow,
 } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
+import { reconcilePrediction, type Scorer } from "@/lib/prediction-consistency";
 
-type Scorer = "home" | "away" | "none";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function MatchCard({
