@@ -127,14 +127,24 @@ export const getDonationStatsFn = createServerFn({ method: "GET" })
     };
   });
 
-export const getDonorIdsFn = createServerFn({ method: "GET" })
+const donorLookupSchema = z.object({
+  user_ids: z.array(z.string().regex(UUID_RE)).max(500),
+});
+
+// Returns the subset of provided user IDs who are donors. Callers pass
+// only IDs already visible on the leaderboard, so this does not enable
+// enumeration of all donors.
+export const getDonorIdsFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
+  .inputValidator((input) => donorLookupSchema.parse(input))
+  .handler(async ({ data }) => {
+    if (!data.user_ids.length) return [] as string[];
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data } = await supabaseAdmin
+    const { data: rows } = await supabaseAdmin
       .from("profiles")
       .select("user_id")
-      .eq("donor", true);
-    return (data ?? []).map((r) => r.user_id);
+      .eq("donor", true)
+      .in("user_id", data.user_ids);
+    return (rows ?? []).map((r) => r.user_id);
   });
 
