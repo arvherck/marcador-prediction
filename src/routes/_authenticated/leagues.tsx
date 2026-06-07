@@ -49,7 +49,7 @@ function LeaguesPage() {
   });
 
   const join = useMutation({
-    mutationFn: () => joinLeagueFn({ data: { invite_code: code } }),
+    mutationFn: () => joinLeagueFn({ data: { invite_code: `MRC-${code}` } }),
     onSuccess: () => {
       toast.success("Joined the league!");
       setCode("");
