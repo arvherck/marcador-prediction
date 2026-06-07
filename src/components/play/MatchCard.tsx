@@ -53,7 +53,18 @@ export function MatchCard({
   const hasResult =
     match.is_final && match.home_score !== null && match.away_score !== null;
   const placeholder = !match.teams_confirmed;
+  const status: MatchStatus = match.effective_status;
   const disabled = match.locked || placeholder || !!guest;
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status !== "upcoming") return;
+    const ms = kickoff.getTime() - Date.now();
+    if (ms <= 0) return;
+    const tick = ms < 3 * 60 * 60 * 1000 ? 30_000 : 5 * 60_000;
+    const id = setInterval(() => setNow(Date.now()), tick);
+    return () => clearInterval(id);
+  }, [status, kickoff]);
 
   const [home, setHome] = useState(match.prediction?.home_goals ?? 0);
   const [away, setAway] = useState(match.prediction?.away_goals ?? 0);
