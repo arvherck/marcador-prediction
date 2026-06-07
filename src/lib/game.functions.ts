@@ -775,6 +775,7 @@ export const adminScoreMatchdayFn = createServerFn({ method: "POST" })
     await assertAdmin(supabase, userId);
     const { data: count, error } = await supabase.rpc("score_matchday", {
       _matchday_id: data.matchday_id,
+      _caller_id: userId,
     });
     if (error) {
       console.error("[adminScoreMatchdayFn]", error);

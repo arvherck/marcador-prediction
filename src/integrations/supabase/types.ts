@@ -556,7 +556,10 @@ export type Database = {
         }[]
       }
       recalculate_team_standing: { Args: { _team: string }; Returns: undefined }
-      score_matchday: { Args: { _matchday_id: number }; Returns: number }
+      score_matchday: {
+        Args: { _caller_id: string; _matchday_id: number }
+        Returns: number
+      }
     }
     Enums: {
       app_role: "admin" | "user"
