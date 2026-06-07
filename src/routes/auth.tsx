@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { setGuest, clearGuest } from "@/lib/guest";
+import { lovable } from "@/integrations/lovable";
 
 export const Route = createFileRoute("/auth")({
   head: () => {
@@ -96,11 +97,34 @@ function AuthPage() {
           <button
             type="button"
             onClick={() => toast.info("Google sign-in: ask your admin to configure OAuth credentials.")}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold hover:bg-secondary transition mb-4"
+            className="w-full flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold hover:bg-secondary transition mb-3"
           >
             <GoogleIcon />
             Continue with Google
           </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const result = await lovable.auth.signInWithOAuth("apple", {
+                redirect_uri: window.location.origin,
+              });
+              if (result.error) {
+                toast.error(result.error instanceof Error ? result.error.message : "Apple sign-in failed.");
+                return;
+              }
+              if (result.redirected) return;
+              clearGuest();
+              toast.success("Welcome to Marcador.");
+              await router.invalidate();
+              navigate({ to: "/play" });
+            }}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-semibold hover:bg-secondary transition mb-4"
+          >
+            <AppleIcon />
+            Continue with Apple
+          </button>
+
 
           <div className="relative my-4 text-center text-xs uppercase tracking-widest text-muted-foreground">
             <span className="bg-background px-3 relative z-10">or email</span>
@@ -184,6 +208,14 @@ function GoogleIcon() {
         fill="#EA4335"
         d="M12 10.2v3.9h5.5c-.24 1.4-1.7 4.1-5.5 4.1-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 3.4 14.6 2.5 12 2.5 6.8 2.5 2.6 6.7 2.6 12s4.2 9.5 9.4 9.5c5.4 0 9-3.8 9-9.2 0-.6-.1-1.1-.2-1.6H12z"
       />
+    </svg>
+  );
+}
+
+function AppleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" fill="currentColor">
+      <path d="M16.365 1.43c0 1.14-.464 2.235-1.222 3.022-.819.853-2.166 1.515-3.286 1.424-.142-1.116.428-2.273 1.165-3.012.83-.83 2.235-1.448 3.343-1.434zM20.5 17.45c-.55 1.27-.812 1.836-1.52 2.957-.985 1.565-2.376 3.515-4.099 3.527-1.53.014-1.924-.996-4.001-.985-2.077.011-2.51 1.005-4.04.989-1.724-.013-3.04-1.771-4.026-3.336C.058 16.273-.225 11.085 1.84 8.327c1.471-1.96 3.792-3.107 5.973-3.107 2.222 0 3.62 1.218 5.46 1.218 1.785 0 2.872-1.22 5.444-1.22 1.946 0 4.005 1.06 5.473 2.892-4.808 2.638-4.025 9.521-3.69 9.34z" />
     </svg>
   );
 }
