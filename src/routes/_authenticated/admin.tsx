@@ -566,17 +566,46 @@ function ResultRow({
   };
   const current = draft ?? base;
   const dirty = !!draft;
+  const [hint, setHint] = useState<string | null>(null);
+  const consistent = isConsistent(current.home, current.away, current.scorer);
+  const inconsistencyMsg = !consistent
+    ? current.scorer === "home"
+      ? `Inconsistent — ${m.home_team} cannot score first with 0 home goals`
+      : current.scorer === "away"
+        ? `Inconsistent — ${m.away_team} cannot score first with 0 away goals`
+        : "Inconsistent result"
+    : null;
+
+  const handleChange = (
+    patch: { home?: number; away?: number; scorer?: Scorer },
+    changed: "home" | "away" | "scorer",
+  ) => {
+    const r = reconcilePrediction({
+      home: patch.home ?? current.home,
+      away: patch.away ?? current.away,
+      scorer: patch.scorer ?? current.scorer,
+      changed,
+      homeTeam: m.home_team,
+      awayTeam: m.away_team,
+    });
+    onDraftChange({ home: r.home, away: r.away, scorer: r.scorer }, base);
+    setHint(r.hint ?? null);
+  };
 
   const save = useMutation({
-    mutationFn: () =>
-      adminSetResultFn({
+    mutationFn: () => {
+      if (!isConsistent(current.home, current.away, current.scorer)) {
+        throw new Error(inconsistencyMsg ?? "Inconsistent result");
+      }
+      return adminSetResultFn({
         data: {
           match_id: m.id,
           home_score: current.home,
           away_score: current.away,
           first_scorer: current.scorer,
         },
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("Result saved.");
       onSaved();
