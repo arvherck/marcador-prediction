@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.score_matchday(integer) TO authenticated;
