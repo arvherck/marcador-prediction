@@ -34,6 +34,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
 });
 
+type MatchStatusT = "upcoming" | "live" | "completed" | "cancelled";
 type Match = {
   id: number;
   home_team: string;
@@ -45,6 +46,7 @@ type Match = {
   is_final: boolean;
   phase: string | null;
   teams_confirmed?: boolean;
+  status?: MatchStatusT | null;
 };
 type Matchday = {
   id: number;
@@ -53,6 +55,19 @@ type Matchday = {
   is_scored: boolean;
   matches: Match[] | null;
   prediction_count?: number;
+};
+
+function effectiveStatus(m: Match): MatchStatusT {
+  const s = (m.status ?? "upcoming") as MatchStatusT;
+  if (s === "upcoming" && new Date(m.kickoff_at).getTime() <= Date.now()) return "live";
+  return s;
+}
+
+const STATUS_META: Record<MatchStatusT, { icon: string; label: string; cls: string }> = {
+  upcoming: { icon: "🟡", label: "Upcoming", cls: "bg-amber-glow/15 text-amber-glow" },
+  live: { icon: "🔴", label: "Live", cls: "bg-destructive/15 text-destructive" },
+  completed: { icon: "✅", label: "Completed", cls: "bg-success/15 text-success" },
+  cancelled: { icon: "⛔", label: "Cancelled", cls: "bg-muted text-muted-foreground" },
 };
 
 const PHASES = [
