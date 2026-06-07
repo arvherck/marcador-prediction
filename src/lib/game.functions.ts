@@ -51,6 +51,7 @@ function mapMatch(
     host_country?: string | null;
     group_letter?: string | null;
     teams_confirmed?: boolean;
+    status?: string | null;
   },
   p: {
     home_goals: number;
@@ -61,6 +62,10 @@ function mapMatch(
   } | undefined,
   now: number,
 ): MatchRow {
+  const status = ((m.status as MatchStatus | null | undefined) ?? "upcoming") as MatchStatus;
+  const kickoffPassed = new Date(m.kickoff_at).getTime() <= now;
+  const effective_status: MatchStatus =
+    status === "upcoming" && kickoffPassed ? "live" : status;
   return {
     id: m.id,
     matchday_id: m.matchday_id,
@@ -77,7 +82,9 @@ function mapMatch(
     group_letter: m.group_letter ?? null,
     phase: m.phase ?? null,
     teams_confirmed: m.teams_confirmed ?? true,
-    locked: new Date(m.kickoff_at).getTime() <= now,
+    status,
+    effective_status,
+    locked: effective_status !== "upcoming",
     prediction: p
       ? {
           home_goals: p.home_goals,
