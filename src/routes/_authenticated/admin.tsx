@@ -556,10 +556,11 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
                 e.preventDefault();
                 score.mutate();
               }}
-              disabled={score.isPending}
+              disabled={score.isPending || counts.completed === 0}
               className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+              title={counts.completed === 0 ? "Mark at least one match as completed first" : undefined}
             >
-              Run scoring
+              Run scoring{counts.completed > 0 ? ` (${counts.completed} completed)` : ""}
             </button>
           )}
         </div>
