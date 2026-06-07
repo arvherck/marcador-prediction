@@ -744,7 +744,11 @@ export const adminUpdateMatchTeamsFn = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
-    const patch: Record<string, unknown> = {
+    const patch: {
+      home_team: string;
+      away_team: string;
+      teams_confirmed?: boolean;
+    } = {
       home_team: data.home_team,
       away_team: data.away_team,
     };
