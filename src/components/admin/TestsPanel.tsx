@@ -15,6 +15,7 @@ import {
   testScoringExact,
   testScoringWrongResult,
   testStandingsPopulated,
+  testStandingsTrigger,
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
