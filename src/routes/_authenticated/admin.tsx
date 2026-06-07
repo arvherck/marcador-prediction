@@ -376,7 +376,17 @@ function AddMatchForm({
   );
 }
 
+type RowDraft = {
+  home: number;
+  away: number;
+  scorer: "home" | "away" | "none";
+};
+
 function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void }) {
+  const qc = useQueryClient();
+  const [drafts, setDrafts] = useState<Record<number, RowDraft>>({});
+  const [savedFlash, setSavedFlash] = useState<Record<number, boolean>>({});
+
   const score = useMutation({
     mutationFn: () => adminScoreMatchdayFn({ data: { matchday_id: md.id } }),
     onSuccess: () => {
@@ -386,97 +396,207 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
+  const setDraft = (matchId: number, patch: Partial<RowDraft>, base: RowDraft) => {
+    setDrafts((d) => ({ ...d, [matchId]: { ...base, ...(d[matchId] ?? {}), ...patch } }));
+  };
+  const clearDraft = (matchId: number) => {
+    setDrafts((d) => {
+      const n = { ...d };
+      delete n[matchId];
+      return n;
+    });
+    setSavedFlash((s) => ({ ...s, [matchId]: true }));
+    setTimeout(() => {
+      setSavedFlash((s) => {
+        const n = { ...s };
+        delete n[matchId];
+        return n;
+      });
+    }, 2000);
+  };
+
+  const dirtyCount = Object.keys(drafts).length;
+
+  const saveAll = async () => {
+    const entries = Object.entries(drafts);
+    if (!entries.length) return;
+    try {
+      await Promise.all(
+        entries.map(([id, d]) =>
+          adminSetResultFn({
+            data: {
+              match_id: Number(id),
+              home_score: d.home,
+              away_score: d.away,
+              first_scorer: d.scorer,
+            },
+          }),
+        ),
+      );
+      toast.success(`Saved ${entries.length} result(s).`);
+      const ids = entries.map(([id]) => Number(id));
+      setDrafts({});
+      setSavedFlash((s) => {
+        const n = { ...s };
+        ids.forEach((id) => (n[id] = true));
+        return n;
+      });
+      setTimeout(() => {
+        setSavedFlash((s) => {
+          const n = { ...s };
+          ids.forEach((id) => delete n[id]);
+          return n;
+        });
+      }, 2000);
+      qc.invalidateQueries();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    }
+  };
+
   const total = md.matches?.length ?? 0;
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="px-4 py-3 flex items-center justify-between border-b border-border">
-        <div>
-          <div className="font-semibold">{md.name}</div>
-          <div className="text-xs text-muted-foreground">
-            {new Date(md.starts_at).toLocaleString()} · {total} match{total === 1 ? "" : "es"} ·{" "}
-            {md.prediction_count ?? 0} predicted by users
+    <details className="rounded-2xl border border-border bg-card overflow-hidden" open={!md.is_scored}>
+      <summary className="px-4 py-3 flex items-center justify-between gap-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-muted-foreground text-xs chevron">▶</span>
+          <div className="min-w-0">
+            <div className="font-semibold truncate">{md.name}</div>
+            <div className="text-xs text-muted-foreground truncate">
+              {new Date(md.starts_at).toLocaleDateString()} · {total} match
+              {total === 1 ? "" : "es"} · {md.prediction_count ?? 0} predicted
+            </div>
           </div>
         </div>
-        {md.is_scored ? (
-          <span className="text-xs font-bold text-success uppercase tracking-wider">
-            Scored
-          </span>
-        ) : (
-          <button
-            onClick={() => score.mutate()}
-            disabled={score.isPending}
-            className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
-          >
-            Run scoring
-          </button>
-        )}
-      </div>
-      <div className="divide-y divide-border">
-        {md.matches?.map((m) => <ResultRow key={m.id} m={m} onChange={onChange} />)}
+        <div className="flex items-center gap-2 shrink-0">
+          {dirtyCount > 0 && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                saveAll();
+              }}
+              className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground"
+            >
+              Save all ({dirtyCount})
+            </button>
+          )}
+          {md.is_scored ? (
+            <span className="text-xs font-bold text-success uppercase tracking-wider">
+              Scored ✓
+            </span>
+          ) : (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                score.mutate();
+              }}
+              disabled={score.isPending}
+              className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+            >
+              Run scoring
+            </button>
+          )}
+        </div>
+      </summary>
+      <div className="divide-y divide-border border-t border-border">
+        {md.matches?.map((m) => (
+          <ResultRow
+            key={m.id}
+            m={m}
+            draft={drafts[m.id] ?? null}
+            saved={!!savedFlash[m.id]}
+            onDraftChange={(patch, base) => setDraft(m.id, patch, base)}
+            onSaved={() => clearDraft(m.id)}
+            onChange={onChange}
+          />
+        ))}
         {!md.matches?.length && (
           <div className="px-4 py-3 text-xs text-muted-foreground">
             No matches in this matchday.
           </div>
         )}
       </div>
-    </div>
+    </details>
   );
 }
 
-function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
-  const [home, setHome] = useState<number>(m.home_score ?? 0);
-  const [away, setAway] = useState<number>(m.away_score ?? 0);
-  const [scorer, setScorer] = useState<"home" | "away" | "none">(
-    (m.first_scorer as "home" | "away" | "none") ?? "home",
-  );
+function ResultRow({
+  m,
+  draft,
+  saved,
+  onDraftChange,
+  onSaved,
+  onChange,
+}: {
+  m: Match;
+  draft: RowDraft | null;
+  saved: boolean;
+  onDraftChange: (patch: Partial<RowDraft>, base: RowDraft) => void;
+  onSaved: () => void;
+  onChange: () => void;
+}) {
+  const isKnockout = m.phase && m.phase !== "Group stage";
+  const confirmed = m.teams_confirmed !== false;
+
+  const base: RowDraft = {
+    home: m.home_score ?? 0,
+    away: m.away_score ?? 0,
+    scorer: (m.first_scorer as "home" | "away" | "none") ?? "home",
+  };
+  const current = draft ?? base;
+  const dirty = !!draft;
+
   const save = useMutation({
     mutationFn: () =>
       adminSetResultFn({
-        data: { match_id: m.id, home_score: home, away_score: away, first_scorer: scorer },
+        data: {
+          match_id: m.id,
+          home_score: current.home,
+          away_score: current.away,
+          first_scorer: current.scorer,
+        },
       }),
     onSuccess: () => {
       toast.success("Result saved.");
+      onSaved();
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
+  const [editTeams, setEditTeams] = useState(false);
   const [homeName, setHomeName] = useState(m.home_team);
   const [awayName, setAwayName] = useState(m.away_team);
-  const confirmed = m.teams_confirmed !== false;
-  const setConfirmed = useMutation({
-    mutationFn: (val: boolean) =>
-      adminSetTeamsConfirmedFn({ data: { match_id: m.id, confirmed: val } }),
-    onSuccess: () => {
-      toast.success("Teams confirmation updated.");
-      onChange();
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
-  });
-  const renameTeams = useMutation({
+  const confirmAndUnlock = useMutation({
     mutationFn: () =>
       adminUpdateMatchTeamsFn({
-        data: { match_id: m.id, home_team: homeName, away_team: awayName },
+        data: {
+          match_id: m.id,
+          home_team: homeName,
+          away_team: awayName,
+          teams_confirmed: true,
+        },
       }),
     onSuccess: () => {
-      toast.success("Teams updated.");
+      toast.success("Teams confirmed — match unlocked.");
+      setEditTeams(false);
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
+  const showEditor = isKnockout && (!confirmed || editTeams);
+  const borderClass = saved
+    ? "border-l-2 border-success"
+    : dirty
+      ? "border-l-2 border-amber-glow"
+      : "border-l-2 border-transparent";
+
   return (
-    <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
+    <div className={`px-4 py-3 flex items-center gap-3 flex-wrap transition-colors ${borderClass}`}>
       <div className="flex-1 min-w-[200px] text-sm">
-        <div className="font-medium">
-          {m.home_team} <span className="text-muted-foreground">vs</span> {m.away_team}
-        </div>
-        <div className="text-[11px] text-muted-foreground">
-          {m.phase ?? "—"}
-          {confirmed ? " · ✅ teams confirmed" : " · ⚠️ teams TBD"}
-        </div>
-        {!confirmed && (
-          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+        {showEditor ? (
+          <div className="flex items-center gap-1.5 flex-wrap">
             <input
               value={homeName}
               onChange={(e) => setHomeName(e.target.value)}
@@ -491,64 +611,104 @@ function ResultRow({ m, onChange }: { m: Match; onChange: () => void }) {
               className="flex-1 min-w-0 rounded bg-input border border-border px-2 py-1 text-xs"
             />
             <button
-              onClick={() => {
-                if (homeName !== m.home_team || awayName !== m.away_team) {
-                  renameTeams.mutate();
-                } else {
-                  setConfirmed.mutate(true);
-                }
-              }}
-              disabled={renameTeams.isPending || setConfirmed.isPending}
+              onClick={() => confirmAndUnlock.mutate()}
+              disabled={confirmAndUnlock.isPending || !homeName || !awayName}
               className="rounded bg-amber-gradient text-primary-foreground px-2 py-1 text-xs font-bold disabled:opacity-40"
             >
-              Confirm teams
+              Confirm & unlock
             </button>
+            {confirmed && (
+              <button
+                onClick={() => {
+                  setEditTeams(false);
+                  setHomeName(m.home_team);
+                  setAwayName(m.away_team);
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground px-1"
+              >
+                Cancel
+              </button>
+            )}
           </div>
+        ) : (
+          <>
+            <div className="font-medium">
+              {m.home_team} <span className="text-muted-foreground">vs</span> {m.away_team}
+            </div>
+            <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+              <span>{m.phase ?? "—"}</span>
+              {isKnockout && confirmed && (
+                <button
+                  onClick={() => setEditTeams(true)}
+                  className="text-primary hover:underline"
+                >
+                  Edit teams
+                </button>
+              )}
+              {saved && <span className="text-success font-bold">✓ saved</span>}
+            </div>
+          </>
         )}
       </div>
-      <label className="flex items-center gap-1.5 text-xs">
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(e) => setConfirmed.mutate(e.target.checked)}
-          disabled={setConfirmed.isPending}
-        />
-        Teams confirmed
-      </label>
-      <input
-        type="number"
-        min={0}
-        value={home}
-        onChange={(e) => setHome(parseInt(e.target.value || "0"))}
-        className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
-      />
-      <span className="text-muted-foreground">–</span>
-      <input
-        type="number"
-        min={0}
-        value={away}
-        onChange={(e) => setAway(parseInt(e.target.value || "0"))}
-        className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
-      />
-      <select
-        value={scorer}
-        onChange={(e) => setScorer(e.target.value as "home" | "away" | "none")}
-        className="rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
-      >
-        <option value="home">{m.home_team} scored first</option>
-        <option value="away">{m.away_team} scored first</option>
-        <option value="none">No goals</option>
-      </select>
-      <button
-        onClick={() => save.mutate()}
-        disabled={save.isPending}
-        className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold disabled:opacity-40"
-      >
-        {m.is_final ? "Update" : "Save"}
-      </button>
+      {isKnockout && !showEditor && (
+        <span
+          className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${
+            confirmed
+              ? "bg-success/15 text-success"
+              : "bg-amber-glow/15 text-amber-glow"
+          }`}
+        >
+          {confirmed ? "confirmed" : "TBD"}
+        </span>
+      )}
+      {(!isKnockout || confirmed) && (
+        <>
+          <input
+            type="number"
+            min={0}
+            value={current.home}
+            onChange={(e) =>
+              onDraftChange({ home: parseInt(e.target.value || "0") }, base)
+            }
+            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
+          />
+          <span className="text-muted-foreground">–</span>
+          <input
+            type="number"
+            min={0}
+            value={current.away}
+            onChange={(e) =>
+              onDraftChange({ away: parseInt(e.target.value || "0") }, base)
+            }
+            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
+          />
+          <select
+            value={current.scorer}
+            onChange={(e) =>
+              onDraftChange(
+                { scorer: e.target.value as "home" | "away" | "none" },
+                base,
+              )
+            }
+            className="rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
+          >
+            <option value="home">{m.home_team} scored first</option>
+            <option value="away">{m.away_team} scored first</option>
+            <option value="none">No goals</option>
+          </select>
+          <button
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+          >
+            {m.is_final ? "Update" : "Save"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
+
 
 function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
   const [mdId, setMdId] = useState<number | "">("");
