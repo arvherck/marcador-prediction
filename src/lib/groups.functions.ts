@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { safeError } from "@/lib/safe-error";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export type StandingRow = {
@@ -112,9 +113,9 @@ async function loadAll(client: AnyClient): Promise<GroupWithStandings[]> {
       .select("group_letter, home_team, away_team, home_score, away_score, status")
       .order("id", { ascending: true }),
   ]);
-  if (groupsRes.error) throw safeError(groupsRes, "groups"groupsRes);
-  if (standingsRes.error) throw safeError(standingsRes, "groups"standingsRes);
-  if (matchesRes.error) throw safeError(matchesRes, "groups"matchesRes);
+  if (groupsRes.error) throw safeError(groupsRes.error, "groups.groupsRes");
+  if (standingsRes.error) throw safeError(standingsRes.error, "groups.standingsRes");
+  if (matchesRes.error) throw safeError(matchesRes.error, "groups.matchesRes");
 
   // Map group letter -> id
   const groups = (groupsRes.data ?? []) as Array<Record<string, unknown>>;

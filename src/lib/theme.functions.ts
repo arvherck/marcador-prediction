@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { safeError } from "@/lib/safe-error";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
@@ -11,6 +12,6 @@ export const setThemePreferenceFn = createServerFn({ method: "POST" })
       .from("profiles")
       .update({ theme_preference: data.theme })
       .eq("user_id", userId);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "theme");
     return { ok: true };
   });
