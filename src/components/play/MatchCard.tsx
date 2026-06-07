@@ -39,17 +39,20 @@ export function MatchCard({
   const [scorer, setScorer] = useState<Scorer>(
     (match.prediction?.first_scorer as Scorer) ?? "home",
   );
+  const [hint, setHint] = useState<string | null>(null);
   const [state, setState] = useState<SaveState>(
     match.prediction ? "saved" : "idle",
   );
   const dirtyRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setHome(match.prediction?.home_goals ?? 0);
     setAway(match.prediction?.away_goals ?? 0);
     setScorer((match.prediction?.first_scorer as Scorer) ?? "home");
     setState(match.prediction ? "saved" : "idle");
+    setHint(null);
     dirtyRef.current = false;
   }, [
     match.id,
@@ -57,6 +60,34 @@ export function MatchCard({
     match.prediction?.away_goals,
     match.prediction?.first_scorer,
   ]);
+
+  const showHint = (msg: string | undefined) => {
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    if (!msg) {
+      setHint(null);
+      return;
+    }
+    setHint(msg);
+    hintTimer.current = setTimeout(() => setHint(null), 4000);
+  };
+
+  const apply = (
+    next: { home?: number; away?: number; scorer?: Scorer },
+    changed: "home" | "away" | "scorer",
+  ) => {
+    const r = reconcilePrediction({
+      home: next.home ?? home,
+      away: next.away ?? away,
+      scorer: next.scorer ?? scorer,
+      changed,
+      homeTeam: match.home_team,
+      awayTeam: match.away_team,
+    });
+    setHome(r.home);
+    setAway(r.away);
+    setScorer(r.scorer);
+    showHint(r.hint);
+  };
 
   useEffect(() => {
     if (disabled) return;
