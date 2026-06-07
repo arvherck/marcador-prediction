@@ -1,16 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Loader2, Lock, Trophy, Zap } from "lucide-react";
+import { Check, Loader2, Lock, Radio, Trophy, Zap } from "lucide-react";
 import {
   savePredictionFn,
   setBoosterFn,
   type MatchRow,
+  type MatchStatus,
 } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
 import { reconcilePrediction, type Scorer } from "@/lib/prediction-consistency";
+import { explainPoints } from "@/lib/scoring-explain";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return "Locked";
+  const totalMin = Math.floor(ms / 60_000);
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin % (60 * 24)) / 60);
+  const minutes = totalMin % 60;
+  if (days > 0) return `Locks in ${days}d ${hours}h`;
+  if (hours >= 3) return `Locks in ${hours}h`;
+  if (hours > 0) return `Locks in ${hours}h ${minutes}m`;
+  return `Locks in ${minutes}m`;
+}
+
+function scorerLabelFor(match: MatchRow, scorer: string | null | undefined): string {
+  if (!scorer || scorer === "none") return "No goal";
+  if (scorer === "home") return `${match.home_team} scored first`;
+  if (scorer === "away") return `${match.away_team} scored first`;
+  return scorer;
+}
 
 export function MatchCard({
   match,
