@@ -405,13 +405,35 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
   const [savedFlash, setSavedFlash] = useState<Record<number, boolean>>({});
 
   const score = useMutation({
-    mutationFn: () => adminScoreMatchdayFn({ data: { matchday_id: md.id } }),
-    onSuccess: () => {
-      toast.success("Matchday scored.");
+    mutationFn: async () => {
+      const r = await adminScoreMatchdayFn({ data: { matchday_id: md.id } });
+      try {
+        const s = await adminMatchdayScoringSummaryFn({ data: { matchday_id: md.id } });
+        return { ...r, summary: s };
+      } catch {
+        return { ...r, summary: null as null | { predictions_scored: number; avg_points: number } };
+      }
+    },
+    onSuccess: (r) => {
+      if (r.summary) {
+        toast.success(
+          `${r.summary.predictions_scored} predictions scored · avg ${r.summary.avg_points} pts`,
+        );
+      } else {
+        toast.success("Matchday scored.");
+      }
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
+
+  const counts = (md.matches ?? []).reduce(
+    (acc, m) => {
+      acc[effectiveStatus(m)] += 1;
+      return acc;
+    },
+    { upcoming: 0, live: 0, completed: 0, cancelled: 0 } as Record<MatchStatusT, number>,
+  );
 
   const setDraft = (matchId: number, patch: Partial<RowDraft>, base: RowDraft) => {
     setDrafts((d) => ({ ...d, [matchId]: { ...base, ...(d[matchId] ?? {}), ...patch } }));
