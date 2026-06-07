@@ -653,12 +653,34 @@ function ResultRow({
       });
     },
     onSuccess: () => {
-      toast.success("Result saved.");
+      toast.success("Result saved · Match marked as completed");
       onSaved();
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
+
+  const eff = effectiveStatus(m);
+  const changeStatus = useMutation({
+    mutationFn: (next: MatchStatusT) =>
+      adminSetMatchStatusFn({ data: { match_id: m.id, status: next } }),
+    onSuccess: (_d, next) => {
+      toast.success(`Status set to ${STATUS_META[next].label.toLowerCase()}.`);
+      onChange();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const onChangeStatus = (next: MatchStatusT) => {
+    if (next === (m.status ?? "upcoming")) return;
+    if (next === "upcoming") {
+      if (!window.confirm(`This will reopen predictions for ${m.home_team} vs ${m.away_team}. Continue?`)) return;
+    }
+    if (next === "completed" && current.home === 0 && current.away === 0 && current.scorer === "none" && !m.is_final) {
+      if (!window.confirm("No score entered. Mark as completed anyway?")) return;
+    }
+    changeStatus.mutate(next);
+  };
 
   const [editTeams, setEditTeams] = useState(false);
   const [homeName, setHomeName] = useState(m.home_team);
