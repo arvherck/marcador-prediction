@@ -342,17 +342,34 @@ function ScorePair({
   away,
   onChange,
   locked,
+  scoresLocked,
+  homeDecDisabled,
+  awayDecDisabled,
 }: {
   home: number;
   away: number;
   onChange: (side: "h" | "a", delta: number) => void;
   locked: boolean;
+  scoresLocked?: boolean;
+  homeDecDisabled?: boolean;
+  awayDecDisabled?: boolean;
 }) {
+  const allLocked = locked || scoresLocked;
   return (
     <div className="flex items-center gap-2 md:gap-3">
-      <ScoreStepper value={home} onChange={(d) => onChange("h", d)} locked={locked} />
+      <ScoreStepper
+        value={home}
+        onChange={(d) => onChange("h", d)}
+        locked={allLocked}
+        decDisabled={homeDecDisabled}
+      />
       <span className="font-score text-3xl text-muted-foreground/60 leading-none">:</span>
-      <ScoreStepper value={away} onChange={(d) => onChange("a", d)} locked={locked} />
+      <ScoreStepper
+        value={away}
+        onChange={(d) => onChange("a", d)}
+        locked={allLocked}
+        decDisabled={awayDecDisabled}
+      />
     </div>
   );
 }
@@ -361,10 +378,12 @@ function ScoreStepper({
   value,
   onChange,
   locked,
+  decDisabled,
 }: {
   value: number;
   onChange: (delta: number) => void;
   locked: boolean;
+  decDisabled?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center select-none">
@@ -387,7 +406,7 @@ function ScoreStepper({
       <button
         type="button"
         onClick={() => onChange(-1)}
-        disabled={locked || value === 0}
+        disabled={locked || decDisabled || value === 0}
         className="size-6 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-30 transition"
         aria-label="Decrease"
       >
