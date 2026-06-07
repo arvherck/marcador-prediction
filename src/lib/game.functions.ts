@@ -688,7 +688,31 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
       })
       .eq("id", data.match_id);
     if (error) throw new Error(error.message);
-    return { ok: true };
+
+    // Fetch standings impact for group-stage matches (trigger already ran)
+    const { data: m } = await supabase
+      .from("matches")
+      .select("home_team, away_team, group_letter")
+      .eq("id", data.match_id)
+      .maybeSingle();
+    let standingsImpact: null | {
+      home: { team: string; points: number; won: number; drawn: number; lost: number };
+      away: { team: string; points: number; won: number; drawn: number; lost: number };
+    } = null;
+    if (m && m.group_letter) {
+      const { data: rows } = await supabase
+        .from("wc_standings")
+        .select("team, points, won, drawn, lost")
+        .in("team", [m.home_team, m.away_team]);
+      const byTeam = new Map<string, { team: string; points: number; won: number; drawn: number; lost: number }>();
+      for (const r of (rows ?? []) as Array<{ team: string; points: number; won: number; drawn: number; lost: number }>) {
+        byTeam.set(r.team, r);
+      }
+      const h = byTeam.get(m.home_team);
+      const a = byTeam.get(m.away_team);
+      if (h && a) standingsImpact = { home: h, away: a };
+    }
+    return { ok: true, standingsImpact };
   });
 
 export const adminSetMatchStatusFn = createServerFn({ method: "POST" })
