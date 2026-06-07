@@ -634,13 +634,18 @@ export const adminScoreMatchdayFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ matchday_id: z.number().int() }))
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
     const { data: count, error } = await supabase.rpc("score_matchday", {
       _matchday_id: data.matchday_id,
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[adminScoreMatchdayFn]", error);
+      throw new Error("Failed to score matchday.");
+    }
     return { ok: true, users_scored: (count as number) ?? 0 };
   });
+
 
 export const adminAddMatchdayFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
