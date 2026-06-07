@@ -10,7 +10,7 @@ export function CheckInboxPanel({
   cooldownSeconds = 60,
 }: {
   email: string;
-  description?: string;
+  description?: React.ReactNode;
   onResend: () => Promise<void>;
   bottomSlot?: React.ReactNode;
   cooldownSeconds?: number;
