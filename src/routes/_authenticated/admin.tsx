@@ -420,9 +420,24 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
   const saveAll = async () => {
     const entries = Object.entries(drafts);
     if (!entries.length) return;
+    const valid: Array<[string, RowDraft]> = [];
+    let skipped = 0;
+    for (const [id, d] of entries) {
+      let { home, away, scorer } = d;
+      if (home === 0 && away === 0) scorer = "none";
+      if (!isConsistent(home, away, scorer)) {
+        skipped += 1;
+        continue;
+      }
+      valid.push([id, { home, away, scorer }]);
+    }
+    if (!valid.length) {
+      toast.error("Fix inconsistencies before saving");
+      return;
+    }
     try {
       await Promise.all(
-        entries.map(([id, d]) =>
+        valid.map(([id, d]) =>
           adminSetResultFn({
             data: {
               match_id: Number(id),
@@ -433,9 +448,15 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
           }),
         ),
       );
-      toast.success(`Saved ${entries.length} result(s).`);
-      const ids = entries.map(([id]) => Number(id));
-      setDrafts({});
+      toast.success(
+        `Saved ${valid.length} result(s)${skipped ? ` · ${skipped} skipped (inconsistent)` : ""}.`,
+      );
+      const ids = valid.map(([id]) => Number(id));
+      setDrafts((d) => {
+        const n = { ...d };
+        ids.forEach((id) => delete n[id]);
+        return n;
+      });
       setSavedFlash((s) => {
         const n = { ...s };
         ids.forEach((id) => (n[id] = true));
