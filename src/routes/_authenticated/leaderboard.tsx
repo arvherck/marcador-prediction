@@ -153,11 +153,17 @@ function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
         ? getMatchdayLeaderboardPublic({ data: {} })
         : getMatchdayLeaderboard({ data: {} }),
   });
-  const donors = useQuery({ queryKey: ["donor-ids"], queryFn: () => getDonorIdsFn() });
+  const data = q.data;
+  const rows = (data?.rows ?? []) as MatchdayRow[];
+  const ids = rows.map((r) => r.id);
+  const donors = useQuery({
+    queryKey: ["donor-ids", ids],
+    queryFn: () => getDonorIdsFn({ data: { user_ids: ids } }),
+    enabled: ids.length > 0,
+  });
   const donorSet = new Set<string>(donors.data ?? []);
 
   if (q.isLoading) return <SkeletonBoard />;
-  const data = q.data;
   if (!data || !data.matchday) {
     return (
       <div className="rounded-2xl border border-border bg-card p-10 text-center">
@@ -167,7 +173,6 @@ function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
       </div>
     );
   }
-  const rows = data.rows as MatchdayRow[];
   return (
     <>
       <div className="mb-3 text-xs uppercase tracking-widest text-muted-foreground">
