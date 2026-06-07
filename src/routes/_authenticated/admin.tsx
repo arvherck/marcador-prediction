@@ -82,10 +82,26 @@ function AdminPage() {
   return <AdminInner displayName={me.profile?.display_name} />;
 }
 
+const NAV = [
+  { id: "overview", label: "Overview", icon: "📊" },
+  { id: "results", label: "Results & Scoring", icon: "⚽" },
+  { id: "api-sync", label: "API Sync", icon: "🔄" },
+  { id: "tournament", label: "Tournament", icon: "🏆" },
+  { id: "donations", label: "Donations", icon: "💰" },
+  { id: "tests", label: "Tests", icon: "🧪" },
+  { id: "advanced", label: "Advanced", icon: "⚙️" },
+];
+
 function AdminInner({ displayName }: { displayName?: string }) {
   const qc = useQueryClient();
   const mds = useQuery({ queryKey: ["admin-mds"], queryFn: () => adminListMatchdays() });
   const matchdays = (mds.data as Matchday[] | undefined) ?? [];
+  const [active, setActive] = useState<string>("overview");
+
+  const jump = (id: string) => {
+    setActive(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <AppShell displayName={displayName} isAdmin>
@@ -93,60 +109,115 @@ function AdminInner({ displayName }: { displayName?: string }) {
         Panel de Control
       </h1>
 
-      <FixtureImportBanner />
+      <div className="md:flex md:gap-6">
+        <nav className="md:w-48 md:flex-shrink-0 mb-4 md:mb-0">
+          <div className="md:sticky md:top-4 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible -mx-4 px-4 md:mx-0 md:px-0">
+            {NAV.map((n) => (
+              <button
+                key={n.id}
+                onClick={() => jump(n.id)}
+                className={`shrink-0 md:shrink text-left px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+                  active === n.id
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:bg-muted/50"
+                }`}
+              >
+                <span className="mr-2">{n.icon}</span>
+                {n.label}
+              </button>
+            ))}
+          </div>
+        </nav>
 
-      <ApiSyncPanel />
+        <div className="flex-1 min-w-0">
+          <Section id="overview" title="Overview">
+            <FixtureImportBanner />
+          </Section>
 
-      <Section title="New matchday">
-        <NewMatchdayForm
-          onCreated={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
-        />
-      </Section>
+          <Section id="results" title="Results & scoring">
+            <div className="space-y-4">
+              {matchdays.map((md) => (
+                <MatchdayBlock
+                  key={md.id}
+                  md={md}
+                  onChange={() => qc.invalidateQueries()}
+                />
+              ))}
+              {!matchdays.length && (
+                <p className="text-sm text-muted-foreground">No matchdays yet.</p>
+              )}
+            </div>
+          </Section>
 
-      <Section title="Add match manually">
-        <AddMatchForm
-          matchdays={matchdays}
-          onAdded={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
-        />
-      </Section>
+          <Section id="api-sync" title="API Sync">
+            <ApiSyncPanel />
+          </Section>
 
-      <Section title="Results & scoring">
-        <div className="space-y-6">
-          {matchdays.map((md) => (
-            <MatchdayBlock
-              key={md.id}
-              md={md}
-              onChange={() => qc.invalidateQueries()}
-            />
-          ))}
-          {!matchdays.length && (
-            <p className="text-sm text-muted-foreground">No matchdays yet.</p>
-          )}
+          <Section id="tournament" title="Tournament">
+            <div className="space-y-6">
+              <TournamentAdmin />
+              <div>
+                <h3 className="font-display font-semibold text-base mb-2">Group standings</h3>
+                <GroupStandingsAdmin />
+              </div>
+              <div>
+                <h3 className="font-display font-semibold text-base mb-2">Predictions by matchday</h3>
+                <PredictionsViewer matchdays={matchdays} />
+              </div>
+            </div>
+          </Section>
+
+          <Section id="donations" title="Donations">
+            <DonationsPanel />
+          </Section>
+
+          <Section id="tests" title="Tests">
+            <TestsPanel />
+          </Section>
+
+          <Section id="advanced" title="Advanced">
+            <details className="rounded-2xl border border-border bg-card">
+              <summary className="cursor-pointer px-4 py-3 font-semibold text-sm">
+                ▶ Add matches manually
+              </summary>
+              <div className="border-t border-border p-4 space-y-4">
+                <div>
+                  <h4 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+                    New matchday
+                  </h4>
+                  <NewMatchdayForm
+                    onCreated={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
+                  />
+                </div>
+                <div>
+                  <h4 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+                    Add match
+                  </h4>
+                  <AddMatchForm
+                    matchdays={matchdays}
+                    onAdded={() => qc.invalidateQueries({ queryKey: ["admin-mds"] })}
+                  />
+                </div>
+              </div>
+            </details>
+          </Section>
         </div>
-      </Section>
-
-      <Section title="Predictions by matchday">
-        <PredictionsViewer matchdays={matchdays} />
-      </Section>
-
-      <Section title="Tournament champion">
-        <TournamentAdmin />
-      </Section>
-
-      <Section title="Group standings">
-        <GroupStandingsAdmin />
-      </Section>
-
-      <Section title="Donations">
-        <DonationsPanel />
-      </Section>
+      </div>
     </AppShell>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <section className="mb-8">
+    <section id={id} className="mb-8 scroll-mt-4">
       <h2 className="font-display font-semibold text-lg mb-3">{title}</h2>
       {children}
     </section>
@@ -159,14 +230,46 @@ function FixtureImportBanner() {
     queryFn: () => getFixtureStatsPublic(),
     staleTime: 60_000,
   });
-  if (!q.data) return null;
+  const [dismissed, setDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("fixture-banner-dismissed") === "1";
+  });
+  useEffect(() => {
+    if (dismissed || !q.data) return;
+    const t = setTimeout(() => {
+      setDismissed(true);
+      sessionStorage.setItem("fixture-banner-dismissed", "1");
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [dismissed, q.data]);
+
+  if (!q.data || dismissed) {
+    return q.data ? (
+      <div className="text-xs text-muted-foreground">
+        {q.data.matches} matches · {q.data.matchdays} matchdays
+      </div>
+    ) : null;
+  }
   return (
-    <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm font-medium text-foreground">
-      <span className="text-primary font-bold">{q.data.matches}</span> matches imported across{" "}
-      <span className="text-primary font-bold">{q.data.matchdays}</span> matchdays
+    <div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm font-medium text-foreground flex items-center justify-between gap-3">
+      <div>
+        <span className="text-primary font-bold">{q.data.matches}</span> matches imported across{" "}
+        <span className="text-primary font-bold">{q.data.matchdays}</span> matchdays
+      </div>
+      <button
+        onClick={() => {
+          setDismissed(true);
+          sessionStorage.setItem("fixture-banner-dismissed", "1");
+        }}
+        className="text-muted-foreground hover:text-foreground text-lg leading-none px-1"
+        aria-label="Dismiss"
+      >
+        ×
+      </button>
     </div>
   );
 }
+
 
 function AddMatchForm({
   matchdays,
