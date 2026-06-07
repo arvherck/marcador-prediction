@@ -107,8 +107,9 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
     queryKey: ["leaderboard", "overall", leagueId ?? "global", isGuest ? "guest" : "auth"],
     queryFn: () =>
       isGuest
-        ? getLeaderboardPublic({ data: leagueId ? { league_id: leagueId } : {} })
+        ? getLeaderboardPublic()
         : getLeaderboard({ data: leagueId ? { league_id: leagueId } : {} }),
+
   });
   const donors = useQuery({ queryKey: ["donor-ids"], queryFn: () => getDonorIdsFn() });
   const donorSet = new Set<string>(donors.data ?? []);
