@@ -35,11 +35,31 @@ function AuthPage() {
   const navigate = useNavigate();
   const router = useRouter();
 
+  const consumePendingInvite = (): string | null => {
+    try {
+      const code = window.sessionStorage.getItem("marcador_pending_invite");
+      if (code) window.sessionStorage.removeItem("marcador_pending_invite");
+      return code;
+    } catch {
+      return null;
+    }
+  };
+
+  const goPostAuth = () => {
+    const invite = consumePendingInvite();
+    if (invite) {
+      navigate({ to: "/leagues/join", search: { code: invite }, replace: true });
+    } else {
+      navigate({ to: "/play" });
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user) navigate({ to: "/play", replace: true });
+      if (data.user) goPostAuth();
     });
-  }, [navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +77,7 @@ function AuthPage() {
       clearGuest();
       toast.success("Welcome to Marcador.");
       await router.invalidate();
-      navigate({ to: "/play" });
+      goPostAuth();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong.");
     } finally {

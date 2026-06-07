@@ -505,6 +505,7 @@ export type Database = {
       }
     }
     Functions: {
+      find_league_by_code: { Args: { _code: string }; Returns: string }
       global_leaderboard: {
         Args: { _league_id?: string }
         Returns: {

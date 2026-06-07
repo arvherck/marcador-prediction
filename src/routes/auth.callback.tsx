@@ -49,7 +49,20 @@ function CallbackPage() {
         .eq("user_id", user.id)
         .maybeSingle();
 
+      // Honor a pending invite link captured before sign-in.
+      let pendingInvite: string | null = null;
+      try {
+        pendingInvite = window.sessionStorage.getItem("marcador_pending_invite");
+        if (pendingInvite) window.sessionStorage.removeItem("marcador_pending_invite");
+      } catch {
+        /* ignore */
+      }
+
       toast.success("Email confirmed! Welcome to Marcador ⚽");
+      if (pendingInvite && profile?.display_name) {
+        navigate({ to: "/leagues/join", search: { code: pendingInvite }, replace: true });
+        return;
+      }
       navigate({ to: profile?.display_name ? "/play" : "/onboarding", replace: true });
     };
     run();

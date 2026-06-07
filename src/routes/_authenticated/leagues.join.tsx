@@ -1,4 +1,5 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -20,6 +21,7 @@ function JoinLeaguePage() {
   const { me } = Route.useRouteContext();
   const { code } = Route.useSearch();
   const navigate = useNavigate();
+  const triggered = useRef(false);
 
   const join = useMutation({
     mutationFn: () => joinLeagueFn({ data: { invite_code: code! } }),
@@ -30,6 +32,14 @@ function JoinLeaguePage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Invalid code."),
   });
 
+  useEffect(() => {
+    if (code && !triggered.current) {
+      triggered.current = true;
+      join.mutate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
+
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
       <div className="max-w-md mx-auto py-12">
@@ -37,9 +47,13 @@ function JoinLeaguePage() {
           <div className="text-xs uppercase tracking-widest text-muted-foreground">
             League invitation
           </div>
-          <h1 className="font-display font-bold text-2xl mt-2">Join league</h1>
+          <h1 className="font-display font-bold text-2xl mt-2">
+            {join.isPending ? "Joining league…" : join.isError ? "Couldn't join" : "Joining league…"}
+          </h1>
           <p className="text-sm text-muted-foreground mt-2">
-            You're about to join with code
+            {join.isError
+              ? (join.error instanceof Error ? join.error.message : "Invalid code.")
+              : "You're joining with code"}
           </p>
           <div className="mt-4 font-score font-bold text-3xl tracking-widest text-primary">
             {code}
@@ -49,15 +63,17 @@ function JoinLeaguePage() {
               onClick={() => navigate({ to: "/leagues" })}
               className="flex-1 rounded-xl border border-border bg-secondary px-4 py-2.5 text-sm font-bold"
             >
-              Cancel
+              {join.isError ? "Back to leagues" : "Cancel"}
             </button>
-            <button
-              onClick={() => join.mutate()}
-              disabled={join.isPending}
-              className="flex-1 rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold shadow-glow disabled:opacity-40"
-            >
-              {join.isPending ? "Joining…" : "Join"}
-            </button>
+            {join.isError && (
+              <button
+                onClick={() => join.mutate()}
+                disabled={join.isPending}
+                className="flex-1 rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold shadow-glow disabled:opacity-40"
+              >
+                Try again
+              </button>
+            )}
           </div>
         </div>
       </div>
