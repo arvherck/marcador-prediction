@@ -211,6 +211,7 @@ export type Database = {
           matchday_id: number
           phase: string | null
           stadium: string | null
+          status: string
           teams_confirmed: boolean
         }
         Insert: {
@@ -228,6 +229,7 @@ export type Database = {
           matchday_id: number
           phase?: string | null
           stadium?: string | null
+          status?: string
           teams_confirmed?: boolean
         }
         Update: {
@@ -245,6 +247,7 @@ export type Database = {
           matchday_id?: number
           phase?: string | null
           stadium?: string | null
+          status?: string
           teams_confirmed?: boolean
         }
         Relationships: [

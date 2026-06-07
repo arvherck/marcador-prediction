@@ -9,7 +9,9 @@ import {
   adminAddMatchdayFn,
   adminListMatchdays,
   adminListPredictionsFn,
+  adminMatchdayScoringSummaryFn,
   adminScoreMatchdayFn,
+  adminSetMatchStatusFn,
   adminSetResultFn,
   adminUpdateMatchTeamsFn,
   getFixtureStatsPublic,
@@ -34,6 +36,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
   component: AdminPage,
 });
 
+type MatchStatusT = "upcoming" | "live" | "completed" | "cancelled";
 type Match = {
   id: number;
   home_team: string;
@@ -45,6 +48,7 @@ type Match = {
   is_final: boolean;
   phase: string | null;
   teams_confirmed?: boolean;
+  status?: MatchStatusT | null;
 };
 type Matchday = {
   id: number;
@@ -53,6 +57,19 @@ type Matchday = {
   is_scored: boolean;
   matches: Match[] | null;
   prediction_count?: number;
+};
+
+function effectiveStatus(m: Match): MatchStatusT {
+  const s = (m.status ?? "upcoming") as MatchStatusT;
+  if (s === "upcoming" && new Date(m.kickoff_at).getTime() <= Date.now()) return "live";
+  return s;
+}
+
+const STATUS_META: Record<MatchStatusT, { icon: string; label: string; cls: string }> = {
+  upcoming: { icon: "🟡", label: "Upcoming", cls: "bg-amber-glow/15 text-amber-glow" },
+  live: { icon: "🔴", label: "Live", cls: "bg-destructive/15 text-destructive" },
+  completed: { icon: "✅", label: "Completed", cls: "bg-success/15 text-success" },
+  cancelled: { icon: "⛔", label: "Cancelled", cls: "bg-muted text-muted-foreground" },
 };
 
 const PHASES = [
@@ -388,13 +405,35 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
   const [savedFlash, setSavedFlash] = useState<Record<number, boolean>>({});
 
   const score = useMutation({
-    mutationFn: () => adminScoreMatchdayFn({ data: { matchday_id: md.id } }),
-    onSuccess: () => {
-      toast.success("Matchday scored.");
+    mutationFn: async () => {
+      const r = await adminScoreMatchdayFn({ data: { matchday_id: md.id } });
+      try {
+        const s = await adminMatchdayScoringSummaryFn({ data: { matchday_id: md.id } });
+        return { ...r, summary: s };
+      } catch {
+        return { ...r, summary: null as null | { predictions_scored: number; avg_points: number } };
+      }
+    },
+    onSuccess: (r) => {
+      if (r.summary) {
+        toast.success(
+          `${r.summary.predictions_scored} predictions scored · avg ${r.summary.avg_points} pts`,
+        );
+      } else {
+        toast.success("Matchday scored.");
+      }
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
+
+  const counts = (md.matches ?? []).reduce(
+    (acc, m) => {
+      acc[effectiveStatus(m)] += 1;
+      return acc;
+    },
+    { upcoming: 0, live: 0, completed: 0, cancelled: 0 } as Record<MatchStatusT, number>,
+  );
 
   const setDraft = (matchId: number, patch: Partial<RowDraft>, base: RowDraft) => {
     setDrafts((d) => ({ ...d, [matchId]: { ...base, ...(d[matchId] ?? {}), ...patch } }));
@@ -487,6 +526,12 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
               {new Date(md.starts_at).toLocaleDateString()} · {total} match
               {total === 1 ? "" : "es"} · {md.prediction_count ?? 0} predicted
             </div>
+            <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+              {(["completed", "live", "upcoming", "cancelled"] as MatchStatusT[])
+                .filter((s) => counts[s] > 0)
+                .map((s) => `${STATUS_META[s].icon} ${counts[s]} ${STATUS_META[s].label.toLowerCase()}`)
+                .join(" · ") || "No matches"}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -511,10 +556,11 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
                 e.preventDefault();
                 score.mutate();
               }}
-              disabled={score.isPending}
+              disabled={score.isPending || counts.completed === 0}
               className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+              title={counts.completed === 0 ? "Mark at least one match as completed first" : undefined}
             >
-              Run scoring
+              Run scoring{counts.completed > 0 ? ` (${counts.completed} completed)` : ""}
             </button>
           )}
         </div>
@@ -607,12 +653,34 @@ function ResultRow({
       });
     },
     onSuccess: () => {
-      toast.success("Result saved.");
+      toast.success("Result saved · Match marked as completed");
       onSaved();
       onChange();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
+
+  const eff = effectiveStatus(m);
+  const changeStatus = useMutation({
+    mutationFn: (next: MatchStatusT) =>
+      adminSetMatchStatusFn({ data: { match_id: m.id, status: next } }),
+    onSuccess: (_d, next) => {
+      toast.success(`Status set to ${STATUS_META[next].label.toLowerCase()}.`);
+      onChange();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const onChangeStatus = (next: MatchStatusT) => {
+    if (next === (m.status ?? "upcoming")) return;
+    if (next === "upcoming") {
+      if (!window.confirm(`This will reopen predictions for ${m.home_team} vs ${m.away_team}. Continue?`)) return;
+    }
+    if (next === "completed" && current.home === 0 && current.away === 0 && current.scorer === "none" && !m.is_final) {
+      if (!window.confirm("No score entered. Mark as completed anyway?")) return;
+    }
+    changeStatus.mutate(next);
+  };
 
   const [editTeams, setEditTeams] = useState(false);
   const [homeName, setHomeName] = useState(m.home_team);
@@ -752,6 +820,24 @@ function ResultRow({
           >
             {m.is_final ? "Update" : "Save"}
           </button>
+          <span
+            className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${STATUS_META[eff].cls}`}
+            title={`Status: ${STATUS_META[eff].label}`}
+          >
+            {STATUS_META[eff].icon} {STATUS_META[eff].label}
+          </span>
+          <select
+            value={m.status ?? "upcoming"}
+            onChange={(e) => onChangeStatus(e.target.value as MatchStatusT)}
+            disabled={changeStatus.isPending}
+            className="rounded-lg bg-input border border-border px-2 py-1 text-[11px]"
+            title="Change status"
+          >
+            <option value="upcoming">Upcoming</option>
+            <option value="live">Live</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
           {(hint || inconsistencyMsg) && (
             <div className={`basis-full text-[11px] mt-1 ${inconsistencyMsg ? "text-destructive font-medium" : "text-muted-foreground italic"}`}>
               {inconsistencyMsg ?? hint}

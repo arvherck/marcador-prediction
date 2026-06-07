@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+export type MatchStatus = "upcoming" | "live" | "completed" | "cancelled";
+
 export type MatchRow = {
   id: number;
   matchday_id: number;
@@ -18,6 +20,8 @@ export type MatchRow = {
   group_letter: string | null;
   phase: string | null;
   teams_confirmed: boolean;
+  status: MatchStatus;
+  effective_status: MatchStatus;
   prediction: {
     home_goals: number;
     away_goals: number;
@@ -47,6 +51,7 @@ function mapMatch(
     host_country?: string | null;
     group_letter?: string | null;
     teams_confirmed?: boolean;
+    status?: string | null;
   },
   p: {
     home_goals: number;
@@ -57,6 +62,10 @@ function mapMatch(
   } | undefined,
   now: number,
 ): MatchRow {
+  const status = ((m.status as MatchStatus | null | undefined) ?? "upcoming") as MatchStatus;
+  const kickoffPassed = new Date(m.kickoff_at).getTime() <= now;
+  const effective_status: MatchStatus =
+    status === "upcoming" && kickoffPassed ? "live" : status;
   return {
     id: m.id,
     matchday_id: m.matchday_id,
@@ -73,7 +82,9 @@ function mapMatch(
     group_letter: m.group_letter ?? null,
     phase: m.phase ?? null,
     teams_confirmed: m.teams_confirmed ?? true,
-    locked: new Date(m.kickoff_at).getTime() <= now,
+    status,
+    effective_status,
+    locked: effective_status !== "upcoming",
     prediction: p
       ? {
           home_goals: p.home_goals,
@@ -134,24 +145,48 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
         .from("matchdays")
         .select("id, name, starts_at, is_scored")
         .order("starts_at", { ascending: true }),
-      supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final"),
+      supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final, status"),
       supabase.from("predictions").select("match_id").eq("user_id", userId),
     ]);
     if (mdErr) throw new Error(mdErr.message);
     if (mErr) throw new Error(mErr.message);
     if (pErr) throw new Error(pErr.message);
     const predSet = new Set((preds ?? []).map((p) => p.match_id));
-    const byMd = new Map<number, { total: number; available: number; predicted: number }>();
+    type Counts = {
+      total: number;
+      available: number;
+      predicted: number;
+      upcoming: number;
+      live: number;
+      completed: number;
+      cancelled: number;
+    };
+    const now = Date.now();
+    const empty = (): Counts => ({
+      total: 0,
+      available: 0,
+      predicted: 0,
+      upcoming: 0,
+      live: 0,
+      completed: 0,
+      cancelled: 0,
+    });
+    const byMd = new Map<number, Counts>();
     for (const m of matches ?? []) {
       const tc = (m as { teams_confirmed?: boolean }).teams_confirmed ?? true;
-      const row = byMd.get(m.matchday_id) ?? { total: 0, available: 0, predicted: 0 };
+      const status = ((m as { status?: string | null }).status ?? "upcoming") as MatchStatus;
+      const kickoffPassed = new Date(m.kickoff_at).getTime() <= now;
+      const eff: MatchStatus =
+        status === "upcoming" && kickoffPassed ? "live" : status;
+      const row = byMd.get(m.matchday_id) ?? empty();
       row.total += 1;
       if (tc) row.available += 1;
       if (predSet.has(m.id)) row.predicted += 1;
+      row[eff] += 1;
       byMd.set(m.matchday_id, row);
     }
     return (mds ?? []).map((md) => {
-      const r = byMd.get(md.id) ?? { total: 0, available: 0, predicted: 0 };
+      const r = byMd.get(md.id) ?? empty();
       return {
         id: md.id,
         name: md.name,
@@ -160,6 +195,13 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
         total: r.total,
         available: r.available,
         predicted: r.predicted,
+        status_counts: {
+          upcoming: r.upcoming,
+          live: r.live,
+          completed: r.completed,
+          cancelled: r.cancelled,
+        },
+        completed_count: r.completed,
       };
     });
   });
@@ -229,6 +271,21 @@ export const savePredictionFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { data: match, error: mErr } = await supabase
+      .from("matches")
+      .select("kickoff_at, status, teams_confirmed")
+      .eq("id", data.match_id)
+      .maybeSingle();
+    if (mErr) throw new Error(mErr.message);
+    if (!match) throw new Error("Match not found.");
+    if ((match as { teams_confirmed?: boolean }).teams_confirmed === false)
+      throw new Error("Teams not confirmed yet.");
+    if (
+      new Date(match.kickoff_at).getTime() <= Date.now() ||
+      (match.status ?? "upcoming") !== "upcoming"
+    ) {
+      throw new Error("Predictions are locked for this match");
+    }
     const { error } = await supabase.from("predictions").upsert(
       {
         user_id: userId,
@@ -250,7 +307,7 @@ export const setBoosterFn = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const { data: match, error: mErr } = await supabase
       .from("matches")
-      .select("kickoff_at, teams_confirmed")
+      .select("kickoff_at, teams_confirmed, status")
       .eq("id", data.match_id)
       .eq("matchday_id", data.matchday_id)
       .maybeSingle();
@@ -258,8 +315,11 @@ export const setBoosterFn = createServerFn({ method: "POST" })
     if (!match) throw new Error("Match not found.");
     if ((match as { teams_confirmed?: boolean }).teams_confirmed === false)
       throw new Error("Teams not confirmed yet.");
-    if (new Date(match.kickoff_at).getTime() <= Date.now())
-      throw new Error("Too late to change booster — match has started.");
+    if (
+      new Date(match.kickoff_at).getTime() <= Date.now() ||
+      (match.status ?? "upcoming") !== "upcoming"
+    )
+      throw new Error("Too late to change booster — match is locked.");
 
     const { data: existing } = await supabase
       .from("predictions")
@@ -624,10 +684,63 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
         away_score: data.away_score,
         first_scorer: data.first_scorer,
         is_final: true,
+        status: "completed",
       })
       .eq("id", data.match_id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const adminSetMatchStatusFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      match_id: z.number().int(),
+      status: z.enum(["upcoming", "live", "completed", "cancelled"]),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const patch: {
+      status: "upcoming" | "live" | "completed" | "cancelled";
+      is_final?: boolean;
+      home_score?: number | null;
+      away_score?: number | null;
+      first_scorer?: string | null;
+    } = { status: data.status };
+    if (data.status === "upcoming") {
+      patch.is_final = false;
+      patch.home_score = null;
+      patch.away_score = null;
+      patch.first_scorer = null;
+    }
+    const { error } = await supabase
+      .from("matches")
+      .update(patch)
+      .eq("id", data.match_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const adminMatchdayScoringSummaryFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ matchday_id: z.number().int() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: rows, error } = await supabase
+      .from("predictions")
+      .select("points, matches!inner(matchday_id)")
+      .eq("matches.matchday_id", data.matchday_id)
+      .not("points", "is", null);
+    if (error) throw new Error(error.message);
+    const list = (rows ?? []) as Array<{ points: number | null }>;
+    const scored = list.length;
+    const avg = scored
+      ? Math.round((list.reduce((s, r) => s + (r.points ?? 0), 0) / scored) * 10) / 10
+      : 0;
+    return { predictions_scored: scored, avg_points: avg };
   });
 
 export const adminScoreMatchdayFn = createServerFn({ method: "POST" })

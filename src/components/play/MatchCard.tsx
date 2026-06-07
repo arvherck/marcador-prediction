@@ -1,16 +1,37 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, Loader2, Lock, Trophy, Zap } from "lucide-react";
+import { Check, Loader2, Lock, Radio, Trophy, Zap } from "lucide-react";
 import {
   savePredictionFn,
   setBoosterFn,
   type MatchRow,
+  type MatchStatus,
 } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
 import { reconcilePrediction, type Scorer } from "@/lib/prediction-consistency";
+import { explainPoints } from "@/lib/scoring-explain";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return "Locked";
+  const totalMin = Math.floor(ms / 60_000);
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin % (60 * 24)) / 60);
+  const minutes = totalMin % 60;
+  if (days > 0) return `Locks in ${days}d ${hours}h`;
+  if (hours >= 3) return `Locks in ${hours}h`;
+  if (hours > 0) return `Locks in ${hours}h ${minutes}m`;
+  return `Locks in ${minutes}m`;
+}
+
+function scorerLabelFor(match: MatchRow, scorer: string | null | undefined): string {
+  if (!scorer || scorer === "none") return "No goal";
+  if (scorer === "home") return `${match.home_team} scored first`;
+  if (scorer === "away") return `${match.away_team} scored first`;
+  return scorer;
+}
 
 export function MatchCard({
   match,
@@ -32,7 +53,18 @@ export function MatchCard({
   const hasResult =
     match.is_final && match.home_score !== null && match.away_score !== null;
   const placeholder = !match.teams_confirmed;
+  const status: MatchStatus = match.effective_status;
   const disabled = match.locked || placeholder || !!guest;
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (status !== "upcoming") return;
+    const ms = kickoff.getTime() - Date.now();
+    if (ms <= 0) return;
+    const tick = ms < 3 * 60 * 60 * 1000 ? 30_000 : 5 * 60_000;
+    const id = setInterval(() => setNow(Date.now()), tick);
+    return () => clearInterval(id);
+  }, [status, kickoff]);
 
   const [home, setHome] = useState(match.prediction?.home_goals ?? 0);
   const [away, setAway] = useState(match.prediction?.away_goals ?? 0);
@@ -200,7 +232,7 @@ export function MatchCard({
               {match.phase}
             </span>
           )}
-          <StatusPill state={state} locked={match.locked} />
+          <StatusPill state={state} status={status} />
         </div>
       </div>
 
@@ -235,19 +267,53 @@ export function MatchCard({
           </div>
         )}
 
-        {hasResult && (
-          <div className="mt-3 flex items-center justify-center gap-2 text-xs">
-            <span className="text-muted-foreground">Final</span>
-            <span className="font-score font-bold text-amber-glow text-base tabular-nums">
-              {match.home_score} – {match.away_score}
-            </span>
-            {match.prediction?.points != null && (
-              <span className="ml-2 inline-flex items-center gap-1 font-score text-amber-glow font-bold">
-                <Trophy size={12} /> +{match.prediction.points} pts
-              </span>
-            )}
+        {status === "upcoming" && !guest && (
+          <div className="mt-2 text-center text-[11px] text-muted-foreground tabular-nums">
+            {formatCountdown(kickoff.getTime() - now)}
           </div>
         )}
+
+        {status === "live" && (
+          <div className="mt-3 text-center text-[11px] text-muted-foreground inline-flex items-center justify-center gap-1.5 w-full">
+            <Lock size={11} /> Match in progress — predictions locked
+          </div>
+        )}
+
+        {status === "cancelled" && (
+          <div className="mt-3 text-center text-xs text-muted-foreground italic">
+            Match cancelled
+          </div>
+        )}
+
+        {hasResult && status === "completed" && (
+          <div className="mt-3 flex flex-col items-center gap-1">
+            <div className="flex items-center justify-center gap-2 text-xs">
+              <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                FT
+              </span>
+              <span className="font-score font-bold text-amber-glow text-base tabular-nums">
+                {match.home_score} – {match.away_score}
+              </span>
+            </div>
+            <PointsBreakdown match={match} />
+          </div>
+        )}
+
+        {(status === "live" || status === "completed" || status === "cancelled") &&
+          match.prediction && (
+            <div className="mt-2 text-center text-[11px] text-muted-foreground">
+              <span className="opacity-80">Your prediction: </span>
+              <span className="font-score font-bold text-foreground tabular-nums">
+                {match.prediction.home_goals}-{match.prediction.away_goals}
+              </span>
+              <span className="opacity-80">
+                {" "}· {scorerLabelFor(match, match.prediction.first_scorer)}
+              </span>
+              {match.prediction.booster && (
+                <span className="ml-1 text-amber-glow font-bold">· 2×</span>
+              )}
+            </div>
+          )}
 
         <div className="mt-5">
           <div className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground mb-2">
@@ -416,11 +482,25 @@ function ScoreStepper({
   );
 }
 
-function StatusPill({ state, locked }: { state: SaveState; locked: boolean }) {
-  if (locked) {
+function StatusPill({ state, status }: { state: SaveState; status: MatchStatus }) {
+  if (status === "live") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-destructive">
+        <Radio size={10} className="animate-pulse" /> Live
+      </span>
+    );
+  }
+  if (status === "completed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-success">
+        <Check size={10} /> Full time
+      </span>
+    );
+  }
+  if (status === "cancelled") {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
-        <Lock size={10} /> Locked
+        Cancelled
       </span>
     );
   }
@@ -442,4 +522,28 @@ function StatusPill({ state, locked }: { state: SaveState; locked: boolean }) {
     return <span className="text-[10px] uppercase font-bold text-destructive">Error</span>;
   }
   return null;
+}
+
+function PointsBreakdown({ match }: { match: MatchRow }) {
+  const { lines, total, boosted } = explainPoints(match);
+  if (!lines.length && total === 0 && match.prediction?.points == null) return null;
+  const positive = total > 0;
+  return (
+    <div
+      className={`text-[11px] tabular-nums inline-flex items-center gap-1 flex-wrap justify-center ${
+        positive ? "text-success" : "text-muted-foreground"
+      }`}
+    >
+      {lines.map((l, i) => (
+        <span key={i}>
+          +{l.pts} {l.label.toLowerCase()}
+          {i < lines.length - 1 ? " · " : ""}
+        </span>
+      ))}
+      <span className="font-bold inline-flex items-center gap-1 ml-1">
+        <Trophy size={11} />
+        {boosted ? `${total} pts (2×)` : `${total} pts`}
+      </span>
+    </div>
+  );
 }
