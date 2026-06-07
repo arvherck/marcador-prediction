@@ -276,7 +276,7 @@ export const setBoosterFn = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const { data: match, error: mErr } = await supabase
       .from("matches")
-      .select("kickoff_at, teams_confirmed")
+      .select("kickoff_at, teams_confirmed, status")
       .eq("id", data.match_id)
       .eq("matchday_id", data.matchday_id)
       .maybeSingle();
@@ -284,8 +284,11 @@ export const setBoosterFn = createServerFn({ method: "POST" })
     if (!match) throw new Error("Match not found.");
     if ((match as { teams_confirmed?: boolean }).teams_confirmed === false)
       throw new Error("Teams not confirmed yet.");
-    if (new Date(match.kickoff_at).getTime() <= Date.now())
-      throw new Error("Too late to change booster — match has started.");
+    if (
+      new Date(match.kickoff_at).getTime() <= Date.now() ||
+      (match.status ?? "upcoming") !== "upcoming"
+    )
+      throw new Error("Too late to change booster — match is locked.");
 
     const { data: existing } = await supabase
       .from("predictions")
