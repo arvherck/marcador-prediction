@@ -354,7 +354,7 @@ function ScorePair({
   homeDecDisabled?: boolean;
   awayDecDisabled?: boolean;
 }) {
-  const allLocked = locked || scoresLocked;
+  const allLocked = locked || !!scoresLocked;
   return (
     <div className="flex items-center gap-2 md:gap-3">
       <ScoreStepper
