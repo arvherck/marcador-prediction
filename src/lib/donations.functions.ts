@@ -127,11 +127,14 @@ export const getDonationStatsFn = createServerFn({ method: "GET" })
     };
   });
 
-export const getDonorIdsFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { data } = await supabaseAdmin
-    .from("profiles")
-    .select("user_id")
-    .eq("donor", true);
-  return (data ?? []).map((r) => r.user_id);
-});
+export const getDonorIdsFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id")
+      .eq("donor", true);
+    return (data ?? []).map((r) => r.user_id);
+  });
+
