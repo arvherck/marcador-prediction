@@ -51,11 +51,6 @@ export const Route = createFileRoute("/_authenticated")({
       }
     }
     throw redirect({ to: "/auth" });
-      } catch {
-        /* fallthrough */
-      }
-    }
-    throw redirect({ to: "/auth" });
   },
   component: () => <Outlet />,
 });
