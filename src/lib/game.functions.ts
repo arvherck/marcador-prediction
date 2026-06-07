@@ -738,14 +738,22 @@ export const adminUpdateMatchTeamsFn = createServerFn({ method: "POST" })
       match_id: z.number().int(),
       home_team: z.string().trim().min(1).max(80),
       away_team: z.string().trim().min(1).max(80),
+      teams_confirmed: z.boolean().optional(),
     }),
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
+    const patch: Record<string, unknown> = {
+      home_team: data.home_team,
+      away_team: data.away_team,
+    };
+    if (typeof data.teams_confirmed === "boolean") {
+      patch.teams_confirmed = data.teams_confirmed;
+    }
     const { error } = await supabase
       .from("matches")
-      .update({ home_team: data.home_team, away_team: data.away_team })
+      .update(patch)
       .eq("id", data.match_id);
     if (error) throw new Error(error.message);
     return { ok: true };
