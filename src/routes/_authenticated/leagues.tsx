@@ -127,9 +127,11 @@ function LeaguesPage() {
               id="invite-code"
               name="invite_code"
               value={code}
-              onChange={(e) =>
-                setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))
-              }
+              onChange={(e) => {
+                const raw = e.target.value.toUpperCase().replace(/\s+/g, "");
+                const stripped = raw.startsWith("MRC-") ? raw.slice(4) : raw;
+                setCode(stripped.replace(/[^A-Z0-9]/g, "").slice(0, 4));
+              }}
               placeholder="XXXX"
               className="flex-1 bg-transparent px-1 py-2.5 text-sm font-score tracking-widest uppercase outline-none"
             />
