@@ -307,12 +307,24 @@ export const getLeaderboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator(z.object({ league_id: z.string().uuid().optional() }).optional())
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    if (data?.league_id) {
+      const { data: member } = await supabase
+        .from("league_members")
+        .select("user_id")
+        .eq("league_id", data.league_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!member) throw new Error("Forbidden");
+    }
     const { data: rows, error } = await supabase.rpc(
       "global_leaderboard",
       data?.league_id ? { _league_id: data.league_id } : {},
     );
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[getLeaderboard]", error);
+      throw new Error("Unable to load leaderboard.");
+    }
     return (rows ?? []) as Array<{
       id: string;
       display_name: string;
@@ -324,6 +336,7 @@ export const getLeaderboard = createServerFn({ method: "GET" })
       current_streak: number;
     }>;
   });
+
 
 export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
