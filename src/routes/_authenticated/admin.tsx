@@ -24,7 +24,6 @@ import {
 import { TEAMS_2026 } from "@/lib/teams";
 import {
   getGroups,
-  adminSaveGroupStandingsFn,
   type GroupWithStandings,
 } from "@/lib/groups.functions";
 import { ApiSyncPanel } from "@/components/admin/ApiSyncPanel";
