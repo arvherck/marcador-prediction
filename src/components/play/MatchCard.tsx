@@ -269,7 +269,7 @@ export function MatchCard({
                   disabled={disabled}
                   onClick={() => {
                     if (!touch()) return;
-                    setScorer(opt);
+                    apply({ scorer: opt }, "scorer");
                   }}
                   className={`rounded-lg px-2 py-2 text-xs font-semibold border transition truncate ${
                     active
