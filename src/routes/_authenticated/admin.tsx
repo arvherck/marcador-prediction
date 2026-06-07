@@ -718,9 +718,10 @@ function ResultRow({
             min={0}
             value={current.home}
             onChange={(e) =>
-              onDraftChange({ home: parseInt(e.target.value || "0") }, base)
+              handleChange({ home: Math.max(0, parseInt(e.target.value || "0")) }, "home")
             }
-            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
+            disabled={current.scorer === "none"}
+            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center disabled:opacity-60"
           />
           <span className="text-muted-foreground">–</span>
           <input
@@ -728,17 +729,15 @@ function ResultRow({
             min={0}
             value={current.away}
             onChange={(e) =>
-              onDraftChange({ away: parseInt(e.target.value || "0") }, base)
+              handleChange({ away: Math.max(0, parseInt(e.target.value || "0")) }, "away")
             }
-            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
+            disabled={current.scorer === "none"}
+            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center disabled:opacity-60"
           />
           <select
             value={current.scorer}
             onChange={(e) =>
-              onDraftChange(
-                { scorer: e.target.value as "home" | "away" | "none" },
-                base,
-              )
+              handleChange({ scorer: e.target.value as Scorer }, "scorer")
             }
             className="rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
           >
@@ -748,11 +747,16 @@ function ResultRow({
           </select>
           <button
             onClick={() => save.mutate()}
-            disabled={save.isPending}
+            disabled={save.isPending || !consistent}
             className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold disabled:opacity-40"
           >
             {m.is_final ? "Update" : "Save"}
           </button>
+          {(hint || inconsistencyMsg) && (
+            <div className={`basis-full text-[11px] mt-1 ${inconsistencyMsg ? "text-destructive font-medium" : "text-muted-foreground italic"}`}>
+              {inconsistencyMsg ?? hint}
+            </div>
+          )}
         </>
       )}
     </div>
