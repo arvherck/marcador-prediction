@@ -27,6 +27,7 @@ import {
 } from "@/lib/groups.functions";
 import { ApiSyncPanel } from "@/components/admin/ApiSyncPanel";
 import { DonationsPanel } from "@/components/admin/DonationsPanel";
+import { reconcilePrediction, isConsistent, type Scorer } from "@/lib/prediction-consistency";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
@@ -419,9 +420,24 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
   const saveAll = async () => {
     const entries = Object.entries(drafts);
     if (!entries.length) return;
+    const valid: Array<[string, RowDraft]> = [];
+    let skipped = 0;
+    for (const [id, d] of entries) {
+      let { home, away, scorer } = d;
+      if (home === 0 && away === 0) scorer = "none";
+      if (!isConsistent(home, away, scorer)) {
+        skipped += 1;
+        continue;
+      }
+      valid.push([id, { home, away, scorer }]);
+    }
+    if (!valid.length) {
+      toast.error("Fix inconsistencies before saving");
+      return;
+    }
     try {
       await Promise.all(
-        entries.map(([id, d]) =>
+        valid.map(([id, d]) =>
           adminSetResultFn({
             data: {
               match_id: Number(id),
@@ -432,9 +448,15 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
           }),
         ),
       );
-      toast.success(`Saved ${entries.length} result(s).`);
-      const ids = entries.map(([id]) => Number(id));
-      setDrafts({});
+      toast.success(
+        `Saved ${valid.length} result(s)${skipped ? ` · ${skipped} skipped (inconsistent)` : ""}.`,
+      );
+      const ids = valid.map(([id]) => Number(id));
+      setDrafts((d) => {
+        const n = { ...d };
+        ids.forEach((id) => delete n[id]);
+        return n;
+      });
       setSavedFlash((s) => {
         const n = { ...s };
         ids.forEach((id) => (n[id] = true));
@@ -544,17 +566,46 @@ function ResultRow({
   };
   const current = draft ?? base;
   const dirty = !!draft;
+  const [hint, setHint] = useState<string | null>(null);
+  const consistent = isConsistent(current.home, current.away, current.scorer);
+  const inconsistencyMsg = !consistent
+    ? current.scorer === "home"
+      ? `Inconsistent — ${m.home_team} cannot score first with 0 home goals`
+      : current.scorer === "away"
+        ? `Inconsistent — ${m.away_team} cannot score first with 0 away goals`
+        : "Inconsistent result"
+    : null;
+
+  const handleChange = (
+    patch: { home?: number; away?: number; scorer?: Scorer },
+    changed: "home" | "away" | "scorer",
+  ) => {
+    const r = reconcilePrediction({
+      home: patch.home ?? current.home,
+      away: patch.away ?? current.away,
+      scorer: patch.scorer ?? current.scorer,
+      changed,
+      homeTeam: m.home_team,
+      awayTeam: m.away_team,
+    });
+    onDraftChange({ home: r.home, away: r.away, scorer: r.scorer }, base);
+    setHint(r.hint ?? null);
+  };
 
   const save = useMutation({
-    mutationFn: () =>
-      adminSetResultFn({
+    mutationFn: () => {
+      if (!isConsistent(current.home, current.away, current.scorer)) {
+        throw new Error(inconsistencyMsg ?? "Inconsistent result");
+      }
+      return adminSetResultFn({
         data: {
           match_id: m.id,
           home_score: current.home,
           away_score: current.away,
           first_scorer: current.scorer,
         },
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success("Result saved.");
       onSaved();
@@ -667,9 +718,10 @@ function ResultRow({
             min={0}
             value={current.home}
             onChange={(e) =>
-              onDraftChange({ home: parseInt(e.target.value || "0") }, base)
+              handleChange({ home: Math.max(0, parseInt(e.target.value || "0")) }, "home")
             }
-            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
+            disabled={current.scorer === "none"}
+            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center disabled:opacity-60"
           />
           <span className="text-muted-foreground">–</span>
           <input
@@ -677,17 +729,15 @@ function ResultRow({
             min={0}
             value={current.away}
             onChange={(e) =>
-              onDraftChange({ away: parseInt(e.target.value || "0") }, base)
+              handleChange({ away: Math.max(0, parseInt(e.target.value || "0")) }, "away")
             }
-            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center"
+            disabled={current.scorer === "none"}
+            className="w-14 rounded-lg bg-input border border-border px-2 py-1.5 font-score text-center disabled:opacity-60"
           />
           <select
             value={current.scorer}
             onChange={(e) =>
-              onDraftChange(
-                { scorer: e.target.value as "home" | "away" | "none" },
-                base,
-              )
+              handleChange({ scorer: e.target.value as Scorer }, "scorer")
             }
             className="rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
           >
@@ -697,11 +747,16 @@ function ResultRow({
           </select>
           <button
             onClick={() => save.mutate()}
-            disabled={save.isPending}
+            disabled={save.isPending || !consistent}
             className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold disabled:opacity-40"
           >
             {m.is_final ? "Update" : "Save"}
           </button>
+          {(hint || inconsistencyMsg) && (
+            <div className={`basis-full text-[11px] mt-1 ${inconsistencyMsg ? "text-destructive font-medium" : "text-muted-foreground italic"}`}>
+              {inconsistencyMsg ?? hint}
+            </div>
+          )}
         </>
       )}
     </div>

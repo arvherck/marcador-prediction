@@ -1,132 +1,44 @@
-# Admin panel refactor + pre-release test suite
+## Goal
+Make score predictions and "first to score" always logically consistent, auto-correcting silently with a small hint when the system rewrites the user's input. Apply the same rules to user prediction cards (Play screen) and admin result entry.
 
-Scope: presentation/admin-UX only, plus one new server function module
-exposing read-only test runners. No game-logic, scoring, or RLS changes.
+## Consistency rules (single source of truth)
 
-## 1. Layout & navigation
+Implement a small pure helper `reconcilePrediction({ home, away, scorer, changed })` returning `{ home, away, scorer, hint? }`.
 
-**Edit `src/routes/_authenticated/admin.tsx`:**
+Logic:
+- `changed === "scorer"`:
+  - if `scorer === "none"` → force `home = 0, away = 0`, hint "No goal selected — score set to 0-0".
+  - if `scorer === "home"` and `home === 0` → set `home = 1`, hint "Home goals set to 1 — home team scores first".
+  - if `scorer === "away"` and `away === 0` → set `away = 1`, hint "Away goals set to 1 — away team scores first".
+- `changed === "home"` or `"away"`:
+  - if `home === 0 && away === 0` → force `scorer = "none"`, hint "0-0 — set to no goal".
+  - else if `scorer === "home" && home === 0` → switch to `away` if `away > 0`, otherwise `none`. Hint matches the destination.
+  - else if `scorer === "away" && away === 0` → switch to `home` if `home > 0`, otherwise `none`.
 
-- Wrap the page in a two-column layout (sticky left sidebar on `md:`, top
-  pill tabs on mobile) with anchor links + `IntersectionObserver` to
-  highlight the active section:
-  - 📊 Overview (`#overview`) — `FixtureImportBanner` + summary counts
-  - ⚽ Results & Scoring (`#results`)
-  - 🔄 API Sync (`#api-sync`) — existing `ApiSyncPanel`
-  - 🏆 Tournament (`#tournament`) — champion + group standings
-  - 💰 Donations (`#donations`)
-  - 🧪 Tests (`#tests`)
-- Each `Section` gets an `id` matching the sidebar anchor.
-- Sections scroll into view via `scrollIntoView({ behavior: "smooth" })`.
+The helper is called on every user edit; it never blocks, never throws.
 
-**FixtureImportBanner:** add a close (×) button + 5s auto-dismiss
-(`useEffect` setTimeout, persisted via `sessionStorage` key so it doesn't
-re-show on every navigation in the same session).
+## Play screen — `src/components/play/MatchCard.tsx`
+- Add `reconcilePrediction` (co-located util or in `src/lib/prediction-consistency.ts`).
+- Replace the three setters with a single `apply(next, changed)` that runs the helper, calls `setHome/setAway/setScorer`, marks dirty, and stores the latest hint in local state.
+- `ScorePair.onChange` and the scorer buttons feed into `apply`.
+- Disable the inc/dec buttons that would create an inconsistent state purely as UX polish (auto-correct is the real guard):
+  - `scorer === "none"` → score steppers disabled (`No goal — score locked at 0-0`).
+  - `scorer === "home"` → home decrement disabled at `home === 1`.
+  - `scorer === "away"` → away decrement disabled at `away === 1`.
+- Render the most recent hint below the score row as a small muted line (text-[11px] text-muted-foreground), auto-clearing after ~4s or on next manual edit.
+- Booster, lock, placeholder, save flow untouched. Used by both featured cards and the full schedule (they all render `MatchCard`).
 
-**Advanced (collapsed by default):** move `New matchday` and
-`Add match manually` into a single `<details>` block at the bottom of
-the page labeled `▶ Advanced: Add matches manually`.
+## Admin — `src/routes/_authenticated/admin.tsx`
+- Import the same `reconcilePrediction` helper.
+- In `ResultRow`, wrap `onDraftChange` so every score/scorer change is reconciled before being written to the draft, and stash a per-row hint to render under the inputs.
+- Disable home decrement when `scorer === "home" && current.home === 1`, away decrement when `scorer === "away" && current.away === 1`, and disable both score inputs (with hint) when `scorer === "none"`. For the `<input type="number">`, enforce via `min` and by clamping on change rather than blocking the input.
+- `saveAll` and the single-row `Save` button additionally run a final reconcile + a hard guard:
+  - If `home === 0 && scorer === "home"` or `away === 0 && scorer === "away"`, show inline error "Inconsistent result — {team} cannot score first with 0 goals" on that row, skip the save for that row, and toast "Fix inconsistencies before saving" (saveAll continues with the valid rows but still surfaces the count).
+  - If both scores are 0, force `scorer = "none"` and proceed.
 
-## 2. Results & Scoring improvements
+## Files
+- New: `src/lib/prediction-consistency.ts` (pure helper + types).
+- Edit: `src/components/play/MatchCard.tsx` — wire helper, hint UI, disabled stepper states.
+- Edit: `src/routes/_authenticated/admin.tsx` — wire helper into `ResultRow`, add per-row inline error, guard `saveAll` and `save`.
 
-Rewrite `MatchdayBlock` and its row component:
-
-- **Collapsible matchday header** — `<details open={!md.is_scored}>` with
-  summary showing name, date, `X matches`, and scoring status badge
-  (`Scored ✓` green or `Pending` amber). Chevron ▼/▶ via CSS marker.
-- **"Save all" button** in the header — disabled when no rows are dirty;
-  iterates dirty rows and calls `adminSetResultFn` per row (parallel),
-  toasts a single summary.
-- **Dirty-row affordance** — local `dirtyIds: Set<number>` in
-  `MatchdayBlock`. Rows with unsaved edits get `border-l-2 border-amber-500`.
-  On save success: swap to `border-l-2 border-success` + ✓ badge for 2s
-  (setTimeout → clear), then return to neutral.
-- **Teams confirmed checkbox** — render only when
-  `phase !== "Group stage"` (i.e. knockout rounds). Group rows render
-  only score inputs + first-scorer select.
-- **First scorer dropdown** — hide entirely when
-  `phase !== "Group stage" && !teams_confirmed`.
-- **Knockout team confirmation flow** — replace the existing
-  "Confirm teams" button:
-  - When `!teams_confirmed`: two text inputs prefilled with current
-    placeholder names + a primary `Confirm & unlock` button. On submit,
-    call `adminUpdateMatchTeamsFn` (already exists) with the new names
-    and `teams_confirmed: true`. Show toast + invalidate.
-  - When `teams_confirmed`: show real team names with a subtle
-    `Edit teams` link that toggles back to the input view.
-
-## 3. Pre-release test suite
-
-**New file `src/lib/admin-tests.functions.ts`** — one `createServerFn`
-per test, guarded with the existing `assertAdminAdmin` pattern. Each
-returns `{ status: "pass" | "fail" | "warn"; message: string; detail?: string }`.
-
-Data integrity (use `supabaseAdmin` reads):
-- `testMatchCount` — `count(*) from matches = 104`
-- `testMatchdays` — 9 rows in `matchdays`
-- `testNoDuplicateMatches` — `group by (home_team, away_team, kickoff_at) having count > 1`
-- `testGroupStageConfirmed` — `count(*) from matches where phase='Group stage' and teams_confirmed = true = 72`
-- `testKickoffRange` — all `kickoff_at` between `2026-06-11` and `2026-07-20`
-- `testStandingsPopulated` — `count(*) from wc_standings = 48`
-
-Auth & security:
-- `testPredictionsRlsAnon` — instantiate an anon Supabase client inline
-  (publishable key, no session), select from `predictions`; pass if
-  permission denied OR 0 rows
-- `testProfilesRlsAnon` — same pattern on `profiles`. NOTE: current
-  policy allows authenticated read; for anon it should return 0/blocked.
-- `testAdminExists` — `count(*) from user_roles where role='admin' >= 1`
-- `testMatchesPublicReadable` — anon client `select count from matches > 0`
-
-Game logic (each test is self-contained; creates fixtures in a
-transaction-style sequence and cleans up in a `try/finally`):
-- `testScoringExactPlusFirstScorer` — insert temp match (kickoff in
-  future, set `is_final` after) + prediction 2-1 + first scorer match,
-  call `score_matchday(temp_md_id)`, assert `points = 13`. Cleanup
-  removes the temp matchday + match + prediction + matchday_scores rows.
-- `testScoringCorrectResultWrongScore` — 2-0 vs 1-0 → expect 3
-- `testScoringWrongResult` — 2-0 vs 0-1 → expect 0
-- `testBoosterDoubles` — booster true, correct exact 1-0 → expect
-  `2 * non_boosted_points`
-- `testUnderdogBonus` — 20 temp users (use existing profiles or seed
-  user_ids) all predicting same score except 1 predicting actual →
-  the unique predictor gets +5 bonus
-- `testKickoffLock` — attempt insert into `predictions` for a temp
-  match with `kickoff_at` in the past; expect rejection via the
-  `validate_prediction` trigger
-
-All temp data uses a sentinel matchday name like `__test_<uuid>` so
-cleanup is unambiguous; tests run in a fixed `__test` matchday id
-range and always `delete from matches/matchdays/predictions where
-matchday_id = temp_id` in `finally`.
-
-**New component `src/components/admin/TestsPanel.tsx`:**
-
-- Test registry array: `{ id, label, category, critical, run: () => Promise<TestResult> }`.
-- Rows grouped by category with a ▶ Run button + status icon
-  (`⏳ ✅ ❌ ⚠️`). State stored in `useState<Record<id, TestResult | "running" | null>>`.
-- "▶ Run all tests" button at the top — sequential `for…of` loop so
-  game-logic tests don't race on temp ids.
-- Summary bar after a full run: `✅ N passed · ❌ N failed · ⚠️ N warning`.
-- Launch banner:
-  - Green `App is ready for launch 🚀` if every test marked
-    `critical` is passing.
-  - Red `Fix issues before launch` if any critical test failed.
-- Critical set: `testMatchCount`, `testAdminExists`,
-  `testMatchesPublicReadable`, `testScoringExactPlusFirstScorer`,
-  `testKickoffLock`.
-
-## 4. Files
-
-- **edit** `src/routes/_authenticated/admin.tsx` — sidebar, dismissible
-  banner, Advanced collapse, mount `<TestsPanel />`, simplified
-  `MatchdayBlock` (collapsible, Save all, dirty borders, knockout edit
-  flow, conditional first-scorer/teams-confirmed).
-- **new** `src/components/admin/TestsPanel.tsx` — UI, test registry,
-  run-all flow, launch banner.
-- **new** `src/lib/admin-tests.functions.ts` — all server-fn test runners.
-
-No DB migrations, no scoring logic edits, no RLS edits. Existing
-`adminUpdateMatchTeamsFn` already supports updating team names +
-`teams_confirmed` so no backend additions are needed for the knockout
-flow.
+No DB or server-function changes. No new packages.

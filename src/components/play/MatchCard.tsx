@@ -8,8 +8,8 @@ import {
   type MatchRow,
 } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
+import { reconcilePrediction, type Scorer } from "@/lib/prediction-consistency";
 
-type Scorer = "home" | "away" | "none";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function MatchCard({
@@ -39,17 +39,20 @@ export function MatchCard({
   const [scorer, setScorer] = useState<Scorer>(
     (match.prediction?.first_scorer as Scorer) ?? "home",
   );
+  const [hint, setHint] = useState<string | null>(null);
   const [state, setState] = useState<SaveState>(
     match.prediction ? "saved" : "idle",
   );
   const dirtyRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setHome(match.prediction?.home_goals ?? 0);
     setAway(match.prediction?.away_goals ?? 0);
     setScorer((match.prediction?.first_scorer as Scorer) ?? "home");
     setState(match.prediction ? "saved" : "idle");
+    setHint(null);
     dirtyRef.current = false;
   }, [
     match.id,
@@ -57,6 +60,34 @@ export function MatchCard({
     match.prediction?.away_goals,
     match.prediction?.first_scorer,
   ]);
+
+  const showHint = (msg: string | undefined) => {
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    if (!msg) {
+      setHint(null);
+      return;
+    }
+    setHint(msg);
+    hintTimer.current = setTimeout(() => setHint(null), 4000);
+  };
+
+  const apply = (
+    next: { home?: number; away?: number; scorer?: Scorer },
+    changed: "home" | "away" | "scorer",
+  ) => {
+    const r = reconcilePrediction({
+      home: next.home ?? home,
+      away: next.away ?? away,
+      scorer: next.scorer ?? scorer,
+      changed,
+      homeTeam: match.home_team,
+      awayTeam: match.away_team,
+    });
+    setHome(r.home);
+    setAway(r.away);
+    setScorer(r.scorer);
+    showHint(r.hint);
+  };
 
   useEffect(() => {
     if (disabled) return;
@@ -181,13 +212,22 @@ export function MatchCard({
             away={away}
             onChange={(side, delta) => {
               if (!touch()) return;
-              if (side === "h") setHome(Math.max(0, Math.min(20, home + delta)));
-              else setAway(Math.max(0, Math.min(20, away + delta)));
+              if (side === "h") apply({ home: Math.max(0, Math.min(20, home + delta)) }, "home");
+              else apply({ away: Math.max(0, Math.min(20, away + delta)) }, "away");
             }}
             locked={disabled}
+            scoresLocked={scorer === "none"}
+            homeDecDisabled={scorer === "home" && home <= 1}
+            awayDecDisabled={scorer === "away" && away <= 1}
           />
           <TeamSide name={match.away_team} alignRight />
         </div>
+
+        {hint && !disabled && (
+          <div className="mt-2 text-center text-[11px] text-muted-foreground italic">
+            {hint}
+          </div>
+        )}
 
         {(match.stadium || match.city) && (
           <div className="mt-2 text-center text-[11px] text-muted-foreground truncate">
@@ -229,7 +269,7 @@ export function MatchCard({
                   disabled={disabled}
                   onClick={() => {
                     if (!touch()) return;
-                    setScorer(opt);
+                    apply({ scorer: opt }, "scorer");
                   }}
                   className={`rounded-lg px-2 py-2 text-xs font-semibold border transition truncate ${
                     active
@@ -302,17 +342,34 @@ function ScorePair({
   away,
   onChange,
   locked,
+  scoresLocked,
+  homeDecDisabled,
+  awayDecDisabled,
 }: {
   home: number;
   away: number;
   onChange: (side: "h" | "a", delta: number) => void;
   locked: boolean;
+  scoresLocked?: boolean;
+  homeDecDisabled?: boolean;
+  awayDecDisabled?: boolean;
 }) {
+  const allLocked = locked || !!scoresLocked;
   return (
     <div className="flex items-center gap-2 md:gap-3">
-      <ScoreStepper value={home} onChange={(d) => onChange("h", d)} locked={locked} />
+      <ScoreStepper
+        value={home}
+        onChange={(d) => onChange("h", d)}
+        locked={allLocked}
+        decDisabled={homeDecDisabled}
+      />
       <span className="font-score text-3xl text-muted-foreground/60 leading-none">:</span>
-      <ScoreStepper value={away} onChange={(d) => onChange("a", d)} locked={locked} />
+      <ScoreStepper
+        value={away}
+        onChange={(d) => onChange("a", d)}
+        locked={allLocked}
+        decDisabled={awayDecDisabled}
+      />
     </div>
   );
 }
@@ -321,10 +378,12 @@ function ScoreStepper({
   value,
   onChange,
   locked,
+  decDisabled,
 }: {
   value: number;
   onChange: (delta: number) => void;
   locked: boolean;
+  decDisabled?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center select-none">
@@ -347,7 +406,7 @@ function ScoreStepper({
       <button
         type="button"
         onClick={() => onChange(-1)}
-        disabled={locked || value === 0}
+        disabled={locked || decDisabled || value === 0}
         className="size-6 rounded-md hover:bg-secondary text-muted-foreground disabled:opacity-30 transition"
         aria-label="Decrease"
       >
