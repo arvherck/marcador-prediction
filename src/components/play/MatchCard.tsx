@@ -232,7 +232,7 @@ export function MatchCard({
               {match.phase}
             </span>
           )}
-          <StatusPill state={state} locked={match.locked} />
+          <StatusPill state={state} status={status} />
         </div>
       </div>
 
