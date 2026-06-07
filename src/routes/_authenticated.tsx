@@ -38,6 +38,19 @@ export const Route = createFileRoute("/_authenticated")({
         if (guest && GUEST_ALLOWED.has(location.pathname)) {
           return { me: GUEST_ME, isGuest: true };
         }
+        // Preserve invite code so we can auto-join after sign-in.
+        if (location.pathname === "/leagues/join") {
+          const url = new URL(window.location.href);
+          const code = url.searchParams.get("code");
+          if (code && /^MRC-[A-Z0-9]{4}$/i.test(code)) {
+            window.sessionStorage.setItem("marcador_pending_invite", code.toUpperCase());
+          }
+        }
+      } catch {
+        /* fallthrough */
+      }
+    }
+    throw redirect({ to: "/auth" });
       } catch {
         /* fallthrough */
       }
