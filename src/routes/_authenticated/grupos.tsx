@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { AppShell } from "@/components/AppShell";
 import { getGroups, getGroupsPublic, type GroupWithStandings, type StandingRow } from "@/lib/groups.functions";
 import { useGuest } from "@/lib/guest";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/grupos")({
   head: () => {
@@ -27,10 +29,31 @@ export const Route = createFileRoute("/_authenticated/grupos")({
 function GruposPage() {
   const { me } = Route.useRouteContext();
   const guest = useGuest();
+  const qc = useQueryClient();
+  const queryKey = ["groups", guest ? "guest" : "auth"] as const;
   const q = useQuery({
-    queryKey: ["groups", guest ? "guest" : "auth"],
+    queryKey,
     queryFn: () => (guest ? getGroupsPublic() : getGroups()),
   });
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("grupos-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "wc_standings" },
+        () => qc.invalidateQueries({ queryKey }),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "matches" },
+        () => qc.invalidateQueries({ queryKey }),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [qc, queryKey]);
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
@@ -58,12 +81,45 @@ function GruposPage() {
   );
 }
 
+function rowSig(s: StandingRow): string {
+  return `${s.points}|${s.goal_difference}|${s.goals_for}|${s.won}|${s.drawn}|${s.lost}`;
+}
+
+function relTime(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const s = Math.max(0, Math.floor(diff / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 function GroupCard({ group }: { group: GroupWithStandings }) {
   const noneStarted = group.standings.every((s) => s.played === 0);
+  const prevSigs = useRef<Map<string, string>>(new Map());
+  const flash = new Map<string, boolean>();
+  for (const s of group.standings) {
+    const prev = prevSigs.current.get(s.id);
+    const next = rowSig(s);
+    if (prev && prev !== next) flash.set(s.id, true);
+    prevSigs.current.set(s.id, next);
+  }
+
   return (
     <div className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h2 className="font-display font-semibold text-base">{group.name}</h2>
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h2 className="font-display font-semibold text-base">{group.name}</h2>
+          {group.hasLiveMatch && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 text-destructive text-[10px] font-bold uppercase tracking-wider px-2 py-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
+              Live
+            </span>
+          )}
+        </div>
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
           Top 2 qualify
         </span>
@@ -89,22 +145,26 @@ function GroupCard({ group }: { group: GroupWithStandings }) {
           </thead>
           <tbody>
             {group.standings.map((s, i) => (
-              <StandingRowView key={s.id} row={s} index={i} />
+              <StandingRowView key={s.id} row={s} index={i} flash={!!flash.get(s.id)} />
             ))}
           </tbody>
         </table>
       )}
+      <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground">
+        Updated {relTime(group.updatedAt)}
+      </div>
     </div>
   );
 }
 
-function StandingRowView({ row, index }: { row: StandingRow; index: number }) {
+function StandingRowView({ row, index, flash }: { row: StandingRow; index: number; flash: boolean }) {
   const qualifies = index < 2;
   const last = index === 3;
   const rowCls = [
-    "border-t border-border",
-    qualifies ? "bg-amber-glow/5" : "",
+    "border-t border-border transition-colors",
+    qualifies ? "bg-amber-glow/5 border-l-2 border-l-amber-glow" : "border-l-2 border-l-transparent",
     last ? "opacity-60" : "",
+    flash ? "animate-row-flash" : "",
   ].join(" ");
   const teamCls = qualifies
     ? "text-amber-glow font-semibold"
@@ -113,7 +173,6 @@ function StandingRowView({ row, index }: { row: StandingRow; index: number }) {
     <tr className={rowCls}>
       <td className={`text-left px-3 py-2 ${teamCls}`}>
         <span className="inline-flex items-center gap-2">
-          {qualifies && <span className="inline-block w-1 h-3 rounded-sm bg-amber-glow" aria-hidden />}
           {row.team}
         </span>
       </td>

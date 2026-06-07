@@ -1,65 +1,86 @@
-## Database
+## Goal
 
-Migration adds a `status` column to `public.matches`:
-- `status text NOT NULL DEFAULT 'upcoming'`
-- CHECK constraint allowing only `'upcoming' | 'live' | 'completed' | 'cancelled'`
-- Backfill existing rows: any row with `is_final = true` → `'completed'`, otherwise `'upcoming'`
-- Index on `(matchday_id, status)` for the admin summary
+Auto-recalculate World Cup group standings the moment an admin saves a group-stage result, and surface those updates live on the Grupos screen and in the admin panel.
 
-Update `public.validate_prediction()` trigger so inserts/updates on `predictions` are rejected when `m_row.kickoff_at <= now()` OR `m_row.status <> 'upcoming'`. Error message unchanged: "Predictions are locked for this match".
+## 1. Database trigger (migration)
 
-No client-side / server-side auto-transition of `upcoming → live`. Server is the single source of truth for locking; UI just renders "live" when kickoff has passed but status is still `'upcoming'`.
+Add a Postgres trigger that owns standings math — clients never write to `wc_standings` directly anymore.
 
-## Server functions (`src/lib/game.functions.ts`)
+- `public.recalculate_team_standing(_team text)` (security definer): wipe and recompute one team's row by scanning every `matches` row in their group where `status = 'completed'` and `home_score`/`away_score` are non-null. Sets `played, won, drawn, lost, goals_for, goals_against, goal_difference, points`. Upserts into `wc_standings` (insert if missing, keyed by `team`+`group_id`).
+- `public.recalculate_group_standings()` trigger function (AFTER INSERT OR UPDATE OR DELETE on `matches`): fires when `group_letter IS NOT NULL` and any of `status / home_score / away_score / home_team / away_team` changed (or on insert/delete). Recalculates both `OLD.home_team`/`OLD.away_team` and `NEW.home_team`/`NEW.away_team` so:
+  - Status `upcoming → completed` adds the result.
+  - Score correction on an already-completed match re-derives totals from scratch.
+  - Status `completed → upcoming` removes the result (because the scan filters on `status = 'completed'`).
+- Bind trigger `AFTER INSERT OR UPDATE OR DELETE ON public.matches FOR EACH ROW`.
+- Reset existing data: `UPDATE public.wc_standings SET played=0, won=0, drawn=0, lost=0, goals_for=0, goals_against=0, goal_difference=0, points=0;` then run the recalc once for every team currently in `wc_standings` so any pre-existing completed matches are reflected.
+- No new GRANTs needed — `wc_standings` already exists with its policies; the trigger runs as table owner.
 
-- Extend `MatchRow` with `status: 'upcoming' | 'live' | 'completed' | 'cancelled'` and a derived `effective_status` (server computes: if `status === 'upcoming' && kickoff_at <= now` → `'live'`, else `status`).
-- Update `mapMatch` to read `m.status` and compute both `status` and `effective_status`. `locked` becomes `effective_status !== 'upcoming'`.
-- Update all match-select queries to include `status` (they already use `select("*")`, so this works automatically once the column exists).
-- `savePredictionFn`: before upsert, fetch `matches.kickoff_at, status` and throw "Predictions are locked for this match" when locked. Belt-and-braces alongside the trigger so we get a clean error message before hitting Postgres.
-- `setBoosterFn`: also check `status === 'upcoming'`.
-- `adminSetResultFn`: include `status: 'completed'` in the update.
-- New `adminSetMatchStatusFn({ match_id, status })`:
-  - Admin-only via `assertAdmin`.
-  - When setting `'upcoming'` on a match with `is_final = true`, also clear `home_score`/`away_score`/`first_scorer`/`is_final` so predictions can reopen cleanly.
-  - Returns `{ ok: true }`.
-- Extend `getMatchdaysWithProgress` (used by admin) to also return per-matchday `status_counts: { upcoming, live, completed, cancelled }` and `completed_count` so the admin UI can render the summary line and gate the "Run scoring" button without an extra round-trip.
+## 2. Server functions
 
-## MatchCard UI (`src/components/play/MatchCard.tsx`)
+- `src/lib/groups.functions.ts`
+  - Remove `adminSaveGroupStandingsFn` (manual standings edits are now incorrect — the trigger is the source of truth). Replace any admin UI that called it.
+  - Tighten the head-to-head tiebreaker in `sortStandings`: after points / GD / GF, compute mini-league points between teams currently tied on those three, then fall back to alphabetical. Implemented client-side using the rows returned (we don't need raw H2H from the DB because all completed group matches are already counted; for H2H specifically we'll add an optional `matches` payload from the loader).
+  - Extend `loadAll` to also fetch completed group matches per group so H2H tiebreaker can be computed; return them on `GroupWithStandings` as `completedMatches` (just `{home_team, away_team, home_score, away_score}`).
+  - Also return any `live` match flag per group (`hasLiveMatch: boolean`) and the max `updated_at` from `wc_standings` rows in the group (`updatedAt: string`).
 
-Render four visual states keyed off `effective_status`:
+- `src/lib/game.functions.ts`
+  - `adminSetResultFn` already sets `status = 'completed'`; after the update, fetch the two affected standings rows and return them in the response as `standingsImpact: { home: StandingRow, away: StandingRow } | null` (null for knockouts). The admin UI shows this in the toast.
 
-- **upcoming**: existing card. Add a kickoff countdown line below the score row using `KickoffCountdown` (already in the codebase) — "Locks in 2h 34m" when <3h, "Locks in 1d 4h" otherwise. Hide when `disabled` (placeholder/guest already covered) or boosted ribbon would conflict (still show — small muted line under city/stadium row).
-- **live**: pulsing red `🔴 LIVE` badge in the status-pill slot (replaces `StatusPill`). Score steppers and scorer buttons disabled; padlock + "Match in progress" subtext. If `match.prediction` exists, render a read-only summary row: "Your prediction: H-A · {home/away/no-goal} scored first".
-- **completed**: show final score (already does), append "FT" badge in the status pill. If `match.prediction` exists with `points != null`, render a small breakdown line computed locally from the components the scoring engine awards (result, goal-difference, exact-home, exact-away, first-scorer, booster, underdog). Since the server only persists the total, the breakdown is a best-effort reconstruction from prediction vs match — wrap in a helper `explainPoints(prediction, match)` in `src/lib/scoring-explain.ts` that mirrors `score_matchday`'s rules and returns `Array<{ label, pts }>` plus a total. Render green when total > 0, muted "0 pts" otherwise.
-- **cancelled**: muted "Match cancelled" text, no inputs, show prediction greyed out if present.
+## 3. Grupos screen — live + visuals
 
-Auto-correct/consistency logic from the previous turn stays intact and only runs when not locked.
+`src/routes/_authenticated/grupos.tsx`:
 
-## Admin panel (`src/routes/_authenticated/admin.tsx`)
+- Subscribe to `postgres_changes` on `public.wc_standings` (and `public.matches` for the LIVE flag) via the browser `supabase` client inside a `useEffect`. On any event, call `queryClient.invalidateQueries({ queryKey: ["groups", ...] })`.
+- Ensure realtime is enabled for both tables (migration: `ALTER PUBLICATION supabase_realtime ADD TABLE public.wc_standings, public.matches;` — guarded with `DO` block in case already added).
+- `GroupCard` updates:
+  - Show a small red pulsing "LIVE" pill in the header if `group.hasLiveMatch`.
+  - Show `Updated <relative time>` under the table (refreshes on every query result).
+  - Row styling by sorted index:
+    - 0,1: amber left border (`border-l-2 border-l-amber-glow`) + faint amber bg.
+    - 2: default.
+    - 3: `opacity-60`.
+  - Flash animation: track previous row signature (points|gd|gf|w|d|l) in a `ref`; if a row changes between renders, add a one-shot `animate-flash` class. Add `@keyframes flash` to `src/styles.css` (subtle bg pulse using `--accent`).
 
-`MatchdayBlock` header summary line:
-> "Matchday 1 — Group Stage · ✅ 18 completed · 🔴 4 live · 🟡 2 upcoming · ⛔ 1 cancelled"
-(skip zero-count segments). Live count uses `effective_status` computed client-side from `kickoff_at + status`.
+## 4. Admin panel feedback
 
-`ResultRow` additions:
-- Status badge with emoji + label next to the team names.
-- "Change status" dropdown (compact `<select>`) calling a new mutation around `adminSetMatchStatusFn`.
-  - Setting to `'upcoming'` shows a `window.confirm`: "This will reopen predictions for {home} vs {away}. Continue?".
-  - Setting to `'completed'` when no scores entered (`current.home === 0 && current.away === 0 && current.scorer === 'none' && !m.is_final`) shows `window.confirm`: "No score entered. Mark as completed anyway?".
-- Existing Save flow already auto-sets `status='completed'` via `adminSetResultFn`; on success update toast to "Result saved · Match marked as completed".
+`src/routes/_authenticated/admin.tsx`:
 
-"Run scoring" button:
-- Disabled when `completed_count === 0`.
-- Label: `Run scoring ({completed_count} completed match{es})`.
-- On success toast already exists; extend it to `"X predictions scored · avg Y pts"` by querying scored predictions count + avg via a tiny new server fn `adminMatchdayScoringSummaryFn({ matchday_id })` that returns `{ predictions_scored, avg_points }`.
+- After `adminSetResultFn` resolves in `ResultRow` and in `saveAll`, if `standingsImpact` is present, show a multi-line toast:
+  ```
+  Result saved ✅
+  Standings updated:
+  Brazil: 3pts (1W 0D 0L)
+  Morocco: 0pts (0W 0D 1L)
+  ```
+- Remove the manual "save standings" UI that called `adminSaveGroupStandingsFn` (if present), replaced with a read-only display reading from `wc_standings` and a note: "Standings update automatically when group-stage results are saved."
 
-## Files
+## 5. Tests
 
-- New migration: `status` column + CHECK + backfill + updated `validate_prediction()`.
-- Edit `src/lib/game.functions.ts`: types, mapMatch, savePredictionFn guard, setBoosterFn guard, adminSetResultFn writes status, new adminSetMatchStatusFn, extended getMatchdaysWithProgress, new adminMatchdayScoringSummaryFn.
-- New `src/lib/scoring-explain.ts`: pure helper mirroring `score_matchday` rules (no underdog because that requires aggregate data; the breakdown shows components we can determine locally and the persisted total).
-- Edit `src/components/play/MatchCard.tsx`: status-driven rendering, countdown, live/completed/cancelled variants, prediction summary, points breakdown.
-- Edit `src/routes/_authenticated/admin.tsx`: matchday status summary, per-row status badge + change dropdown with confirms, gated Run scoring button + count, post-scoring summary toast.
-- Edit `src/components/admin/TestsPanel.tsx` + `src/lib/admin-tests.functions.ts`: add a critical test "Match status enforces lock" that attempts to insert a prediction on a `cancelled` future match and expects rejection.
+`src/lib/admin-tests.functions.ts` + `src/components/admin/TestsPanel.tsx`:
 
-No changes to RLS or grants.
+- New test `Standings trigger works`:
+  1. Find a group-stage match (`group_letter IS NOT NULL`) currently `upcoming`.
+  2. Snapshot current `wc_standings` for `home_team` and `away_team`.
+  3. Update the match: `home_score=2, away_score=1, status='completed', first_scorer='home', is_final=true`.
+  4. Re-read standings; assert home delta `+3 pts, +1 W, +2 GF, +1 GA, +1 P`; away delta `+0 pts, +1 L, +1 GF, +2 GA, +1 P`.
+  5. Revert match (`home_score=null, away_score=null, status='upcoming', first_scorer=null, is_final=false`).
+  6. Re-read standings; assert equal to original snapshot.
+- Pass/fail messages match the spec.
+
+## Technical notes
+
+- The trigger uses `RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public`.
+- Knockout matches (`group_letter IS NULL`) are ignored by both the trigger guard and the team-recalc scan.
+- H2H tiebreaker is computed in JS from completed-match payload to avoid a second DB round-trip per render.
+- No schema changes to `wc_standings` columns; only data reset + trigger attachment.
+- No new RLS or GRANTs required.
+
+## Files touched
+
+- New migration: trigger + functions + realtime publication + standings reset/recalc.
+- `src/lib/groups.functions.ts` — extend loader, drop manual save fn.
+- `src/lib/game.functions.ts` — return `standingsImpact` from `adminSetResultFn`.
+- `src/routes/_authenticated/grupos.tsx` — realtime, visuals, flash.
+- `src/routes/_authenticated/admin.tsx` — toast, remove manual standings editor.
+- `src/lib/admin-tests.functions.ts`, `src/components/admin/TestsPanel.tsx` — new test.
+- `src/styles.css` — `@keyframes flash` + `.animate-flash` utility.

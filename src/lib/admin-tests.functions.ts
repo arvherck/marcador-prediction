@@ -458,3 +458,128 @@ export const testKickoffLock = createServerFn({ method: "POST" })
       await supabaseAdmin.from("matchdays").delete().eq("id", md.id);
     }
   });
+
+// ---------- Standings trigger ----------
+
+export const testStandingsTrigger = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Find a group-stage upcoming match with confirmed teams in the future
+    const { data: match, error: mErr } = await supabaseAdmin
+      .from("matches")
+      .select("id, home_team, away_team, kickoff_at, status, home_score, away_score, first_scorer, is_final, group_letter")
+      .not("group_letter", "is", null)
+      .eq("status", "upcoming")
+      .eq("teams_confirmed", true)
+      .gt("kickoff_at", new Date().toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (mErr) return { status: "fail", message: mErr.message };
+    if (!match) return { status: "warn", message: "No upcoming group-stage match available to test." };
+
+    const teams = [match.home_team, match.away_team];
+    const snapshot = async () => {
+      const { data, error } = await supabaseAdmin
+        .from("wc_standings")
+        .select("team, played, won, drawn, lost, goals_for, goals_against, points")
+        .in("team", teams);
+      if (error) throw new Error(error.message);
+      const m = new Map<string, { played: number; won: number; drawn: number; lost: number; goals_for: number; goals_against: number; points: number }>();
+      for (const r of (data ?? []) as Array<{ team: string; played: number; won: number; drawn: number; lost: number; goals_for: number; goals_against: number; points: number }>) {
+        m.set(r.team, r);
+      }
+      return m;
+    };
+
+    const before = await snapshot();
+    const beforeHome = before.get(match.home_team);
+    const beforeAway = before.get(match.away_team);
+    if (!beforeHome || !beforeAway) {
+      return { status: "fail", message: "Standings row missing for one of the teams" };
+    }
+
+    try {
+      // Apply 2-1 home win
+      const { error: upErr } = await supabaseAdmin
+        .from("matches")
+        .update({ home_score: 2, away_score: 1, status: "completed", first_scorer: "home", is_final: true })
+        .eq("id", match.id);
+      if (upErr) throw new Error(upErr.message);
+
+      const after = await snapshot();
+      const afterHome = after.get(match.home_team)!;
+      const afterAway = after.get(match.away_team)!;
+
+      const homeOk =
+        afterHome.points - beforeHome.points === 3 &&
+        afterHome.won - beforeHome.won === 1 &&
+        afterHome.played - beforeHome.played === 1 &&
+        afterHome.goals_for - beforeHome.goals_for === 2 &&
+        afterHome.goals_against - beforeHome.goals_against === 1;
+      const awayOk =
+        afterAway.points - beforeAway.points === 0 &&
+        afterAway.lost - beforeAway.lost === 1 &&
+        afterAway.played - beforeAway.played === 1 &&
+        afterAway.goals_for - beforeAway.goals_for === 1 &&
+        afterAway.goals_against - beforeAway.goals_against === 2;
+
+      if (!homeOk || !awayOk) {
+        return {
+          status: "fail",
+          message: "Standings trigger not working — check PostgreSQL function",
+          detail: `home Δpts=${afterHome.points - beforeHome.points} away Δpts=${afterAway.points - beforeAway.points}`,
+        };
+      }
+
+      // Revert
+      const { error: revErr } = await supabaseAdmin
+        .from("matches")
+        .update({
+          home_score: match.home_score,
+          away_score: match.away_score,
+          first_scorer: match.first_scorer,
+          is_final: match.is_final,
+          status: match.status,
+        })
+        .eq("id", match.id);
+      if (revErr) throw new Error(revErr.message);
+
+      const reverted = await snapshot();
+      const revHome = reverted.get(match.home_team)!;
+      const revAway = reverted.get(match.away_team)!;
+      const revertOk =
+        revHome.points === beforeHome.points &&
+        revHome.played === beforeHome.played &&
+        revHome.goals_for === beforeHome.goals_for &&
+        revAway.points === beforeAway.points &&
+        revAway.played === beforeAway.played &&
+        revAway.goals_for === beforeAway.goals_for;
+
+      if (!revertOk) {
+        return {
+          status: "fail",
+          message: "Standings trigger not working — check PostgreSQL function",
+          detail: "revert did not restore previous standings",
+        };
+      }
+
+      return { status: "pass", message: "Trigger updates and reverts standings correctly ✓" };
+    } catch (e) {
+      // Best-effort cleanup
+      await supabaseAdmin
+        .from("matches")
+        .update({
+          home_score: match.home_score,
+          away_score: match.away_score,
+          first_scorer: match.first_scorer,
+          is_final: match.is_final,
+          status: match.status,
+        })
+        .eq("id", match.id);
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
