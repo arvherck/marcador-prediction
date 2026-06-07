@@ -651,8 +651,17 @@ function ResultRow({
         },
       });
     },
-    onSuccess: () => {
-      toast.success("Result saved · Match marked as completed");
+    onSuccess: (res) => {
+      const impact = (res as { standingsImpact?: { home: { team: string; points: number; won: number; drawn: number; lost: number }; away: { team: string; points: number; won: number; drawn: number; lost: number } } | null }).standingsImpact;
+      if (impact) {
+        const fmt = (r: { team: string; points: number; won: number; drawn: number; lost: number }) =>
+          `${r.team}: ${r.points}pts (${r.won}W ${r.drawn}D ${r.lost}L)`;
+        toast.success(`Result saved ✅\nStandings updated:\n${fmt(impact.home)}\n${fmt(impact.away)}`, {
+          duration: 6000,
+        });
+      } else {
+        toast.success("Result saved · Match marked as completed");
+      }
       onSaved();
       onChange();
     },
