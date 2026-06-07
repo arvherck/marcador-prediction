@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { safeError } from "@/lib/safe-error";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { TEAMS_2026 } from "@/lib/teams";
@@ -46,7 +47,7 @@ export const getTournamentStatusPublic = createServerFn({ method: "GET" }).handl
       .select("predictions_locked, actual_winner")
       .eq("id", 1)
       .maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "tournament");
     return {
       locked: data?.predictions_locked ?? false,
       actualWinner: data?.actual_winner ?? null,
@@ -73,7 +74,7 @@ export const submitTournamentPickFn = createServerFn({ method: "POST" })
     });
     if (error) {
       if (error.code === "23505") throw new Error("You've already locked in your champion.");
-      throw new Error(error.message);
+      throw safeError(error, "tournament");
     }
     return { ok: true };
   });
@@ -99,7 +100,7 @@ export const adminLockTournamentFn = createServerFn({ method: "POST" })
       .from("tournament_settings")
       .update({ predictions_locked: data.locked, updated_at: new Date().toISOString() })
       .eq("id", 1);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "tournament");
     return { ok: true };
   });
 
@@ -127,7 +128,7 @@ export const adminSetTournamentWinnerFn = createServerFn({ method: "POST" })
         .from("tournament_predictions")
         .update({ points_awarded: pts })
         .eq("id", p.id);
-      if (error) throw new Error(error.message);
+      if (error) throw safeError(error, "tournament");
     }
     return { ok: true, scored: preds?.length ?? 0 };
   });

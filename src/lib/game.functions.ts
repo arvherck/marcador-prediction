@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { safeError } from "@/lib/safe-error";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
@@ -127,7 +128,7 @@ export const getAllMatchesPublic = createServerFn({ method: "GET" }).handler(asy
     .select("*")
     .order("kickoff_at", { ascending: true })
     .order("id", { ascending: true });
-  if (error) throw new Error(error.message);
+  if (error) throw safeError(error, "game");
   const now = Date.now();
   return (matches ?? []).map((m) => mapMatch(m, undefined, now));
 });
@@ -296,7 +297,7 @@ export const savePredictionFn = createServerFn({ method: "POST" })
       },
       { onConflict: "user_id,match_id" },
     );
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     return { ok: true };
   });
 
@@ -336,7 +337,7 @@ export const setBoosterFn = createServerFn({ method: "POST" })
         first_scorer: "none",
         booster: true,
       });
-      if (error) throw new Error(error.message);
+      if (error) throw safeError(error, "game");
     }
 
     const { data: mdMatches } = await supabase
@@ -587,7 +588,7 @@ export const joinLeagueFn = createServerFn({ method: "POST" })
         { league_id: leagueId as string, user_id: userId },
         { onConflict: "league_id,user_id", ignoreDuplicates: true },
       );
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     return { id: leagueId as string };
   });
 
@@ -596,7 +597,7 @@ export const getMyLeagues = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabase } = context;
     const { data, error } = await supabase.rpc("my_leagues");
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     return (data ?? []) as Array<{
       id: string;
       name: string;
@@ -634,7 +635,7 @@ export const adminListMatchdays = createServerFn({ method: "GET" })
       .from("matchdays")
       .select("*")
       .order("starts_at", { ascending: true });
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     const { data: ms, error: mErr } = await supabase
       .from("matches")
       .select("*")
@@ -687,7 +688,7 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
         status: "completed",
       })
       .eq("id", data.match_id);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
 
     // Fetch standings impact for group-stage matches (trigger already ran)
     const { data: m } = await supabase
@@ -743,7 +744,7 @@ export const adminSetMatchStatusFn = createServerFn({ method: "POST" })
       .from("matches")
       .update(patch)
       .eq("id", data.match_id);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     return { ok: true };
   });
 
@@ -758,7 +759,7 @@ export const adminMatchdayScoringSummaryFn = createServerFn({ method: "POST" })
       .select("points, matches!inner(matchday_id)")
       .eq("matches.matchday_id", data.matchday_id)
       .not("points", "is", null);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     const list = (rows ?? []) as Array<{ points: number | null }>;
     const scored = list.length;
     const avg = scored
@@ -898,7 +899,7 @@ export const adminSetTeamsConfirmedFn = createServerFn({ method: "POST" })
       .from("matches")
       .update({ teams_confirmed: data.confirmed })
       .eq("id", data.match_id);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     return { ok: true };
   });
 
@@ -930,7 +931,7 @@ export const adminUpdateMatchTeamsFn = createServerFn({ method: "POST" })
       .from("matches")
       .update(patch)
       .eq("id", data.match_id);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     return { ok: true };
   });
 
@@ -944,7 +945,7 @@ export const getMyHistoryFn = createServerFn({ method: "GET" })
       .from("predictions")
       .select("*, match:matches(*, matchday:matchdays(*))")
       .eq("user_id", userId);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     type Row = (typeof preds)[number] & {
       match: {
         id: number;
@@ -1014,7 +1015,7 @@ export const getMyMatchdayScoresFn = createServerFn({ method: "GET" })
       .from("matchday_scores")
       .select("matchday_id, total_points, rank, matchday:matchdays(name, starts_at)")
       .eq("user_id", userId);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     type Row = {
       matchday_id: number;
       total_points: number;
@@ -1096,7 +1097,7 @@ export const getUpcomingMatchesPublic = createServerFn({ method: "GET" }).handle
       .eq("teams_confirmed", true)
       .order("kickoff_at", { ascending: true })
       .limit(3);
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "game");
     return (data ?? []) as Array<{
       id: number;
       home_team: string;

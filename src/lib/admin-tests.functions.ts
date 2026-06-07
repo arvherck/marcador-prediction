@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { safeError } from "@/lib/safe-error";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -289,7 +290,7 @@ async function scoreAndGetPoints(
   authedSupabase: import("@supabase/supabase-js").SupabaseClient,
 ): Promise<number> {
   const { error } = await authedSupabase.rpc("score_matchday", { _matchday_id: mdId });
-  if (error) throw new Error(error.message);
+  if (error) throw safeError(error, "admin-tests");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error: qErr } = await supabaseAdmin
     .from("predictions")
@@ -486,7 +487,7 @@ export const testStandingsTrigger = createServerFn({ method: "POST" })
         .from("wc_standings")
         .select("team, played, won, drawn, lost, goals_for, goals_against, points")
         .in("team", teams);
-      if (error) throw new Error(error.message);
+      if (error) throw safeError(error, "admin-tests");
       const m = new Map<string, { played: number; won: number; drawn: number; lost: number; goals_for: number; goals_against: number; points: number }>();
       for (const r of (data ?? []) as Array<{ team: string; played: number; won: number; drawn: number; lost: number; goals_for: number; goals_against: number; points: number }>) {
         m.set(r.team, r);

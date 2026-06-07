@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { safeError } from "@/lib/safe-error";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
@@ -73,6 +74,6 @@ export const completeOnboardingFn = createServerFn({ method: "POST" })
         },
         { onConflict: "user_id" },
       );
-    if (error) throw new Error(error.message);
+    if (error) throw safeError(error, "auth");
     return { ok: true };
   });
