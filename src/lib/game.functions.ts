@@ -349,12 +349,24 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
       .optional(),
   )
   .handler(async ({ data, context }) => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
+    if (data?.league_id) {
+      const { data: member } = await supabase
+        .from("league_members")
+        .select("user_id")
+        .eq("league_id", data.league_id)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!member) throw new Error("Forbidden");
+    }
     const args: { _matchday_id?: number; _league_id?: string } = {};
     if (data?.matchday_id != null) args._matchday_id = data.matchday_id;
     if (data?.league_id) args._league_id = data.league_id;
     const { data: rows, error } = await supabase.rpc("matchday_leaderboard", args);
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[getMatchdayLeaderboard]", error);
+      throw new Error("Unable to load leaderboard.");
+    }
     const list = (rows ?? []) as Array<{
       matchday_id: number;
       matchday_name: string;
@@ -379,15 +391,16 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
     };
   });
 
+// Public leaderboards are GLOBAL only — never accept league_id, since private
+// league membership cannot be enforced for unauthenticated callers.
 export const getLeaderboardPublic = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ league_id: z.string().uuid().optional() }).optional())
-  .handler(async ({ data }) => {
+  .handler(async () => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rows, error } = await supabaseAdmin.rpc(
-      "global_leaderboard",
-      data?.league_id ? { _league_id: data.league_id } : {},
-    );
-    if (error) throw new Error(error.message);
+    const { data: rows, error } = await supabaseAdmin.rpc("global_leaderboard", {});
+    if (error) {
+      console.error("[getLeaderboardPublic]", error);
+      throw new Error("Unable to load leaderboard.");
+    }
     return (rows ?? []) as Array<{
       id: string;
       display_name: string;
@@ -405,17 +418,18 @@ export const getMatchdayLeaderboardPublic = createServerFn({ method: "GET" })
     z
       .object({
         matchday_id: z.number().int().optional(),
-        league_id: z.string().uuid().optional(),
       })
       .optional(),
   )
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const args: { _matchday_id?: number; _league_id?: string } = {};
+    const args: { _matchday_id?: number } = {};
     if (data?.matchday_id != null) args._matchday_id = data.matchday_id;
-    if (data?.league_id) args._league_id = data.league_id;
     const { data: rows, error } = await supabaseAdmin.rpc("matchday_leaderboard", args);
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[getMatchdayLeaderboardPublic]", error);
+      throw new Error("Unable to load leaderboard.");
+    }
     const list = (rows ?? []) as Array<{
       matchday_id: number;
       matchday_name: string;
@@ -438,6 +452,7 @@ export const getMatchdayLeaderboardPublic = createServerFn({ method: "GET" })
         rank,
       })),
     };
+
   });
 
 // ---------- Leagues ----------
