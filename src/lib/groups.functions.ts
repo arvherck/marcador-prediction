@@ -112,9 +112,9 @@ async function loadAll(client: AnyClient): Promise<GroupWithStandings[]> {
       .select("group_letter, home_team, away_team, home_score, away_score, status")
       .order("id", { ascending: true }),
   ]);
-  if (groupsRes.error) throw new Error(groupsRes.error.message);
-  if (standingsRes.error) throw new Error(standingsRes.error.message);
-  if (matchesRes.error) throw new Error(matchesRes.error.message);
+  if (groupsRes.error) throw safeError(groupsRes, "groups"groupsRes);
+  if (standingsRes.error) throw safeError(standingsRes, "groups"standingsRes);
+  if (matchesRes.error) throw safeError(matchesRes, "groups"matchesRes);
 
   // Map group letter -> id
   const groups = (groupsRes.data ?? []) as Array<Record<string, unknown>>;
