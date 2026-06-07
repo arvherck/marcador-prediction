@@ -526,6 +526,12 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
               {new Date(md.starts_at).toLocaleDateString()} · {total} match
               {total === 1 ? "" : "es"} · {md.prediction_count ?? 0} predicted
             </div>
+            <div className="text-[11px] text-muted-foreground truncate mt-0.5">
+              {(["completed", "live", "upcoming", "cancelled"] as MatchStatusT[])
+                .filter((s) => counts[s] > 0)
+                .map((s) => `${STATUS_META[s].icon} ${counts[s]} ${STATUS_META[s].label.toLowerCase()}`)
+                .join(" · ") || "No matches"}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
