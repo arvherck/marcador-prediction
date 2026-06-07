@@ -554,6 +554,7 @@ export type Database = {
           owner_id: string
         }[]
       }
+      recalculate_team_standing: { Args: { _team: string }; Returns: undefined }
       score_matchday: { Args: { _matchday_id: number }; Returns: number }
     }
     Enums: {
