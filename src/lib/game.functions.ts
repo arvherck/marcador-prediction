@@ -575,20 +575,20 @@ export const joinLeagueFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: league } = await supabase
-      .from("leagues")
-      .select("id")
-      .eq("invite_code", data.invite_code)
-      .maybeSingle();
-    if (!league) throw new Error("Invalid invite code.");
+    const { data: leagueId, error: rpcErr } = await supabase.rpc(
+      "find_league_by_code",
+      { _code: data.invite_code },
+    );
+    if (rpcErr) throw new Error(rpcErr.message);
+    if (!leagueId) throw new Error("Invalid invite code.");
     const { error } = await supabase
       .from("league_members")
       .upsert(
-        { league_id: league.id, user_id: userId },
+        { league_id: leagueId as string, user_id: userId },
         { onConflict: "league_id,user_id", ignoreDuplicates: true },
       );
     if (error) throw new Error(error.message);
-    return { id: league.id };
+    return { id: leagueId as string };
   });
 
 export const getMyLeagues = createServerFn({ method: "GET" })
