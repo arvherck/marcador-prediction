@@ -671,7 +671,13 @@ export const adminSetMatchStatusFn = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
-    const patch: Record<string, unknown> = { status: data.status };
+    const patch: {
+      status: "upcoming" | "live" | "completed" | "cancelled";
+      is_final?: boolean;
+      home_score?: number | null;
+      away_score?: number | null;
+      first_scorer?: string | null;
+    } = { status: data.status };
     if (data.status === "upcoming") {
       patch.is_final = false;
       patch.home_score = null;
