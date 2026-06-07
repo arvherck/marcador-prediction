@@ -240,6 +240,21 @@ export const savePredictionFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
+    const { data: match, error: mErr } = await supabase
+      .from("matches")
+      .select("kickoff_at, status, teams_confirmed")
+      .eq("id", data.match_id)
+      .maybeSingle();
+    if (mErr) throw new Error(mErr.message);
+    if (!match) throw new Error("Match not found.");
+    if ((match as { teams_confirmed?: boolean }).teams_confirmed === false)
+      throw new Error("Teams not confirmed yet.");
+    if (
+      new Date(match.kickoff_at).getTime() <= Date.now() ||
+      (match.status ?? "upcoming") !== "upcoming"
+    ) {
+      throw new Error("Predictions are locked for this match");
+    }
     const { error } = await supabase.from("predictions").upsert(
       {
         user_id: userId,
