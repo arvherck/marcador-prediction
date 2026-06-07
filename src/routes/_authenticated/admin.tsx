@@ -27,6 +27,7 @@ import {
 } from "@/lib/groups.functions";
 import { ApiSyncPanel } from "@/components/admin/ApiSyncPanel";
 import { DonationsPanel } from "@/components/admin/DonationsPanel";
+import { reconcilePrediction, isConsistent, type Scorer } from "@/lib/prediction-consistency";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Panel de Control · Marcador" }] }),
