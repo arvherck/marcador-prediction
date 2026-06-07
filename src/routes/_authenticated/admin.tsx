@@ -820,6 +820,24 @@ function ResultRow({
           >
             {m.is_final ? "Update" : "Save"}
           </button>
+          <span
+            className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${STATUS_META[eff].cls}`}
+            title={`Status: ${STATUS_META[eff].label}`}
+          >
+            {STATUS_META[eff].icon} {STATUS_META[eff].label}
+          </span>
+          <select
+            value={m.status ?? "upcoming"}
+            onChange={(e) => onChangeStatus(e.target.value as MatchStatusT)}
+            disabled={changeStatus.isPending}
+            className="rounded-lg bg-input border border-border px-2 py-1 text-[11px]"
+            title="Change status"
+          >
+            <option value="upcoming">Upcoming</option>
+            <option value="live">Live</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
           {(hint || inconsistencyMsg) && (
             <div className={`basis-full text-[11px] mt-1 ${inconsistencyMsg ? "text-destructive font-medium" : "text-muted-foreground italic"}`}>
               {inconsistencyMsg ?? hint}
