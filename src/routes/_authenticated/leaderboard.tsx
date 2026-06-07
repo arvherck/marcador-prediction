@@ -111,11 +111,16 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
         : getLeaderboard({ data: leagueId ? { league_id: leagueId } : {} }),
 
   });
-  const donors = useQuery({ queryKey: ["donor-ids"], queryFn: () => getDonorIdsFn() });
+  const rows = (q.data ?? []) as OverallRow[];
+  const ids = rows.map((r) => r.id);
+  const donors = useQuery({
+    queryKey: ["donor-ids", ids],
+    queryFn: () => getDonorIdsFn({ data: { user_ids: ids } }),
+    enabled: ids.length > 0,
+  });
   const donorSet = new Set<string>(donors.data ?? []);
 
   if (q.isLoading) return <SkeletonBoard />;
-  const rows = (q.data ?? []) as OverallRow[];
   if (!rows.length) return <EmptyState />;
 
   return (
