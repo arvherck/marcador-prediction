@@ -482,11 +482,25 @@ function ScoreStepper({
   );
 }
 
-function StatusPill({ state, locked }: { state: SaveState; locked: boolean }) {
-  if (locked) {
+function StatusPill({ state, status }: { state: SaveState; status: MatchStatus }) {
+  if (status === "live") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-destructive">
+        <Radio size={10} className="animate-pulse" /> Live
+      </span>
+    );
+  }
+  if (status === "completed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-success">
+        <Check size={10} /> Full time
+      </span>
+    );
+  }
+  if (status === "cancelled") {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
-        <Lock size={10} /> Locked
+        Cancelled
       </span>
     );
   }
@@ -508,4 +522,28 @@ function StatusPill({ state, locked }: { state: SaveState; locked: boolean }) {
     return <span className="text-[10px] uppercase font-bold text-destructive">Error</span>;
   }
   return null;
+}
+
+function PointsBreakdown({ match }: { match: MatchRow }) {
+  const { lines, total, boosted } = explainPoints(match);
+  if (!lines.length && total === 0 && match.prediction?.points == null) return null;
+  const positive = total > 0;
+  return (
+    <div
+      className={`text-[11px] tabular-nums inline-flex items-center gap-1 flex-wrap justify-center ${
+        positive ? "text-success" : "text-muted-foreground"
+      }`}
+    >
+      {lines.map((l, i) => (
+        <span key={i}>
+          +{l.pts} {l.label.toLowerCase()}
+          {i < lines.length - 1 ? " · " : ""}
+        </span>
+      ))}
+      <span className="font-bold inline-flex items-center gap-1 ml-1">
+        <Trophy size={11} />
+        {boosted ? `${total} pts (2×)` : `${total} pts`}
+      </span>
+    </div>
+  );
 }
