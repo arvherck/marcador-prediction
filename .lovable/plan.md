@@ -1,86 +1,111 @@
 ## Goal
 
-Auto-recalculate World Cup group standings the moment an admin saves a group-stage result, and surface those updates live on the Grupos screen and in the admin panel.
+Make Marcador's auth flow clear end-to-end: distinct sign-in and sign-up screens, a "check your inbox" screen after signup, proper handling when the user returns from the confirmation email, a friendly error if they try to sign in before confirming, and a full forgot-password flow.
 
-## 1. Database trigger (migration)
+Email confirmation in Supabase stays ON.
 
-Add a Postgres trigger that owns standings math — clients never write to `wc_standings` directly anymore.
+## New route map
 
-- `public.recalculate_team_standing(_team text)` (security definer): wipe and recompute one team's row by scanning every `matches` row in their group where `status = 'completed'` and `home_score`/`away_score` are non-null. Sets `played, won, drawn, lost, goals_for, goals_against, goal_difference, points`. Upserts into `wc_standings` (insert if missing, keyed by `team`+`group_id`).
-- `public.recalculate_group_standings()` trigger function (AFTER INSERT OR UPDATE OR DELETE on `matches`): fires when `group_letter IS NOT NULL` and any of `status / home_score / away_score / home_team / away_team` changed (or on insert/delete). Recalculates both `OLD.home_team`/`OLD.away_team` and `NEW.home_team`/`NEW.away_team` so:
-  - Status `upcoming → completed` adds the result.
-  - Score correction on an already-completed match re-derives totals from scratch.
-  - Status `completed → upcoming` removes the result (because the scan filters on `status = 'completed'`).
-- Bind trigger `AFTER INSERT OR UPDATE OR DELETE ON public.matches FOR EACH ROW`.
-- Reset existing data: `UPDATE public.wc_standings SET played=0, won=0, drawn=0, lost=0, goals_for=0, goals_against=0, goal_difference=0, points=0;` then run the recalc once for every team currently in `wc_standings` so any pre-existing completed matches are reflected.
-- No new GRANTs needed — `wc_standings` already exists with its policies; the trigger runs as table owner.
+```
+/auth                  Sign in (existing route, simplified)
+/auth/signup           Sign up + post-signup "Check your inbox" state
+/auth/reset            Request password reset email
+/auth/new-password     Set new password (arrives from reset email)
+/auth/callback         Handles Supabase email-confirmation + recovery redirects
+```
 
-## 2. Server functions
+All public (top-level, not under `_authenticated/`). Each route gets its own `head()` with route-specific title and description.
 
-- `src/lib/groups.functions.ts`
-  - Remove `adminSaveGroupStandingsFn` (manual standings edits are now incorrect — the trigger is the source of truth). Replace any admin UI that called it.
-  - Tighten the head-to-head tiebreaker in `sortStandings`: after points / GD / GF, compute mini-league points between teams currently tied on those three, then fall back to alphabetical. Implemented client-side using the rows returned (we don't need raw H2H from the DB because all completed group matches are already counted; for H2H specifically we'll add an optional `matches` payload from the loader).
-  - Extend `loadAll` to also fetch completed group matches per group so H2H tiebreaker can be computed; return them on `GroupWithStandings` as `completedMatches` (just `{home_team, away_team, home_score, away_score}`).
-  - Also return any `live` match flag per group (`hasLiveMatch: boolean`) and the max `updated_at` from `wc_standings` rows in the group (`updatedAt: string`).
+## Screen-by-screen
 
-- `src/lib/game.functions.ts`
-  - `adminSetResultFn` already sets `status = 'completed'`; after the update, fetch the two affected standings rows and return them in the response as `standingsImpact: { home: StandingRow, away: StandingRow } | null` (null for knockouts). The admin UI shows this in the toast.
+### `/auth` — Sign in
+- Heading: "Welcome back"
+- Subtext: "Sign in to make this matchday's calls."
+- Google button at top, then divider, then email + password fields
+- Primary button: "Sign in" (amber)
+- Below: "New here? Create an account →" links to `/auth/signup`
+- "Forgot your password?" links to `/auth/reset`
+- Keep "Continue as guest" block at bottom
+- On `Email not confirmed` error: render inline notice with a "Resend confirmation email" button that calls `supabase.auth.resend({ type: 'signup', email })`, toast "Email resent ✓".
 
-## 3. Grupos screen — live + visuals
+### `/auth/signup` — Sign up (two states in one route)
 
-`src/routes/_authenticated/grupos.tsx`:
+State A — form:
+- Heading: "Create your account"
+- Subtext: "Join Marcador and start predicting."
+- Google button at top, divider, then email, password, confirm password
+- Hint under password: "At least 8 characters"
+- Client-side check: passwords match + length ≥ 8
+- Primary button: "Create account" (amber)
+- Below: "Already have an account? Sign in →"
 
-- Subscribe to `postgres_changes` on `public.wc_standings` (and `public.matches` for the LIVE flag) via the browser `supabase` client inside a `useEffect`. On any event, call `queryClient.invalidateQueries({ queryKey: ["groups", ...] })`.
-- Ensure realtime is enabled for both tables (migration: `ALTER PUBLICATION supabase_realtime ADD TABLE public.wc_standings, public.matches;` — guarded with `DO` block in case already added).
-- `GroupCard` updates:
-  - Show a small red pulsing "LIVE" pill in the header if `group.hasLiveMatch`.
-  - Show `Updated <relative time>` under the table (refreshes on every query result).
-  - Row styling by sorted index:
-    - 0,1: amber left border (`border-l-2 border-l-amber-glow`) + faint amber bg.
-    - 2: default.
-    - 3: `opacity-60`.
-  - Flash animation: track previous row signature (points|gd|gf|w|d|l) in a `ref`; if a row changes between renders, add a one-shot `animate-flash` class. Add `@keyframes flash` to `src/styles.css` (subtle bg pulse using `--accent`).
+State B — after successful `signUp()` (swap, do not navigate):
+- Big ✉️ icon centered (lucide `Mail` in an amber tinted circle)
+- Heading: "Check your inbox"
+- Subtext: "We sent a confirmation link to **{email}**. Click it to activate your Marcador account."
+- "Resend confirmation email" button
+  - Disabled for 60s after signup; label shows "Resend in 45s" countdown
+  - After 60s becomes active; on click calls `supabase.auth.resend({ type: 'signup', email })`, toast "Email resent ✓", restarts 60s cooldown
+- Bottom link: "Wrong email? Sign up again →" returns to State A and clears the form
+- Does NOT navigate to `/play` or `/onboarding`
 
-## 4. Admin panel feedback
+### `/auth/reset` — Forgot password
+- Heading: "Reset your password"
+- Subtext: "Enter your email and we'll send you a reset link."
+- Email field, button "Send reset link"
+- Calls `supabase.auth.resetPasswordForEmail(email, { redirectTo: `${origin}/auth/callback?type=recovery` })`
+- On success swaps to a "Check your inbox for a password reset link." confirmation panel (same visual template as signup confirmation, no resend timer needed but include a "Resend" button with the same 60s cooldown for parity)
 
-`src/routes/_authenticated/admin.tsx`:
+### `/auth/new-password` — Set new password
+- Reached from the recovery email via `/auth/callback`
+- Guard: if there is no active session with `aud` recovery, redirect to `/auth/reset`
+- Fields: new password, confirm new password (≥ 8, match)
+- Button: "Update password"
+- Calls `supabase.auth.updateUser({ password })`
+- On success: `supabase.auth.signOut()` then navigate `/auth` with toast "Password updated. Please sign in."
 
-- After `adminSetResultFn` resolves in `ResultRow` and in `saveAll`, if `standingsImpact` is present, show a multi-line toast:
-  ```
-  Result saved ✅
-  Standings updated:
-  Brazil: 3pts (1W 0D 0L)
-  Morocco: 0pts (0W 0D 1L)
-  ```
-- Remove the manual "save standings" UI that called `adminSaveGroupStandingsFn` (if present), replaced with a read-only display reading from `wc_standings` and a note: "Standings update automatically when group-stage results are saved."
+### `/auth/callback` — Email redirect handler
+- Both signup confirmation and password recovery redirect here
+- On mount:
+  - Parse hash/query; supabase-js v2 auto-exchanges the code into a session
+  - `const { data: { user } } = await supabase.auth.getUser()`
+  - If URL `type=recovery` (or hash contains `type=recovery`): navigate `/auth/new-password`
+  - Else (signup confirmation):
+    - Toast: "Email confirmed! Welcome to Marcador ⚽"
+    - Check `profiles` for `user_id = user.id` via existing pattern:
+      - No profile → navigate `/onboarding`
+      - Profile exists → navigate `/play`
+  - On error: toast error, navigate `/auth`
 
-## 5. Tests
+## Supabase wiring
 
-`src/lib/admin-tests.functions.ts` + `src/components/admin/TestsPanel.tsx`:
+- `signUp` call sets `options.emailRedirectTo = `${window.location.origin}/auth/callback`` (replaces current `/play`).
+- `resetPasswordForEmail` uses `${origin}/auth/callback?type=recovery`.
+- No Supabase auth settings change required — email confirmation stays on. No new SQL migration.
+- Existing onboarding/profile lookup logic is reused; no schema work.
 
-- New test `Standings trigger works`:
-  1. Find a group-stage match (`group_letter IS NOT NULL`) currently `upcoming`.
-  2. Snapshot current `wc_standings` for `home_team` and `away_team`.
-  3. Update the match: `home_score=2, away_score=1, status='completed', first_scorer='home', is_final=true`.
-  4. Re-read standings; assert home delta `+3 pts, +1 W, +2 GF, +1 GA, +1 P`; away delta `+0 pts, +1 L, +1 GF, +2 GA, +1 P`.
-  5. Revert match (`home_score=null, away_score=null, status='upcoming', first_scorer=null, is_final=false`).
-  6. Re-read standings; assert equal to original snapshot.
-- Pass/fail messages match the spec.
+## Shared pieces
 
-## Technical notes
+- New `src/components/auth/CheckInboxPanel.tsx` — reusable ✉️ + heading + subtext + resend button with `cooldownSeconds` prop and `onResend` callback. Used by signup confirmation and reset confirmation.
+- New `src/components/auth/AuthShell.tsx` — header with logo + centered card layout to keep the four auth screens visually consistent.
+- Keep existing Google button + `lovable.auth.signInWithOAuth("google", ...)` flow on `/auth` and `/auth/signup`.
+- Remove the Apple button from `/auth` (it was added in a previous turn but is out of scope here; leaving it would clutter the redesigned screens — confirm if the user wants it kept).
 
-- The trigger uses `RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public`.
-- Knockout matches (`group_letter IS NULL`) are ignored by both the trigger guard and the team-recalc scan.
-- H2H tiebreaker is computed in JS from completed-match payload to avoid a second DB round-trip per render.
-- No schema changes to `wc_standings` columns; only data reset + trigger attachment.
-- No new RLS or GRANTs required.
+## Files
 
-## Files touched
+Create:
+- `src/routes/auth.signup.tsx`
+- `src/routes/auth.reset.tsx`
+- `src/routes/auth.new-password.tsx`
+- `src/routes/auth.callback.tsx`
+- `src/components/auth/CheckInboxPanel.tsx`
+- `src/components/auth/AuthShell.tsx`
 
-- New migration: trigger + functions + realtime publication + standings reset/recalc.
-- `src/lib/groups.functions.ts` — extend loader, drop manual save fn.
-- `src/lib/game.functions.ts` — return `standingsImpact` from `adminSetResultFn`.
-- `src/routes/_authenticated/grupos.tsx` — realtime, visuals, flash.
-- `src/routes/_authenticated/admin.tsx` — toast, remove manual standings editor.
-- `src/lib/admin-tests.functions.ts`, `src/components/admin/TestsPanel.tsx` — new test.
-- `src/styles.css` — `@keyframes flash` + `.animate-flash` utility.
+Edit:
+- `src/routes/auth.tsx` — sign-in only; add "Forgot password" link, inline "email not confirmed" resend, link to `/auth/signup`. Remove signup mode toggle.
+
+`src/routeTree.gen.ts` regenerates automatically.
+
+## Open question
+
+The previous turn added an Apple sign-in button on `/auth`. Should the redesigned screens keep it alongside Google, or drop it? Your spec only mentions Google.
