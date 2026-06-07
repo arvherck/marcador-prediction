@@ -267,19 +267,53 @@ export function MatchCard({
           </div>
         )}
 
-        {hasResult && (
-          <div className="mt-3 flex items-center justify-center gap-2 text-xs">
-            <span className="text-muted-foreground">Final</span>
-            <span className="font-score font-bold text-amber-glow text-base tabular-nums">
-              {match.home_score} – {match.away_score}
-            </span>
-            {match.prediction?.points != null && (
-              <span className="ml-2 inline-flex items-center gap-1 font-score text-amber-glow font-bold">
-                <Trophy size={12} /> +{match.prediction.points} pts
-              </span>
-            )}
+        {status === "upcoming" && !guest && (
+          <div className="mt-2 text-center text-[11px] text-muted-foreground tabular-nums">
+            {formatCountdown(kickoff.getTime() - now)}
           </div>
         )}
+
+        {status === "live" && (
+          <div className="mt-3 text-center text-[11px] text-muted-foreground inline-flex items-center justify-center gap-1.5 w-full">
+            <Lock size={11} /> Match in progress — predictions locked
+          </div>
+        )}
+
+        {status === "cancelled" && (
+          <div className="mt-3 text-center text-xs text-muted-foreground italic">
+            Match cancelled
+          </div>
+        )}
+
+        {hasResult && status === "completed" && (
+          <div className="mt-3 flex flex-col items-center gap-1">
+            <div className="flex items-center justify-center gap-2 text-xs">
+              <span className="rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                FT
+              </span>
+              <span className="font-score font-bold text-amber-glow text-base tabular-nums">
+                {match.home_score} – {match.away_score}
+              </span>
+            </div>
+            <PointsBreakdown match={match} />
+          </div>
+        )}
+
+        {(status === "live" || status === "completed" || status === "cancelled") &&
+          match.prediction && (
+            <div className="mt-2 text-center text-[11px] text-muted-foreground">
+              <span className="opacity-80">Your prediction: </span>
+              <span className="font-score font-bold text-foreground tabular-nums">
+                {match.prediction.home_goals}-{match.prediction.away_goals}
+              </span>
+              <span className="opacity-80">
+                {" "}· {scorerLabelFor(match, match.prediction.first_scorer)}
+              </span>
+              {match.prediction.booster && (
+                <span className="ml-1 text-amber-glow font-bold">· 2×</span>
+              )}
+            </div>
+          )}
 
         <div className="mt-5">
           <div className="text-[11px] uppercase tracking-[0.15em] text-muted-foreground mb-2">
