@@ -186,3 +186,9 @@
 }
 .animate-urgent { animation: urgent-flash 0.9s ease-in-out infinite; }
 
+
+@keyframes row-flash {
+  0% { background-color: oklch(from var(--accent) l c h / 0.35); }
+  100% { background-color: transparent; }
+}
+.animate-row-flash { animation: row-flash 1.4s ease-out 1; }
