@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+export type MatchStatus = "upcoming" | "live" | "completed" | "cancelled";
+
 export type MatchRow = {
   id: number;
   matchday_id: number;
@@ -18,6 +20,8 @@ export type MatchRow = {
   group_letter: string | null;
   phase: string | null;
   teams_confirmed: boolean;
+  status: MatchStatus;
+  effective_status: MatchStatus;
   prediction: {
     home_goals: number;
     away_goals: number;
