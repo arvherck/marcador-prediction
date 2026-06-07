@@ -45,6 +45,7 @@ const TESTS: TestDef[] = [
   { id: "score-wrong", label: "Scoring engine — wrong result (0 pts)", category: "Game logic", run: () => testScoringWrongResult() },
   { id: "booster", label: "Booster doubles points", category: "Game logic", run: () => testBoosterDoubles() },
   { id: "lock", label: "Predictions lock at kickoff", category: "Game logic", critical: true, run: () => testKickoffLock() },
+  { id: "standings-trigger", label: "Standings trigger works", category: "Game logic", critical: true, run: () => testStandingsTrigger() },
 ];
 
 type RunState = "idle" | "running" | TestResult;
