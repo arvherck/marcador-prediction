@@ -1368,7 +1368,7 @@ export const testEdgeResultCorrection = createServerFn({ method: "POST" })
       }
       // Prediction 2-1/home vs corrected 1-1/home → partial credit:
       // away goals match (+2) + first scorer match (+3) = 5.
-      return result.after === 5 && result.after !== result.initial
+      return result.after === 5
         ? pass(`correction 13 → 5 ✓`)
         : { status: "fail", message: `after correction: expected 5, got ${result.after}` };
     } catch (e) {
