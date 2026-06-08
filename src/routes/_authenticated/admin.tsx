@@ -13,6 +13,7 @@ import {
   adminMatchdayScoringSummaryFn,
   adminScoreMatchdayFn,
   adminScoreMatchFn,
+  adminSetMatchMultiplierFn,
   adminSetMatchStatusFn,
   adminSetResultFn,
   adminUpdateMatchTeamsFn,
