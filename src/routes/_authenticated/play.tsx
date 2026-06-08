@@ -143,6 +143,9 @@ function PlayPage() {
         )}
       </header>
 
+      <HowPointsWork />
+
+
       <div className="mb-4 inline-flex rounded-xl border border-border bg-card p-1 text-xs font-bold">
         <button
           onClick={() => navigate({ search: (p: z.infer<typeof searchSchema>) => ({ ...p, view: "date" as const }) })}
