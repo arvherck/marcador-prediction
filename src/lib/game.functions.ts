@@ -708,17 +708,19 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
       home: { team: string; points: number; won: number; drawn: number; lost: number };
       away: { team: string; points: number; won: number; drawn: number; lost: number };
     } = null;
-    if (m && m.group_letter) {
+    if (m && m.group_letter && m.home_team && m.away_team) {
+      const homeTeam = m.home_team;
+      const awayTeam = m.away_team;
       const { data: rows } = await supabase
         .from("wc_standings")
         .select("team, points, won, drawn, lost")
-        .in("team", [m.home_team, m.away_team]);
+        .in("team", [homeTeam, awayTeam]);
       const byTeam = new Map<string, { team: string; points: number; won: number; drawn: number; lost: number }>();
       for (const r of (rows ?? []) as Array<{ team: string; points: number; won: number; drawn: number; lost: number }>) {
         byTeam.set(r.team, r);
       }
-      const h = byTeam.get(m.home_team);
-      const a = byTeam.get(m.away_team);
+      const h = byTeam.get(homeTeam);
+      const a = byTeam.get(awayTeam);
       if (h && a) standingsImpact = { home: h, away: a };
     }
     return { ok: true, standingsImpact };
