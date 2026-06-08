@@ -30,6 +30,13 @@ import {
   testEdgeUnderdogBelow10pct,
   testEdgeRescoreNoDouble,
   testEdgeResultCorrection,
+  testLockUiPastMatch,
+  testLockServerRejectsPastInsert,
+  testLockServerRejectsCompleted,
+  testLockServerRejectsUpdate,
+  testLockServerAcceptsFuture,
+  testLockReopensWhenKickoffMovedFuture,
+  testLockRelocksWhenKickoffMovedPast,
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
