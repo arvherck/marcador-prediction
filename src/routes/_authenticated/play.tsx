@@ -124,7 +124,7 @@ function PlayPage() {
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
       {!guest && <TournamentBanner />}
-      <header className="mb-5">
+      <header className="mb-5 relative">
         <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
           Marcador
         </div>
@@ -144,7 +144,19 @@ function PlayPage() {
             Browse every fixture. Sign up to lock in your predictions.
           </p>
         )}
+        <button
+          type="button"
+          onClick={() => setHowToPlayOpen(true)}
+          aria-label="How to play"
+          className="absolute top-0 right-0 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-amber-glow transition-colors"
+        >
+          <HelpCircle size={14} />
+          <span className="hidden sm:inline">How to play</span>
+        </button>
       </header>
+
+      <HowToPlayModal open={howToPlayOpen} onOpenChange={setHowToPlayOpen} />
+
 
       <HowPointsWork />
 
