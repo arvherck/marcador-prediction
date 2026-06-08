@@ -154,9 +154,52 @@ function SignupPage() {
           onChange={(e) => setConfirm(e.target.value)}
           className="w-full rounded-xl bg-input border border-border px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/50"
         />
+
+        <div className="space-y-2 pt-1">
+          <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={age18}
+              onChange={(e) => setAge18(e.target.checked)}
+              className="mt-0.5 size-4 rounded border-border accent-amber-glow"
+            />
+            <span>I am 18 years of age or older</span>
+          </label>
+          {showConsentErrors && !age18 && (
+            <p className="ml-6 text-[11px] text-destructive">
+              Please confirm you are 18+ to continue
+            </p>
+          )}
+          <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={privacy}
+              onChange={(e) => setPrivacy(e.target.checked)}
+              className="mt-0.5 size-4 rounded border-border accent-amber-glow"
+            />
+            <span>
+              I agree to the{" "}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-glow hover:underline"
+              >
+                Privacy Policy
+              </a>{" "}
+              and understand how my data is used
+            </span>
+          </label>
+          {showConsentErrors && !privacy && (
+            <p className="ml-6 text-[11px] text-destructive">
+              Please agree to the Privacy Policy to continue
+            </p>
+          )}
+        </div>
+
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !age18 || !privacy}
           className="w-full rounded-xl bg-amber-gradient px-4 py-3 text-sm font-bold shadow-glow disabled:opacity-50"
         >
           {loading ? "..." : "Create account"}
