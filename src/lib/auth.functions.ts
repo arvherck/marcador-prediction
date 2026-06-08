@@ -138,3 +138,98 @@ export const deleteAccountFn = createServerFn({ method: "POST" })
 
     return { ok: true };
   });
+
+export const exportMyDataFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+
+    const [
+      { data: profile },
+      { data: tournament },
+      { data: predictions },
+      { data: memberships },
+      { data: leaderboard },
+    ] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("display_name, country, favourite_team, created_at, current_streak, longest_streak")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("tournament_predictions")
+        .select("predicted_winner, created_at, points_awarded")
+        .eq("user_id", userId)
+        .maybeSingle(),
+      supabase
+        .from("predictions")
+        .select(
+          "home_goals, away_goals, first_scorer, booster, points, created_at, matches!inner(home_team, away_team, kickoff_at, phase)",
+        )
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("league_members")
+        .select("joined_at, leagues!inner(name, invite_code, owner_id)")
+        .eq("user_id", userId),
+      supabase.rpc("global_leaderboard", { _league_id: null }),
+    ]);
+
+    const myRow = (leaderboard ?? []).find(
+      (r: { id: string }) => r.id === userId,
+    ) as { total_points: number; rank: number } | undefined;
+
+    type PredRow = {
+      home_goals: number;
+      away_goals: number;
+      first_scorer: string;
+      booster: boolean;
+      points: number | null;
+      created_at: string;
+      matches: { home_team: string; away_team: string; kickoff_at: string; phase: string };
+    };
+    type LeagueRow = {
+      joined_at: string;
+      leagues: { name: string; invite_code: string; owner_id: string };
+    };
+
+    return {
+      exported_at: new Date().toISOString(),
+      profile: profile
+        ? {
+            display_name: profile.display_name,
+            country: profile.country,
+            favourite_team: profile.favourite_team,
+            created_at: profile.created_at,
+            current_streak: profile.current_streak ?? 0,
+            longest_streak: profile.longest_streak ?? 0,
+          }
+        : null,
+      tournament_prediction: tournament
+        ? {
+            predicted_winner: tournament.predicted_winner,
+            created_at: tournament.created_at,
+            points_awarded: tournament.points_awarded,
+          }
+        : null,
+      predictions: ((predictions ?? []) as unknown as PredRow[]).map((p) => ({
+        match: `${p.matches.home_team} vs ${p.matches.away_team}`,
+        kickoff_at: p.matches.kickoff_at,
+        phase: p.matches.phase,
+        predicted_home_goals: p.home_goals,
+        predicted_away_goals: p.away_goals,
+        predicted_first_scorer: p.first_scorer,
+        booster_applied: p.booster,
+        points_earned: p.points,
+        submitted_at: p.created_at,
+      })),
+      leagues: ((memberships ?? []) as unknown as LeagueRow[]).map((m) => ({
+        name: m.leagues.name,
+        invite_code: m.leagues.invite_code,
+        role: m.leagues.owner_id === userId ? "owner" : "member",
+        joined_at: m.joined_at,
+      })),
+      total_points: myRow?.total_points ?? 0,
+      overall_rank: myRow?.rank ?? null,
+    };
+  });
