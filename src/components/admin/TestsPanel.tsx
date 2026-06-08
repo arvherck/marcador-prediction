@@ -72,6 +72,22 @@ const ICON: Record<string, string> = {
   warn: "⚠️",
 };
 
+const EDGE_TESTS: TestDef[] = [
+  { id: "edge-exact", label: "Exact scoreline (all points)", category: "Game logic", run: () => testEdgeExactScoreline() },
+  { id: "edge-correct-wrong-score", label: "Correct result, wrong score", category: "Game logic", run: () => testEdgeCorrectResultWrongScore() },
+  { id: "edge-wrong-scorer", label: "Correct result, wrong first scorer", category: "Game logic", run: () => testEdgeWrongFirstScorer() },
+  { id: "edge-draw", label: "Draw predicted correctly", category: "Game logic", run: () => testEdgeDrawCorrect() },
+  { id: "edge-00-draw", label: "0-0 draw predicted correctly", category: "Game logic", run: () => testEdgeZeroZeroDraw() },
+  { id: "edge-00-boost", label: "0-0 draw with booster", category: "Game logic", run: () => testEdgeZeroZeroBooster() },
+  { id: "edge-wrong", label: "Wrong result (zero points)", category: "Game logic", run: () => testEdgeWrongResult() },
+  { id: "edge-away", label: "Correct away win", category: "Game logic", run: () => testEdgeAwayWin() },
+  { id: "edge-booster", label: "Booster doubles points", category: "Game logic", run: () => testEdgeBooster() },
+  { id: "edge-underdog-below", label: "Underdog bonus fires below 10%", category: "Game logic", run: () => testEdgeUnderdogBelow10pct() },
+  { id: "edge-underdog-at", label: "Underdog bonus does NOT fire at 10%", category: "Game logic", run: () => testEdgeUnderdogAt10pct() },
+  { id: "edge-rescore", label: "Re-scoring does not double points", category: "Game logic", run: () => testEdgeRescoreNoDouble() },
+  { id: "edge-correction", label: "Result correction recalculates correctly", category: "Game logic", run: () => testEdgeResultCorrection() },
+];
+
 export function TestsPanel() {
   const [state, setState] = useState<Record<string, RunState>>({});
 
