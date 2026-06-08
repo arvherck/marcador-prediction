@@ -112,8 +112,8 @@ export function MatchCard({
       away: next.away ?? away,
       scorer: next.scorer ?? scorer,
       changed,
-      homeTeam: match.home_team,
-      awayTeam: match.away_team,
+      homeTeam: match.home_team ?? undefined,
+      awayTeam: match.away_team ?? undefined,
     });
     setHome(r.home);
     setAway(r.away);
