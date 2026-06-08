@@ -129,10 +129,12 @@ export const getAllMatches = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    const testMdIds = await getTestMatchdayIds(supabase);
     const [{ data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
       supabase
         .from("matches")
         .select("*")
+        .not("matchday_id", "in", notInList(testMdIds))
         .order("kickoff_at", { ascending: true })
         .order("id", { ascending: true }),
       supabase.from("predictions").select("*").eq("user_id", userId),
@@ -148,9 +150,11 @@ export const getAllMatches = createServerFn({ method: "GET" })
 
 export const getAllMatchesPublic = createServerFn({ method: "GET" }).handler(async () => {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const testMdIds = await getTestMatchdayIds(supabaseAdmin);
   const { data: matches, error } = await supabaseAdmin
     .from("matches")
     .select("*")
+    .not("matchday_id", "in", notInList(testMdIds))
     .order("kickoff_at", { ascending: true })
     .order("id", { ascending: true });
   if (error) throw safeError(error, "game");
