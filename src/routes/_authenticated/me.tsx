@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
-import { getMyHistoryFn, getMyMatchdayScoresFn, getMyProfileStatsFn } from "@/lib/game.functions";
+import { getMyHistoryFn, getMyMatchdayScoresFn, getMyPointsByRoundFn, getMyProfileStatsFn, type PointsByRoundRow } from "@/lib/game.functions";
 import { teamFlag } from "@/lib/teamFlags";
 
 export const Route = createFileRoute("/_authenticated/me")({
@@ -55,9 +55,11 @@ function MePage() {
   const { me } = Route.useRouteContext();
   const history = useQuery({ queryKey: ["my-history"], queryFn: () => getMyHistoryFn() });
   const scores = useQuery({ queryKey: ["my-scores"], queryFn: () => getMyMatchdayScoresFn() });
+  const rounds = useQuery({ queryKey: ["my-points-by-round"], queryFn: () => getMyPointsByRoundFn() });
   const stats = useQuery({ queryKey: ["my-stats"], queryFn: () => getMyProfileStatsFn() });
 
   const total = (scores.data as Score[] | undefined)?.reduce((a, b) => a + b.total_points, 0) ?? 0;
+
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
@@ -91,9 +93,10 @@ function MePage() {
         </Section>
       )}
 
-      <Section title="Points per matchday">
-        <BarChart data={(scores.data as Score[] | undefined) ?? []} />
+      <Section title="Points per round">
+        <RoundBarChart data={(rounds.data as PointsByRoundRow[] | undefined) ?? []} />
       </Section>
+
 
       <Section title="Rank over time">
         <RankChart data={(scores.data as Score[] | undefined) ?? []} />
@@ -202,6 +205,63 @@ function StreakRow({ current, longest }: { current: number; longest: number }) {
         <span className="font-bold text-amber-glow tabular-nums">{longest}</span>
         <span className="text-muted-foreground">matchday{longest === 1 ? "" : "s"}</span>
       </div>
+    </div>
+  );
+}
+
+function RoundBarChart({ data }: { data: PointsByRoundRow[] }) {
+  const visible = data.filter((d) => d.total_points > 0).sort((a, b) => a.order - b.order);
+  if (!visible.length) {
+    return (
+      <div className="rounded-2xl border border-border bg-card">
+        <EmptyBall title="No points yet" sub="Once a matchday finishes, your points will appear here." />
+      </div>
+    );
+  }
+  const max = Math.max(1, ...visible.map((d) => d.total_points));
+  const W = Math.max(320, visible.length * 80);
+  const H = 200;
+  const bw = (W - 32) / visible.length - 12;
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block">
+        <defs>
+          <linearGradient id="round-bar" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="oklch(0.82 0.17 75)" />
+            <stop offset="100%" stopColor="oklch(0.72 0.2 50)" />
+          </linearGradient>
+        </defs>
+        {visible.map((d, i) => {
+          const h = (d.total_points / max) * (H - 60);
+          const x = 16 + i * (bw + 12);
+          const y = H - 30 - h;
+          return (
+            <g key={d.round_key}>
+              <rect x={x} y={y} width={bw} height={h} rx="6" fill="url(#round-bar)" />
+              <text
+                x={x + bw / 2}
+                y={y - 6}
+                textAnchor="middle"
+                className="font-score"
+                fontSize="13"
+                fontWeight="700"
+                fill="oklch(0.82 0.17 75)"
+              >
+                {d.total_points}
+              </text>
+              <text
+                x={x + bw / 2}
+                y={H - 10}
+                textAnchor="middle"
+                fontSize="10"
+                fill="oklch(0.7 0.025 70)"
+              >
+                {d.round_label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }

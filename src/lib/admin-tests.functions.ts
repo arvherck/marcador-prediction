@@ -934,6 +934,7 @@ async function seedEdgeMatch(
     booster?: boolean;
   }>,
   actual: { home: number; away: number; scorer: "home" | "away" | "none" },
+  opts?: { phase?: string },
 ): Promise<number> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -944,7 +945,7 @@ async function seedEdgeMatch(
       home_team: EDGE_TEAM,
       away_team: EDGE_TEAM,
       kickoff_at: future,
-      phase: "Group stage",
+      phase: opts?.phase ?? "Group stage",
       teams_confirmed: true,
     })
     .select("id")
@@ -1727,4 +1728,102 @@ export const testStandingsVerifier = createServerFn({ method: "POST" })
     return allOk
       ? { status: "pass", message: "All standings values and order match expected", detail: detail.join("\n") }
       : { status: "fail", message: "Standings mismatch — see detail", detail: detail.join("\n") };
+  });
+
+// ---------- Round multiplier edge tests ----------
+
+// R32 (×2), exact scoreline, no booster, single user → 13 × 2 = 26
+export const testEdgeMultiplierR32 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const got = await withTempScenario(async ({ mdId }) => {
+        const matchId = await seedEdgeMatch(
+          mdId,
+          [{ userId: context.userId, home: 2, away: 1, scorer: "home" }],
+          { home: 2, away: 1, scorer: "home" },
+          { phase: "Round of 32" },
+        );
+        await scoreMd(mdId, context.userId);
+        return getPoints(context.userId, matchId);
+      });
+      await purgeEdgeMatches();
+      return got === 26
+        ? pass("R32 multiplier ×2 → 26 pts ✓")
+        : fail(26, got);
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// Semifinal (×5) + booster (×2) + exact → 13 × 5 × 2 = 130
+export const testEdgeMultiplierBoosterStack = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const got = await withTempScenario(async ({ mdId }) => {
+        const matchId = await seedEdgeMatch(
+          mdId,
+          [{ userId: context.userId, home: 2, away: 1, scorer: "home", booster: true }],
+          { home: 2, away: 1, scorer: "home" },
+          { phase: "Semifinal" },
+        );
+        await scoreMd(mdId, context.userId);
+        return getPoints(context.userId, matchId);
+      });
+      await purgeEdgeMatches();
+      return got === 130
+        ? pass("SF ×5 × booster ×2 → 130 pts ✓")
+        : fail(130, got);
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// R32 (×2) + underdog firing (<10%) → (13 × 2) + 5 = 31 (underdog NOT multiplied)
+export const testEdgeMultiplierUnderdogFlat = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const got = await withTempScenario(async ({ mdId }) => {
+        return withEdgeUsers(10, async (extras) => {
+          const preds = [
+            {
+              userId: context.userId,
+              home: 3,
+              away: 2,
+              scorer: "home" as const,
+              booster: false,
+            },
+            ...extras.map((u) => ({
+              userId: u,
+              home: 0,
+              away: 0,
+              scorer: "none" as const,
+              booster: false,
+            })),
+          ];
+          const matchId = await seedEdgeMatch(
+            mdId,
+            preds,
+            { home: 3, away: 2, scorer: "home" },
+            { phase: "Round of 32" },
+          );
+          await scoreMd(mdId, context.userId);
+          return getPoints(context.userId, matchId);
+        });
+      });
+      await purgeEdgeMatches();
+      return got === 31
+        ? pass("R32 ×2 + underdog flat +5 → 31 pts ✓")
+        : fail(31, got);
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
   });

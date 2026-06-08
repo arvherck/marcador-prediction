@@ -13,6 +13,7 @@ import {
   adminMatchdayScoringSummaryFn,
   adminScoreMatchdayFn,
   adminScoreMatchFn,
+  adminSetMatchMultiplierFn,
   adminSetMatchStatusFn,
   adminSetResultFn,
   adminUpdateMatchTeamsFn,
@@ -48,6 +49,7 @@ type Match = {
   first_scorer: string | null;
   is_final: boolean;
   phase: string | null;
+  points_multiplier?: number | null;
   teams_confirmed?: boolean;
   status?: MatchStatusT | null;
   unscored_count?: number;
@@ -775,8 +777,9 @@ function ResultRow({
             <div className="font-medium">
               {m.home_team} <span className="text-muted-foreground">vs</span> {m.away_team}
             </div>
-            <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+            <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
               <span>{m.phase ?? "—"}</span>
+              {isKnockout && <MultiplierEditor match={m} onChange={onChange} />}
               {isKnockout && confirmed && (
                 <button
                   onClick={() => setEditTeams(true)}
@@ -1196,3 +1199,68 @@ function GroupStandingsAdmin() {
   );
 }
 
+
+function MultiplierEditor({ match, onChange }: { match: Match; onChange: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const current = match.points_multiplier ?? 1;
+  const [val, setVal] = useState<number>(current);
+
+  const save = useMutation({
+    mutationFn: () =>
+      adminSetMatchMultiplierFn({ data: { match_id: match.id, multiplier: val } }),
+    onSuccess: () => {
+      toast.success(`Multiplier set to ×${val}`);
+      setEditing(false);
+      onChange();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <select
+          value={val}
+          onChange={(e) => setVal(parseInt(e.target.value))}
+          className="rounded bg-input border border-border px-1 py-0.5 text-[11px]"
+        >
+          {[1, 2, 3, 4, 5, 6].map((n) => (
+            <option key={n} value={n}>
+              ×{n}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+          className="text-primary hover:underline text-[11px] font-bold"
+        >
+          Save
+        </button>
+        <button
+          onClick={() => {
+            setEditing(false);
+            setVal(current);
+          }}
+          className="text-muted-foreground hover:text-foreground text-[11px]"
+        >
+          Cancel
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="rounded bg-amber-glow/15 text-amber-glow px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+        ×{current} multiplier
+      </span>
+      <button
+        onClick={() => setEditing(true)}
+        className="text-primary hover:underline text-[11px]"
+      >
+        Edit multiplier
+      </button>
+    </span>
+  );
+}
