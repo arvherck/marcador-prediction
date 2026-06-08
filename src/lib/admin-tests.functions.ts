@@ -1366,9 +1366,11 @@ export const testEdgeResultCorrection = createServerFn({ method: "POST" })
           message: `initial scoring wrong: expected 13, got ${result.initial}`,
         };
       }
-      return result.after === 0
-        ? pass(`correction 13 → 0 ✓`)
-        : { status: "fail", message: `after correction: expected 0, got ${result.after}` };
+      // Prediction 2-1/home vs corrected 1-1/home → partial credit:
+      // away goals match (+2) + first scorer match (+3) = 5.
+      return result.after === 5
+        ? pass(`correction 13 → 5 ✓`)
+        : { status: "fail", message: `after correction: expected 5, got ${result.after}` };
     } catch (e) {
       await purgeEdgeMatches();
       return { status: "fail", message: e instanceof Error ? e.message : String(e) };
