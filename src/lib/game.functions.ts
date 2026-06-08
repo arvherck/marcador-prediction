@@ -175,6 +175,7 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
         .from("matchdays")
         .select("id, name, starts_at, is_scored")
         .not("name", "like", "\\_\\_%")
+        .eq("is_test", false)
         .order("starts_at", { ascending: true }),
       supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final, status"),
       supabase.from("predictions").select("match_id").eq("user_id", userId),
