@@ -12,6 +12,7 @@ import {
   adminDeleteTestUsersFn,
   adminListLeaguesForTestFn,
   adminAddTestUsersToLeagueFn,
+  adminRemovePreWcTestMatchesFn,
   type FilledMatch,
 } from "@/lib/admin-tests.functions";
 
