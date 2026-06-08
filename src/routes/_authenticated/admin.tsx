@@ -61,6 +61,7 @@ type Matchday = {
   name: string;
   starts_at: string;
   is_scored: boolean;
+  is_test?: boolean;
   matches: Match[] | null;
   prediction_count?: number;
   unscored_match_count?: number;
