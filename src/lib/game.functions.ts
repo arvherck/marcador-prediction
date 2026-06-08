@@ -1344,3 +1344,73 @@ export const adminUpdateStandingsCards = createServerFn({ method: "POST" })
     if (error) throw safeError(error, "game");
     return { ok: true };
   });
+
+// ---------- Round multiplier ----------
+
+export const adminSetMatchMultiplierFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      match_id: z.number().int(),
+      multiplier: z.number().int().min(1).max(6),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("matches")
+      .update({ points_multiplier: data.multiplier })
+      .eq("id", data.match_id);
+    if (error) throw safeError(error, "game");
+    return { ok: true };
+  });
+
+export type PointsByRoundRow = {
+  round_key: string;
+  round_label: string;
+  total_points: number;
+  order: number;
+};
+
+const ROUND_ORDER: Array<{ key: string; label: string; matchdays: number[] }> = [
+  { key: "group", label: "Group Stage", matchdays: [1, 2, 3] },
+  { key: "r32", label: "Round of 32", matchdays: [4] },
+  { key: "r16", label: "Round of 16", matchdays: [5] },
+  { key: "qf", label: "Quarterfinals", matchdays: [6] },
+  { key: "third", label: "Third Place", matchdays: [8] },
+  { key: "sf", label: "Semifinals", matchdays: [7] },
+  { key: "final", label: "Final", matchdays: [9] },
+];
+
+export const getMyPointsByRoundFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<PointsByRoundRow[]> => {
+    const { supabase, userId } = context;
+    const { data, error } = await supabase
+      .from("predictions")
+      .select("points, matches!inner(matchday_id)")
+      .eq("user_id", userId)
+      .not("points", "is", null);
+    if (error) throw safeError(error, "game");
+    const rows = (data ?? []) as Array<{
+      points: number | null;
+      matches: { matchday_id: number };
+    }>;
+    const byMd = new Map<number, number>();
+    for (const r of rows) {
+      const md = r.matches.matchday_id;
+      byMd.set(md, (byMd.get(md) ?? 0) + (r.points ?? 0));
+    }
+    const out: PointsByRoundRow[] = [];
+    ROUND_ORDER.forEach((round, idx) => {
+      const total = round.matchdays.reduce((s, md) => s + (byMd.get(md) ?? 0), 0);
+      out.push({
+        round_key: round.key,
+        round_label: round.label,
+        total_points: total,
+        order: idx,
+      });
+    });
+    return out;
+  });
