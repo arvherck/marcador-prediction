@@ -641,6 +641,7 @@ export const adminListMatchdays = createServerFn({ method: "GET" })
     const { data: mds, error } = await supabase
       .from("matchdays")
       .select("*")
+      .not("name", "like", "\\_\\_%")
       .order("starts_at", { ascending: true });
     if (error) throw safeError(error, "game");
     const { data: ms, error: mErr } = await supabase
