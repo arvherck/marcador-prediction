@@ -252,7 +252,7 @@ export function MatchCard({
             homeDecDisabled={scorer === "home" && home <= 1}
             awayDecDisabled={scorer === "away" && away <= 1}
           />
-          <TeamSide name={match.away_team} alignRight />
+          <TeamSide name={match.away_team ?? ""} alignRight />
         </div>
 
         {hint && !disabled && (
