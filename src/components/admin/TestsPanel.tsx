@@ -575,3 +575,54 @@ function StandingsVerifierPanel() {
     </div>
   );
 }
+
+function UiTestPreviewPanel() {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["ui-test-preview"],
+    queryFn: () => adminGetUiTestPreviewFn(),
+    refetchInterval: 30_000,
+  });
+  const m = useMutation({
+    mutationFn: (enabled: boolean) => adminSetUiTestPreviewFn({ data: { enabled } }),
+    onSuccess: (r) => {
+      qc.setQueryData(["ui-test-preview"], r);
+      qc.invalidateQueries({ queryKey: ["all-matches"] });
+      qc.invalidateQueries({ queryKey: ["matchdays-progress"] });
+      toast.success(r.enabled ? "UI test preview enabled (30 min)" : "UI test preview disabled");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+  const enabled = q.data?.enabled ?? false;
+  const expiresAt = q.data?.expiresAt ?? null;
+  const minutesLeft =
+    expiresAt ? Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 60_000)) : 0;
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
+      <div className="px-4 py-3 border-b border-border">
+        <div className="font-semibold">UI Test Preview</div>
+        <div className="text-xs text-muted-foreground">
+          Show the hidden test matchday on the Play screen for your admin account only.
+        </div>
+      </div>
+      <div className="px-4 py-3 flex items-center justify-between gap-3">
+        <div className="text-sm">
+          <div className="font-medium">Preview UI test matches in Play screen</div>
+          <div className="text-xs text-muted-foreground">
+            Auto-disables after 30 minutes. Admin-only — does not affect other users.
+            {enabled && expiresAt && (
+              <span className="ml-1 text-amber-glow font-medium">
+                · {minutesLeft}m left
+              </span>
+            )}
+          </div>
+        </div>
+        <Switch
+          checked={enabled}
+          disabled={m.isPending || q.isLoading}
+          onCheckedChange={(v) => m.mutate(v)}
+        />
+      </div>
+    </div>
+  );
+}
