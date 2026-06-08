@@ -11,7 +11,7 @@ export function ClosingSoonBanner({
 }: {
   matches: MatchRow[];
   view: "date" | "matchday";
-  onSwitchToDate: (matchId: string) => void;
+  onSwitchToDate: (matchId: number) => void;
 }) {
   const now = useNow(1000);
 
