@@ -1,8 +1,19 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { TestDataPanel } from "@/components/admin/TestDataPanel";
+import {
+  buildReport,
+  toMarkdown,
+  toJson,
+  loadHistory,
+  saveToHistory,
+  formatHistoryLabel,
+  downloadFilename,
+  type Report,
+  type RunResult,
+} from "@/lib/test-report";
 
 import {
   testAdminExists,
