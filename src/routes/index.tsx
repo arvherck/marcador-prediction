@@ -4,6 +4,7 @@ import { z } from "zod";
 import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { getUpcomingMatchesPublic } from "@/lib/game.functions";
 import { FeedbackButton } from "@/components/feedback/FeedbackButton";
+import { CookieNotice } from "@/components/CookieNotice";
 
 const searchSchema = z.object({
   deleted: fallback(z.string().optional(), undefined).optional(),
@@ -158,6 +159,7 @@ function Landing() {
         </div>
       </footer>
 
+      <CookieNotice />
     </div>
   );
 }
