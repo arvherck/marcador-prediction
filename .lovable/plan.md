@@ -1,67 +1,69 @@
-# Leaderboard Tiebreakers
+# Predictions Closing Soon — Play screen banner
 
-Add a 4-level tiebreaker to all leaderboards, with the data computed during scoring and stored on `matchday_scores`.
+## Goal
+Add a top-of-page urgency banner on `/play` that surfaces matches kicking off within the next 2 hours that the user has not yet predicted, plus a subtle pulsing highlight on the corresponding match cards. Guest users do not see the banner (they cannot predict).
 
-## 1. Migration — `matchday_scores` columns
+## When to show
+A match qualifies as "imminent + unpredicted" when ALL are true:
+- `teams_confirmed === true`
+- `status === 'upcoming'` (raw status, so the match has not kicked off / locked)
+- `kickoff_at` is in the future and within the next 2 hours (`<= now + 2h`)
+- `prediction === null` (user has not submitted)
 
-Add three integer columns, default 0, NOT NULL:
+The banner is shown iff there is at least one such match. The nearest one (smallest `kickoff_at`) drives the countdown text and styling.
 
-- `correct_results` — predictions where the 1X2 result was correct (regardless of exact score)
-- `exact_scores` — predictions where both `home_goals` and `away_goals` match
-- `correct_first_scorers` — predictions where `first_scorer` matches the actual first scorer
+## Banner content + styling
+Position: very top of `PlayPage`, above `<TournamentBanner />` and the header. Full-width strip, rounded, non-dismissible.
 
-Backfill from existing `predictions` joined to `matches` for all scored matchdays, so existing rows have correct values before the UI starts using them.
+States (driven by minutes-until-kickoff of the nearest match):
+- `> 30 min`: amber background (`bg-amber-glow/15` + amber border + dark text), pulsing ⏰
+  - 1 match: `⏰ {Home} vs {Away} kicks off in {Xh Ym} — predict now!`
+  - N>1 matches: `⏰ {N} matches kick off in under 2 hours — you haven't predicted them all yet!`
+- `5–30 min`: red background (`bg-red-500/15` + red border), 🔴
+  - `🔴 {Home} vs {Away} kicks off in {M} minutes — last chance to predict!`
+- `< 5 min`: red background, 🔴
+  - `🔴 Predictions locking in {M} minutes!` (or `< 1 minute` when sub-minute)
 
-## 2. Migration — scoring functions
+Right side: a "Predict now →" button. Behavior:
+- If current view is `date`: scroll-into-view the DOM node of the nearest unpredicted match (smooth, center).
+- If current view is `matchday`: switch search to `view=date` first (so the card is rendered), then scroll on next tick. Also if `view=matchday` and the nearest match's matchday differs from the selected `md`, update `md` to the nearest match's matchday as a fallback before the scroll. (Spec allows either; we'll route to date view + scroll which always works.)
 
-Update `score_matchday` and `score_match` to:
+Live countdown: re-render every 1s via a `useNow(1000)` hook scoped to the banner (and the highlighted cards). Stop the interval when the page unmounts.
 
-- Accumulate `r_hit`, `e_hit`, `fs_hit` per `(user_id, matchday_id)` while scoring predictions (only for completed/final matches in that matchday).
-- Replace the rank CTE so totals include the tiebreaker counts, and use a single multi-column ordering everywhere:
+The banner auto-hides when no qualifying matches remain (user submits prediction → query invalidation removes it; or kickoff passes → effective status flips and the match is filtered out by `status === 'upcoming'` + future kickoff check).
 
-  ```sql
-  ORDER BY total_points DESC,
-           correct_results DESC,
-           exact_scores DESC,
-           correct_first_scorers DESC,
-           p.display_name ASC
-  ```
+## Match card highlight
+In `ByDateView` and `ByMatchdayView`, wrap each rendered `MatchCard` in a `<div id="match-{id}" className={...}>` (or pass the id/classes via a new prop on `MatchCard`). When that match qualifies as imminent+unpredicted, add a pulsing amber ring: `ring-2 ring-amber-glow/60 animate-pulse rounded-2xl` (or a custom keyframe to keep it subtle — slower than `animate-pulse`). The id is needed so the banner's "Predict now →" can scroll to it.
 
-  with `DENSE_RANK() OVER (ORDER BY total_points DESC, correct_results DESC, exact_scores DESC, correct_first_scorers DESC)` (display_name not part of rank — it's just the final deterministic display sort).
+The existing per-card "Locks in Xh Ym" countdown is untouched.
 
-- `INSERT ... ON CONFLICT (user_id, matchday_id) DO UPDATE` also sets the three tiebreaker columns.
+## Implementation
 
-## 3. Migration — RPCs
+### New file: `src/components/play/ClosingSoonBanner.tsx`
+- Props: `matches: Match[]`, `view: 'date'|'matchday'`, `onSwitchToDate: (matchId: string, mdId: number) => void`.
+- Computes `imminent = matches.filter(qualifies)` on every render, sorted by `kickoff_at`.
+- Returns `null` when empty.
+- Uses a local `useNow(1000)` hook so the countdown ticks each second without re-fetching.
+- Renders the strip + "Predict now →" button. The button:
+  - `view === 'date'`: `document.getElementById('match-' + nearest.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })`.
+  - `view === 'matchday'`: calls `onSwitchToDate(nearest.id, nearest.matchday_id)` which updates search to `{ view: 'date' }`, then on next animation frame scrolls to the id.
 
-Update both RPCs to return + order by the tiebreakers:
+### Edit `src/routes/_authenticated/play.tsx`
+- Import and render `<ClosingSoonBanner />` at the top of the returned tree (above `TournamentBanner`), only when `!guest`.
+- Pass `view`, `matches`, and an `onSwitchToDate` that calls `navigate({ search: ... view: 'date' })` then schedules a `requestAnimationFrame` scroll.
 
-- `matchday_leaderboard` — return `correct_results`, `exact_scores`, `correct_first_scorers` from `matchday_scores`; ORDER BY tiebreakers + `display_name`.
-- `global_leaderboard` — aggregate per-user sums of the three counters from `matchday_scores` (so global tiebreakers reflect cumulative performance); add them to the returned columns; ORDER BY `total_points DESC, sum(correct_results) DESC, sum(exact_scores) DESC, sum(correct_first_scorers) DESC, display_name ASC`. Tournament winner points still added to `total_points` as today.
+### Edit `src/components/play/ByDateView.tsx` and `ByMatchdayView.tsx`
+- Wrap each MatchCard render with `<div id={`match-${m.id}`} className={isImminentUnpredicted(m) ? 'rounded-2xl ring-2 ring-amber-glow/60 animate-[pulse_2s_ease-in-out_infinite]' : ''}>`. Helper lives in a shared util, e.g. `src/lib/imminent.ts`, exporting `isImminentUnpredicted(match, nowMs)` and `MS_2H = 2*60*60*1000`.
+- To keep the ring "live" (so it disappears when kickoff passes), use the same `useNow(60_000)` at the view level so the boolean refreshes once a minute (sufficient for the 2h window edge).
 
-Both RPCs gain a `rank int` column computed with `DENSE_RANK()` using the same tiebreaker ordering, so the client doesn't need to recompute. `matchday_leaderboard` already returns `rank`; `global_leaderboard` will start returning it (currently the client uses array index — switch to RPC rank).
+### New file: `src/lib/imminent.ts`
+- `MS_2H`, `qualifies(match, nowMs)`, `formatCountdown(msRemaining)` returning `"1h 23m"` / `"23 minutes"` / `"4 minutes"` / `"< 1 minute"`.
 
-League filtering on both RPCs is unchanged (still uses `league_members`).
+### New file: `src/hooks/useNow.ts`
+- `useNow(intervalMs)` returning `Date.now()` and re-rendering on each tick. Cleaned up on unmount.
 
-## 4. Server function types
-
-Update return types in `src/lib/game.functions.ts` for `getLeaderboard`, `getLeaderboardPublic`, `getMatchdayLeaderboard`, `getMatchdayLeaderboardPublic` to include `rank`, `correct_results`, `exact_scores`, `correct_first_scorers`.
-
-## 5. Leaderboard UI — `src/routes/_authenticated/leaderboard.tsx`
-
-- Extend `OverallRow` / `MatchdayRow` with `rank`, `correct_results`, `exact_scores`, `correct_first_scorers`.
-- `OverallTab` switches from `i + 1` to `row.rank`. Compute a `tied` flag by checking whether any neighbour shares the same `rank`.
-- `Row` component:
-  - When `tied`, prefix the rank with `=` (e.g. `= 3`). Trophy still shown for ranks 1–3; the `=` sits in the secondary rank slot used today for top-3.
-  - When `tied`, wrap the row in a shadcn `Tooltip`/`title` showing: `Tied on points — ranked by correct results (X), exact scores (Y), correct first scorers (Z)`.
-- Same logic for `MatchdayTab` and `LeaguesTab` (which already reuses `OverallTab`).
-
-## 6. Out of scope
-
-- No change to per-prediction `points` scoring math; only aggregation/order changes.
-- No backend metric for streak tiebreakers.
-
-## Files
-
-- New migration: `matchday_scores` columns + backfill + updated `score_matchday`, `score_match`, `global_leaderboard`, `matchday_leaderboard`.
-- Modified: `src/lib/game.functions.ts` (types only).
-- Modified: `src/routes/_authenticated/leaderboard.tsx` (rank from RPC, `=` indicator, tooltip).
+## Out of scope
+- No dismiss / persistence.
+- No push or email notifications.
+- No changes to scoring, locking logic, or the per-card countdown.
+- Guest users: banner not rendered (no predictions possible).
