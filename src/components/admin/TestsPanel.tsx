@@ -191,6 +191,7 @@ export function TestsPanel() {
           </div>
         </div>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
