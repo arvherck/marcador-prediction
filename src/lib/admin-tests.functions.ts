@@ -137,10 +137,33 @@ export const testStandingsPopulated = createServerFn({ method: "POST" })
       .from("wc_standings")
       .select("id", { count: "exact", head: true });
     if (error) return { status: "fail", message: error.message };
-    return count === 48
-      ? { status: "pass", message: "All 48 standings rows present." }
-      : { status: "fail", message: `Groups table incomplete — ${count ?? 0} rows found` };
+    if (count !== 48) {
+      return { status: "fail", message: `Groups table incomplete — ${count ?? 0} rows found (expected 48)` };
+    }
+    // Secondary check: 12 groups A–L, each with 4 teams.
+    const { data: groups, error: gErr } = await supabaseAdmin
+      .from("wc_groups")
+      .select("id, name");
+    if (gErr) return { status: "fail", message: gErr.message };
+    const letters = (groups ?? []).map((g) => (g.name.match(/Group ([A-L])/) ?? [])[1]).filter(Boolean).sort();
+    const expectedLetters = "ABCDEFGHIJKL".split("");
+    const missing = expectedLetters.filter((l) => !letters.includes(l));
+    if (missing.length) {
+      return { status: "fail", message: `Missing groups: ${missing.join(", ")}` };
+    }
+    const { data: per, error: pErr } = await supabaseAdmin
+      .from("wc_standings")
+      .select("group_id");
+    if (pErr) return { status: "fail", message: pErr.message };
+    const counts = new Map<string, number>();
+    for (const r of per ?? []) counts.set(r.group_id, (counts.get(r.group_id) ?? 0) + 1);
+    const bad = [...counts.entries()].filter(([, n]) => n !== 4);
+    if (bad.length) {
+      return { status: "fail", message: `${bad.length} groups have ≠ 4 teams` };
+    }
+    return { status: "pass", message: "All 12 groups have 4 teams (48 rows) ✓" };
   });
+
 
 // ---------- Auth & Security ----------
 
