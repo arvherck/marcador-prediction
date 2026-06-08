@@ -126,7 +126,9 @@ function PlayPage() {
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
+      <UiTestPreviewBanner isAdmin={!!me.is_admin} />
       {!guest && (
+
         <ClosingSoonBanner
           matches={matches}
           view={view}
