@@ -8,8 +8,11 @@ export type MatchStatus = "upcoming" | "live" | "completed" | "cancelled";
 export type MatchRow = {
   id: number;
   matchday_id: number;
-  home_team: string;
-  away_team: string;
+  home_team: string | null;
+  away_team: string | null;
+  home_placeholder: string | null;
+  away_placeholder: string | null;
+  auto_populated: boolean;
   kickoff_at: string;
   home_score: number | null;
   away_score: number | null;
@@ -39,8 +42,11 @@ function mapMatch(
   m: {
     id: number;
     matchday_id: number;
-    home_team: string;
-    away_team: string;
+    home_team: string | null;
+    away_team: string | null;
+    home_placeholder?: string | null;
+    away_placeholder?: string | null;
+    auto_populated?: boolean | null;
     kickoff_at: string;
     home_score: number | null;
     away_score: number | null;
@@ -72,6 +78,9 @@ function mapMatch(
     matchday_id: m.matchday_id,
     home_team: m.home_team,
     away_team: m.away_team,
+    home_placeholder: m.home_placeholder ?? null,
+    away_placeholder: m.away_placeholder ?? null,
+    auto_populated: m.auto_populated ?? false,
     kickoff_at: m.kickoff_at,
     home_score: m.home_score,
     away_score: m.away_score,
