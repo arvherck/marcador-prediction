@@ -36,9 +36,11 @@ export const testMatchCount = createServerFn({ method: "POST" })
   .handler(async ({ context }): Promise<TestResult> => {
     await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Exclude any leftover __test rows so the launch-readiness count is honest.
     const { count, error } = await supabaseAdmin
       .from("matches")
-      .select("id", { count: "exact", head: true });
+      .select("id", { count: "exact", head: true })
+      .neq("home_team", "__test");
     if (error) return { status: "fail", message: error.message };
     if (count === 104) return { status: "pass", message: "All 104 matches imported." };
     return {
@@ -46,6 +48,7 @@ export const testMatchCount = createServerFn({ method: "POST" })
       message: `Only ${count ?? 0} matches found — re-run CSV import`,
     };
   });
+
 
 export const testMatchdays = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
