@@ -565,11 +565,19 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
 
   const total = md.matches?.length ?? 0;
   return (
-    <details className="rounded-2xl border border-border bg-card overflow-hidden" open={!md.is_scored}>
+    <details
+      className={`rounded-2xl border bg-card overflow-hidden ${md.is_test ? "border-amber-glow/60" : "border-border"}`}
+      open={!md.is_scored}
+    >
       <summary className="px-4 py-3 flex items-center justify-between gap-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-muted-foreground text-xs chevron">▶</span>
           <div className="min-w-0">
+            {md.is_test && (
+              <div className="text-[11px] font-bold text-amber-glow mb-0.5">
+                ⚠️ Test data — not a real World Cup matchday
+              </div>
+            )}
             <div className="font-semibold truncate">{md.name}</div>
             <div className="text-xs text-muted-foreground truncate">
               {new Date(md.starts_at).toLocaleDateString()} · {total} match
