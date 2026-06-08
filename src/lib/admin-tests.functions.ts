@@ -1346,3 +1346,226 @@ export const testEdgeResultCorrection = createServerFn({ method: "POST" })
       return { status: "fail", message: e instanceof Error ? e.message : String(e) };
     }
   });
+
+// ---------- Prediction lock ----------
+
+async function withLockTestUser<T>(fn: (userId: string) => Promise<T>): Promise<T> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const email = `lock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@marcador-locktest.com`;
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password: crypto.randomUUID(),
+    email_confirm: true,
+  });
+  if (error || !data.user) throw new Error(`createUser failed: ${error?.message ?? "unknown"}`);
+  const uid = data.user.id;
+  try {
+    return await fn(uid);
+  } finally {
+    try { await supabaseAdmin.auth.admin.deleteUser(uid); } catch { /* ignore */ }
+  }
+}
+
+function isLockError(msg: string | null | undefined): boolean {
+  return !!msg && /predictions are locked/i.test(msg);
+}
+
+export const testLockUiPastMatch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { count, error } = await supabaseAdmin
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .lt("kickoff_at", new Date().toISOString());
+    if (error) return { status: "fail", message: error.message };
+    if (!count || count === 0)
+      return { status: "fail", message: "No past matches exist — cannot verify UI lock state" };
+    return { status: "pass", message: `UI would render locked for ${count} past matches` };
+  });
+
+export const testLockServerRejectsPastInsert = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: m } = await supabaseAdmin
+      .from("matches")
+      .select("id")
+      .lt("kickoff_at", new Date().toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (!m) return { status: "warn", message: "No past matches available" };
+    return await withLockTestUser(async (uid) => {
+      const { data: inserted, error } = await supabaseAdmin
+        .from("predictions")
+        .insert({ user_id: uid, match_id: m.id, home_goals: 1, away_goals: 1, first_scorer: "home", booster: false })
+        .select("id")
+        .maybeSingle();
+      if (inserted?.id) {
+        await supabaseAdmin.from("predictions").delete().eq("id", inserted.id);
+        return { status: "fail", message: "Insert succeeded — lock not enforced" };
+      }
+      if (isLockError(error?.message)) return { status: "pass", message: "Past match insert rejected ✓" };
+      return { status: "fail", message: `Unexpected error: ${error?.message ?? "no row, no error"}` };
+    });
+  });
+
+export const testLockServerRejectsCompleted = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: m } = await supabaseAdmin
+      .from("matches")
+      .select("id")
+      .eq("status", "completed")
+      .limit(1)
+      .maybeSingle();
+    if (!m) return { status: "warn", message: "No completed matches available" };
+    return await withLockTestUser(async (uid) => {
+      const { data: inserted, error } = await supabaseAdmin
+        .from("predictions")
+        .insert({ user_id: uid, match_id: m.id, home_goals: 2, away_goals: 0, first_scorer: "home", booster: false })
+        .select("id")
+        .maybeSingle();
+      if (inserted?.id) {
+        await supabaseAdmin.from("predictions").delete().eq("id", inserted.id);
+        return { status: "fail", message: "Insert on completed match succeeded — lock not enforced" };
+      }
+      if (isLockError(error?.message)) return { status: "pass", message: "Completed match insert rejected ✓" };
+      return { status: "fail", message: `Unexpected error: ${error?.message ?? "no row, no error"}` };
+    });
+  });
+
+export const testLockServerRejectsUpdate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const nowIso = new Date().toISOString();
+    const { data: rows } = await supabaseAdmin
+      .from("predictions")
+      .select("id, home_goals, match_id, matches!inner(kickoff_at)")
+      .lt("matches.kickoff_at", nowIso)
+      .limit(1);
+    const p = rows?.[0];
+    if (!p) return { status: "warn", message: "No predictions on past matches to test" };
+    const original = p.home_goals;
+    const attempt = original === 9 ? 8 : 9;
+    const { error, data } = await supabaseAdmin
+      .from("predictions")
+      .update({ home_goals: attempt })
+      .eq("id", p.id)
+      .select("id, home_goals")
+      .maybeSingle();
+    if (data && data.home_goals === attempt) {
+      await supabaseAdmin.from("predictions").update({ home_goals: original }).eq("id", p.id);
+      return { status: "fail", message: "Update on past match succeeded — lock not enforced (restored)" };
+    }
+    if (isLockError(error?.message)) return { status: "pass", message: "Update after kickoff rejected ✓" };
+    return { status: "fail", message: `Unexpected: ${error?.message ?? "silent no-op"}` };
+  });
+
+export const testLockServerAcceptsFuture = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: m } = await supabaseAdmin
+      .from("matches")
+      .select("id")
+      .gt("kickoff_at", new Date().toISOString())
+      .eq("teams_confirmed", true)
+      .eq("status", "upcoming")
+      .limit(1)
+      .maybeSingle();
+    if (!m) return { status: "warn", message: "No future confirmed upcoming matches available" };
+    return await withLockTestUser(async (uid) => {
+      const { data: inserted, error } = await supabaseAdmin
+        .from("predictions")
+        .insert({ user_id: uid, match_id: m.id, home_goals: 1, away_goals: 0, first_scorer: "home", booster: false })
+        .select("id")
+        .maybeSingle();
+      if (inserted?.id) {
+        await supabaseAdmin.from("predictions").delete().eq("id", inserted.id);
+        return { status: "pass", message: "Future match accepted prediction ✓" };
+      }
+      return { status: "fail", message: `Future insert rejected: ${error?.message ?? "unknown"}` };
+    });
+  });
+
+export const testLockReopensWhenKickoffMovedFuture = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: m } = await supabaseAdmin
+      .from("matches")
+      .select("id, kickoff_at, status, is_final, teams_confirmed")
+      .eq("status", "completed")
+      .limit(1)
+      .maybeSingle();
+    if (!m) return { status: "warn", message: "No completed matches available" };
+    if (!m.teams_confirmed)
+      return { status: "warn", message: "Selected match has no confirmed teams" };
+    const future = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const orig = { kickoff_at: m.kickoff_at, status: m.status, is_final: m.is_final };
+    try {
+      await supabaseAdmin
+        .from("matches")
+        .update({ kickoff_at: future, status: "upcoming", is_final: false })
+        .eq("id", m.id);
+      return await withLockTestUser(async (uid) => {
+        const { data: inserted, error } = await supabaseAdmin
+          .from("predictions")
+          .insert({ user_id: uid, match_id: m.id, home_goals: 1, away_goals: 1, first_scorer: "home", booster: false })
+          .select("id")
+          .maybeSingle();
+        if (inserted?.id) {
+          await supabaseAdmin.from("predictions").delete().eq("id", inserted.id);
+          return { status: "pass", message: "Moving kickoff to future reopened predictions ✓" };
+        }
+        return { status: "fail", message: `Still locked: ${error?.message ?? "unknown"}` };
+      });
+    } finally {
+      await supabaseAdmin.from("matches").update(orig).eq("id", m.id);
+    }
+  });
+
+export const testLockRelocksWhenKickoffMovedPast = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: m } = await supabaseAdmin
+      .from("matches")
+      .select("id, kickoff_at")
+      .gt("kickoff_at", new Date().toISOString())
+      .eq("teams_confirmed", true)
+      .eq("status", "upcoming")
+      .limit(1)
+      .maybeSingle();
+    if (!m) return { status: "warn", message: "No future upcoming matches available" };
+    const past = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const origKickoff = m.kickoff_at;
+    try {
+      await supabaseAdmin.from("matches").update({ kickoff_at: past }).eq("id", m.id);
+      return await withLockTestUser(async (uid) => {
+        const { data: inserted, error } = await supabaseAdmin
+          .from("predictions")
+          .insert({ user_id: uid, match_id: m.id, home_goals: 1, away_goals: 0, first_scorer: "home", booster: false })
+          .select("id")
+          .maybeSingle();
+        if (inserted?.id) {
+          await supabaseAdmin.from("predictions").delete().eq("id", inserted.id);
+          return { status: "fail", message: "Insert succeeded after moving kickoff to past" };
+        }
+        if (isLockError(error?.message)) return { status: "pass", message: "Moving kickoff to past re-locked ✓" };
+        return { status: "fail", message: `Unexpected: ${error?.message ?? "unknown"}` };
+      });
+    } finally {
+      await supabaseAdmin.from("matches").update({ kickoff_at: origKickoff }).eq("id", m.id);
+    }
+  });
