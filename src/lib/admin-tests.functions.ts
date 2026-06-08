@@ -489,6 +489,7 @@ export const testKickoffLock = createServerFn({ method: "POST" })
         await supabaseAdmin.from("matches").delete().eq("id", matchId);
       }
       await supabaseAdmin.from("matchdays").delete().eq("id", md.id);
+      await purgeTestArtifacts();
     }
   });
 
