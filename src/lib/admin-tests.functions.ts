@@ -1677,9 +1677,11 @@ export const testStandingsVerifier = createServerFn({ method: "POST" })
 
       // Ordering
       const sorted = [...s1Rows].sort((a, b) => {
-        if (b.points !== a.points) return b.points - a.points;
-        if (b.goal_difference !== a.goal_difference) return b.goal_difference - a.goal_difference;
-        return b.goals_for - a.goals_for;
+        const ap = a.points ?? 0, bp = b.points ?? 0;
+        if (bp !== ap) return bp - ap;
+        const agd = a.goal_difference ?? 0, bgd = b.goal_difference ?? 0;
+        if (bgd !== agd) return bgd - agd;
+        return (b.goals_for ?? 0) - (a.goals_for ?? 0);
       }).map((r) => r.team);
       const orderOk = STANDINGS_EXPECTED_ORDER.every((t, i) => sorted[i] === t);
       if (!orderOk) allOk = false;
