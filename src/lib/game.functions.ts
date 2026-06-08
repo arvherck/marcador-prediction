@@ -576,20 +576,26 @@ export const joinLeagueFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: leagueId, error: rpcErr } = await supabase.rpc(
-      "find_league_by_code",
-      { _code: data.invite_code },
-    );
-    if (rpcErr) throw new Error(rpcErr.message);
+    // eslint-disable-next-line no-console
+    console.error("[joinLeague] input", JSON.stringify(data.invite_code), "len", data.invite_code.length, "user", userId);
+    const rpcRes = await supabase.rpc("find_league_by_code", { _code: data.invite_code });
+    // eslint-disable-next-line no-console
+    console.error("[joinLeague] rpc result", JSON.stringify({ data: rpcRes.data, error: rpcRes.error }));
+    if (rpcRes.error) throw new Error(rpcRes.error.message);
+    const leagueId = rpcRes.data as string | null;
     if (!leagueId) throw new Error("Invalid invite code.");
     const { error } = await supabase
       .from("league_members")
       .upsert(
-        { league_id: leagueId as string, user_id: userId },
+        { league_id: leagueId, user_id: userId },
         { onConflict: "league_id,user_id", ignoreDuplicates: true },
       );
-    if (error) throw safeError(error, "game");
-    return { id: leagueId as string };
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("[joinLeague] upsert error", JSON.stringify(error));
+      throw safeError(error, "game");
+    }
+    return { id: leagueId };
   });
 
 export const getMyLeagues = createServerFn({ method: "GET" })
