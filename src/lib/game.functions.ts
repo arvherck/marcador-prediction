@@ -408,6 +408,10 @@ export const getLeaderboard = createServerFn({ method: "GET" })
       scored_predictions: number;
       last_md_points: number;
       current_streak: number;
+      rank: number | null;
+      correct_results: number;
+      exact_scores: number;
+      correct_first_scorers: number;
     }>;
   });
 
