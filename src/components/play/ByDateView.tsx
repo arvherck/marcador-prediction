@@ -14,6 +14,7 @@ import {
   type DayBucket,
 } from "@/lib/date-labels";
 import type { MatchRow } from "@/lib/game.functions";
+import { isImminentUnpredicted } from "@/lib/imminent";
 
 const DEFAULT_WINDOW_DAYS = 3;
 const SECOND_WINDOW_DAYS = 7;
@@ -317,16 +318,28 @@ function DaySection({
         </span>
       </div>
       <div className="space-y-3">
-        {bucket.matches.map((m) => (
-          <MatchCard
-            key={m.id}
-            match={m}
-            boostedMatchIdInMatchday={boostedByMd.get(m.matchday_id) ?? null}
-            onChanged={onInvalidate}
-            guest={guest}
-            onGuestAction={onGuestAction}
-          />
-        ))}
+        {bucket.matches.map((m) => {
+          const urgent = isImminentUnpredicted(m, nowMs);
+          return (
+            <div
+              key={m.id}
+              id={`match-${m.id}`}
+              className={
+                urgent
+                  ? "rounded-2xl ring-2 ring-amber-glow/60 animate-pulse"
+                  : ""
+              }
+            >
+              <MatchCard
+                match={m}
+                boostedMatchIdInMatchday={boostedByMd.get(m.matchday_id) ?? null}
+                onChanged={onInvalidate}
+                guest={guest}
+                onGuestAction={onGuestAction}
+              />
+            </div>
+          );
+        })}
       </div>
       {allPredicted && nextKickoff && (
         <p className="text-center text-[11px] text-muted-foreground">

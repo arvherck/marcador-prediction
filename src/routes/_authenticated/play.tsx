@@ -12,6 +12,7 @@ import { useGuestGate } from "@/components/GuestGate";
 import { useGuest } from "@/lib/guest";
 import { ByDateView } from "@/components/play/ByDateView";
 import { ByMatchdayView } from "@/components/play/ByMatchdayView";
+import { ClosingSoonBanner } from "@/components/play/ClosingSoonBanner";
 import { HowToPlayModal } from "@/components/play/HowToPlayModal";
 import {
   getAllMatches,
@@ -123,6 +124,27 @@ function PlayPage() {
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
+      {!guest && (
+        <ClosingSoonBanner
+          matches={matches}
+          view={view}
+          onSwitchToDate={(matchId) => {
+            navigate({
+              search: (p: z.infer<typeof searchSchema>) => ({
+                ...p,
+                view: "date" as const,
+              }),
+            });
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                document
+                  .getElementById(`match-${matchId}`)
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" });
+              });
+            });
+          }}
+        />
+      )}
       {!guest && <TournamentBanner />}
       <header className="mb-5 relative">
         <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
