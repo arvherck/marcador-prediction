@@ -1,57 +1,89 @@
-# Edge case score tester
+# Prediction lock tester
 
-Adds a new "Scoring edge cases" card to the existing 🧪 Tests section that runs 13 isolated, fully-automated scoring tests in temporary matchdays.
+Add a new card to the admin Panel de Control → 🧪 Tests section that verifies prediction locking works correctly at both the UI level (checks computed locked state) and the server level (attempts inserts/updates and confirms the `validate_prediction` trigger rejects them with `Predictions are locked for this match`).
 
-Reuses the existing `withTempScenario` / `seedMatchAndPrediction` / `scoreAndGetPoints` helpers in `src/lib/admin-tests.functions.ts` (already prefix matchdays with `__test_` and purge on every run). All temp matches will use `home_team='__test'` as requested for the manual cleanup query, on top of the existing prefix-based purge.
+## Important constraint — admin bypass
 
-## Heads-up on existing test conflict
+The existing `validate_prediction` trigger short-circuits when `auth.uid()` is an admin (so the test data tools can seed predictions on completed matches). That means we cannot meaningfully test the lock as the admin user — every insert would silently bypass the trigger.
 
-The user's spec for **Correct result wrong score** (pred 2-0 vs actual 1-0) expects 8 pts: `3 result + 2 away (0=0) + 3 scorer`. The existing `testScoringCorrectResult` runs the same scenario but asserts 6 — it's wrong and will start failing once the matching edge-case test passes. I'll leave it untouched and surface the discrepancy in the new panel; if you want me to also update the old test or remove it, say so.
+To exercise the real lock path, the server tests will:
+- Use `supabaseAdmin` (service role) to attempt the insert/update. With service role, `auth.uid()` is `NULL`, so the admin-bypass clause is false and the trigger's lock check runs exactly as it does for a real signed-in non-admin user.
+- Use a dedicated ephemeral test user as `user_id` (so we never touch real user data and so we satisfy the FK on `predictions.user_id`). The user is created at the start of the run via the Supabase auth admin API and deleted at the end.
 
-## 1. New server functions (append to `src/lib/admin-tests.functions.ts`)
+This is the only practical way to exercise the trigger without running an OAuth/sign-in flow for a fake user. The card description will note: "Tests run as a temporary non-admin user against the same `validate_prediction` trigger real users hit."
 
-All under a new `// ---------- Edge case scoring ----------` section. Each one: `assertAdmin` → `withTempScenario` → `seedMatchAndPrediction` (with `home_team:'__test'`, `away_team:'__test'`) → `scoreAndGetPoints` → assert exact integer → returns `{ status:'pass'|'fail', message }` with expected vs actual on fail. Try/finally is already guaranteed by `withTempScenario`.
+## What to build
 
-Single-user tests (12 of 13):
+### 1. Server functions — `src/lib/admin-tests.functions.ts`
 
-- `testEdgeExactScoreline` — 2-1 home/home → 13
-- `testEdgeCorrectResultWrongScore` — pred 2-0/home, actual 3-0/home → 8
-- `testEdgeWrongFirstScorer` — pred 1-0/home, actual 1-0/away → 10
-- `testEdgeDrawCorrect` — 1-1/home both sides → 13
-- `testEdgeZeroZeroDraw` — 0-0/none both sides → 13
-- `testEdgeZeroZeroBooster` — 0-0/none booster, actual 0-0 → 26
-- `testEdgeWrongResult` — pred 2-0, actual 0-1 → 0
-- `testEdgeAwayWin` — 0-2/away both sides → 13
-- `testEdgeBooster` — 1-0/home booster, actual 1-0/home → 26
-- `testEdgeUnderdog10pct` — see below (NOT below threshold → 13)
-- `testEdgeUnderdogBelow10pct` — see below (fires → 18)
-- `testEdgeRescoreNoDouble` — score once, capture pts, score same matchday again, assert unchanged
-- `testEdgeResultCorrection` — actual 2-1 vs pred 2-1 → 13, update match to 1-1, re-score, assert 0
+Add a new `// ---------- Prediction lock ----------` section with 7 server functions, all wrapped with `requireSupabaseAuth` + `assertAdmin(context.userId)` (same pattern as existing tests). Each returns a `TestResult`.
 
-### Underdog tests
+Shared helper (file-private):
 
-`predictions.user_id` FKs `auth.users` with a unique `(user_id, match_id)`, so the N predictions need N distinct auth users. New helper `withExtraTestUsers(n, fn)` does:
+```ts
+async function withLockTestUser<T>(fn: (userId: string) => Promise<T>): Promise<T> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const email = `lock-${Date.now()}-${Math.random().toString(36).slice(2,8)}@marcador-locktest.com`;
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email, password: crypto.randomUUID(), email_confirm: true,
+  });
+  if (error || !data.user) throw new Error(`createUser failed: ${error?.message}`);
+  const uid = data.user.id;
+  try {
+    return await fn(uid);
+  } finally {
+    // CASCADE on auth.users removes predictions/profiles
+    await supabaseAdmin.auth.admin.deleteUser(uid);
+  }
+}
+```
 
-1. Loops `i=1..n-1` calling `supabaseAdmin.auth.admin.createUser({ email: 'edge-${ts}-${i}@marcador-edgetest.com', password: TestMarcador2026!, email_confirm: true })` and collects ids.
-2. Runs `fn(ids)`.
-3. In `finally`, deletes those auth users (CASCADE removes their predictions).
+Tests:
 
-For the **below 10%** test (N=11): admin predicts 3-2 (boosterless), 10 helper users predict 0-0. Actual = 3-2/home. Score, read admin's points, assert 18 (`3+2+2+3+3 + 5` underdog; no booster, no first-scorer mismatch).
+1. `testLockUiPastMatch` — pick `matches` where `kickoff_at < now()` (any status), confirm at least one exists; pass with message "UI would render locked for X past matches"; fail if none exist.
+2. `testLockServerRejectsPastInsert` — find a past-kickoff match. `withLockTestUser` → attempt `supabaseAdmin.from("predictions").insert({user_id, match_id, home_goals:1, away_goals:1, first_scorer:'home'})`. Pass if error message contains `Predictions are locked`; fail if insert succeeds (rollback the row).
+3. `testLockServerRejectsCompleted` — find a match with `status='completed'`, attempt same insert, expect lock error.
+4. `testLockServerRejectsUpdate` — find any existing prediction on a past match (`predictions JOIN matches WHERE kickoff_at < now()`). Save the prediction's current `home_goals`, attempt `update({ home_goals: <other value> })`. Pass if rejected; if it accidentally succeeds, restore the original value and fail. If no such prediction exists, return `warn` with "no predictions on past matches to test".
+5. `testLockServerAcceptsFuture` — find a match with `kickoff_at > now()` AND `teams_confirmed=true`. `withLockTestUser` → insert prediction → pass if accepted → delete the prediction. Fail with the actual error if rejected.
+6. `testLockReopensWhenKickoffMovedFuture` — pick a completed match. Save `kickoff_at` + `status` + `is_final`. Update to `kickoff_at = now()+2h`, `status='upcoming'`, `is_final=false` (the trigger checks both `kickoff_at` and `status`). `withLockTestUser` → attempt insert → pass if accepted. In `finally`: delete the test prediction, restore original `kickoff_at`/`status`/`is_final`. Fail with the error if rejected.
+7. `testLockRelocksWhenKickoffMovedPast` — pick an upcoming match with `kickoff_at > now()` and `teams_confirmed=true`. Save `kickoff_at`. Temporarily update to `now() - 1h`. `withLockTestUser` → attempt insert → pass if rejected with lock error. Always restore `kickoff_at` in `finally`.
 
-For the **at 10%** test (N=10): admin predicts 3-2, 9 helpers predict 0-0. Actual = 3-2/home. Admin should get exactly 13 (no +5 because share = 0.1 is NOT `< 0.1`).
+All tests use `try/finally` to guarantee restoration of any temporarily modified match fields and cleanup of any test rows. Errors thrown by the trigger surface as `error.message` on the supabase response (`postgrest` returns 4xx with message); detection uses a case-insensitive `Predictions are locked` substring check.
 
-### Rescore + correction tests
+### 2. UI — `src/components/admin/TestsPanel.tsx`
 
-Both use the existing `seedMatchAndPrediction` then call `score_matchday` twice via the `supabaseAdmin.rpc('score_matchday', ...)` helper. The correction variant updates `matches.home_score / away_score / first_scorer` between scoring runs.
+Add a new `LOCK_TESTS: TestDef[]` array and a `<PredictionLockPanel />` card, rendered between `<EdgeCasesPanel />` and the existing "Pre-release checks" card. Visual style identical to `EdgeCasesPanel` (same card chrome, "▶ Run all" button, individual ▶ Run per row, ✅/❌/⚠️/⏳ status icons, message line).
 
-## 2. Wire into `TestsPanel.tsx`
+Header:
+- Title: "Prediction locking"
+- Subtitle: "Verifies predictions cannot be submitted or modified after kickoff. Runs as a temporary non-admin user against the real lock trigger."
 
-Add a new card **above** "Pre-release checks" (so it sits between `<TestDataPanel />` and the existing panel):
+Rows (in order):
+1. "UI: past matches render locked"
+2. "Server rejects insert on past match"
+3. "Server rejects insert on completed match"
+4. "Server rejects update after kickoff"
+5. "Future match accepts prediction"
+6. "Moving kickoff to future reopens predictions"
+7. "Moving kickoff back to past re-locks"
 
-- Header: "Scoring edge cases" + helper "Verifies the scoring engine against tricky scenarios that are commonly miscalculated."
-- "▶ Run all edge case tests" button (sequential like existing `runAll`)
-- 13 rows, each: status icon (✅/❌/⏳) + label + "Run" button
-- Failures show `expected X, got Y` from the server fn's message
-- New `EDGE_TESTS: TestDef[]` array using the same `RunState` machinery already in the file (refactor: pull `RunState`, `ICON`, and run helpers into either a small shared block or copy locally — copy is fine, the panel is internal)
+Reuses existing `RunState`, `ICON`, and per-row run-state machinery — extract the small list-rendering block from `EdgeCasesPanel` if convenient, or duplicate (same as today's pattern).
 
-No DB migration. No changes to scoring functions, no changes to `TestDataPanel`, no changes to other admin tests. All cleanup goes through the existing `purgeTestArtifacts` (matchday-name prefix) plus an extra fallback `DELETE FROM matches WHERE home_team='__test'` at the end of each test for belt-and-braces safety.
+## What will NOT change
+
+- `validate_prediction` trigger (and its admin bypass for test data tools) — untouched.
+- `score_match` / `score_matchday` / any scoring logic — untouched.
+- `TestDataPanel`, edge-case tests, and the existing "Predictions lock at kickoff" check under Pre-release — all untouched.
+- No new DB migration. No new tables. No changes to real user data.
+- No emails sent — `supabaseAdmin.auth.admin.createUser` with `email_confirm: true` does not trigger signup emails.
+
+## Cleanup guarantees
+
+- Every test that mutates a match wraps the mutation in `try/finally` and restores the original `kickoff_at`/`status`/`is_final`.
+- Every test that creates a test user uses `withLockTestUser`, which deletes the user in `finally` (CASCADE removes predictions/profile).
+- "Future match accepts prediction" deletes the inserted prediction before the test user is removed.
+
+## Files touched
+
+- `src/lib/admin-tests.functions.ts` — add ~7 exported `createServerFn` test handlers + `withLockTestUser` helper.
+- `src/components/admin/TestsPanel.tsx` — add `LOCK_TESTS` array, new imports, render `<PredictionLockPanel />` above Pre-release checks.
