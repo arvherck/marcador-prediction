@@ -1214,7 +1214,7 @@ export const adminPopulateBracket = createServerFn({ method: "POST" })
     if (error) throw safeError(error, "game");
     // Run cascade in case any knockout match is already final.
     await supabase.rpc("cascade_knockout_winners", { _caller_id: userId });
-    return result as Record<string, unknown>;
+    return JSON.parse(JSON.stringify(result)) as unknown;
   });
 
 export const adminCascadeKnockout = createServerFn({ method: "POST" })
