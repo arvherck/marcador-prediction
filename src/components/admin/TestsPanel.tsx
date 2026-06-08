@@ -225,3 +225,69 @@ export function TestsPanel() {
     </>
   );
 }
+
+function EdgeCasesPanel() {
+  const [state, setState] = useState<Record<string, RunState>>({});
+  const runOne = async (t: TestDef) => {
+    setState((s) => ({ ...s, [t.id]: "running" }));
+    try {
+      const r = await t.run();
+      setState((s) => ({ ...s, [t.id]: r }));
+    } catch (e) {
+      setState((s) => ({
+        ...s,
+        [t.id]: { status: "fail", message: e instanceof Error ? e.message : String(e) },
+      }));
+    }
+  };
+  const runAll = async () => {
+    for (const t of EDGE_TESTS) await runOne(t);
+  };
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+        <div>
+          <div className="font-semibold">Scoring edge cases</div>
+          <div className="text-xs text-muted-foreground">
+            Verifies the scoring engine against tricky scenarios that are commonly miscalculated.
+          </div>
+        </div>
+        <button
+          onClick={runAll}
+          className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground"
+        >
+          ▶ Run all edge case tests
+        </button>
+      </div>
+      <div className="divide-y divide-border">
+        {EDGE_TESTS.map((t) => {
+          const s = state[t.id];
+          const status =
+            !s || s === "idle" ? "idle" : s === "running" ? "running" : s.status;
+          const message =
+            s && typeof s !== "string"
+              ? s.message
+              : s === "running"
+                ? "Running…"
+                : "Not run";
+          return (
+            <div key={t.id} className="px-4 py-2.5 flex items-center gap-3">
+              <span className="text-base w-6 text-center">{ICON[status]}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{t.label}</div>
+                <div className="text-xs text-muted-foreground truncate">{message}</div>
+              </div>
+              <button
+                onClick={() => runOne(t)}
+                disabled={s === "running"}
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+              >
+                ▶ Run
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
