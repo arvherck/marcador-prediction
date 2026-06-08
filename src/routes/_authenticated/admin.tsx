@@ -12,6 +12,7 @@ import {
   adminListPredictionsFn,
   adminMatchdayScoringSummaryFn,
   adminScoreMatchdayFn,
+  adminScoreMatchFn,
   adminSetMatchStatusFn,
   adminSetResultFn,
   adminUpdateMatchTeamsFn,
