@@ -324,9 +324,9 @@ export function MatchCard({
               const active = scorer === opt;
               const label =
                 opt === "home"
-                  ? `${teamFlag(match.home_team)} ${match.home_team}`
+                  ? `${teamFlag(match.home_team ?? "")} ${match.home_team ?? ""}`
                   : opt === "away"
-                  ? `${match.away_team} ${teamFlag(match.away_team)}`
+                  ? `${match.away_team ?? ""} ${teamFlag(match.away_team ?? "")}`
                   : "No goal";
               return (
                 <button
