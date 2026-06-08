@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { TestsPanel } from "@/components/admin/TestsPanel";
+import { KnockoutBracketPanel } from "@/components/admin/KnockoutBracketPanel";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import {
