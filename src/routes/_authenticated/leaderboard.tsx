@@ -297,6 +297,8 @@ function Board({ children }: { children: React.ReactNode }) {
 
 function Row({
   rank,
+  tied,
+  tieInfo,
   isMe,
   name,
   country,
@@ -307,6 +309,8 @@ function Row({
   donor,
 }: {
   rank: number;
+  tied?: boolean;
+  tieInfo?: string;
   isMe: boolean;
   name: string;
   country: string;
@@ -319,6 +323,7 @@ function Row({
   const isTop3 = rank <= 3;
   return (
     <div
+      title={tieInfo}
       className={`flex items-center justify-between gap-3 px-4 py-3 border-b border-border last:border-0 ${
         isMe ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : ""
       }`}
@@ -329,11 +334,13 @@ function Row({
             isTop3 ? "text-amber-glow" : "text-muted-foreground"
           }`}
         >
-          {isTop3 ? <Trophy size={18} className="fill-current" /> : rank}
+          {isTop3 ? <Trophy size={18} className="fill-current" /> : (
+            <span>{tied && <span className="text-muted-foreground/70 mr-0.5">=</span>}{rank}</span>
+          )}
         </div>
         {isTop3 && (
-          <div className="font-score font-bold text-sm text-muted-foreground tabular-nums w-5 -ml-1">
-            {rank}
+          <div className="font-score font-bold text-sm text-muted-foreground tabular-nums w-6 -ml-1">
+            {tied && <span className="text-muted-foreground/70">=</span>}{rank}
           </div>
         )}
         <div className="text-xl leading-none" aria-hidden>
