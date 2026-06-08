@@ -584,6 +584,10 @@ export type Database = {
         Args: { _label: string; _runners: Json; _thirds: Json; _winners: Json }
         Returns: string
       }
+      score_match: {
+        Args: { _caller_id: string; _match_id: number }
+        Returns: number
+      }
       score_matchday: {
         Args: { _caller_id: string; _matchday_id: number }
         Returns: number
