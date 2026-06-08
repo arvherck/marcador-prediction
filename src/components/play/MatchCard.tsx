@@ -162,13 +162,18 @@ export function MatchCard({
   const boost = useMutation({
     mutationFn: () =>
       setBoosterFn({ data: { matchday_id: match.matchday_id, match_id: match.id } }),
-    onSuccess: () => {
-      toast.success("2× booster applied.");
+    onSuccess: (res) => {
+      if (res && (res as { applied?: boolean }).applied === false) {
+        toast("Booster removed.");
+      } else {
+        toast.success("2× booster applied.");
+      }
       qc.invalidateQueries({ queryKey: ["all-matches"] });
       qc.invalidateQueries({ queryKey: ["matchdays-progress"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed."),
   });
+
 
   // Placeholder (teams TBD) card
   if (placeholder) {
@@ -369,7 +374,7 @@ export function MatchCard({
                 }
                 boost.mutate();
               }}
-              disabled={boost.isPending || otherBoosted}
+              disabled={boost.isPending || (otherBoosted && !isBoosted)}
               className={`inline-flex items-center gap-1 text-[11px] uppercase tracking-wider font-bold px-2.5 py-1.5 rounded-md transition ${
                 isBoosted
                   ? "bg-amber-gradient text-primary-foreground shadow-glow"
@@ -378,7 +383,9 @@ export function MatchCard({
                   : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"
               }`}
               title={
-                otherBoosted
+                isBoosted
+                  ? "Remove 2× booster"
+                  : otherBoosted
                   ? "Booster already used on another match in this matchday"
                   : "Apply 2× booster"
               }
@@ -386,6 +393,7 @@ export function MatchCard({
               <Zap size={12} fill={isBoosted ? "currentColor" : "none"} />
               {isBoosted ? "2× active" : "2× boost"}
             </button>
+
           ) : (
             <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
               <Lock size={10} /> Locked
