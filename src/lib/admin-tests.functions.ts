@@ -55,6 +55,7 @@ export const testMatchdays = createServerFn({ method: "POST" })
     const { data, error } = await supabaseAdmin
       .from("matchdays")
       .select("id, name")
+      .not("name", "like", "\\_\\_%")
       .order("id");
     if (error) return { status: "fail", message: error.message };
     if ((data?.length ?? 0) === 9)
