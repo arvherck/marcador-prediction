@@ -229,6 +229,62 @@ function synthesizeMatchdays(
   return Array.from(m.values()).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
 }
 
+function HowPointsWork() {
+  const rounds: Array<[string, number]> = [
+    ["Group Stage", 1],
+    ["Round of 32", 2],
+    ["Round of 16", 3],
+    ["Quarterfinals", 4],
+    ["Semifinals", 5],
+    ["Final", 6],
+  ];
+  return (
+    <details className="mb-5 rounded-2xl border border-border bg-card/60 group">
+      <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-sm font-semibold">
+        <span>
+          <span className="text-amber-glow">ℹ️ How points work</span>{" "}
+          <span className="text-muted-foreground font-normal text-xs">
+            — knockout rounds are worth more
+          </span>
+        </span>
+        <span className="text-muted-foreground text-xs group-open:rotate-180 transition">▾</span>
+      </summary>
+      <div className="px-4 pb-4 pt-1 text-sm space-y-2">
+        <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5">
+          {rounds.map(([label, mul]) => {
+            const cap = 13 * mul;
+            return (
+              <div key={label} className="contents">
+                <div className="flex items-center gap-2">
+                  {mul > 1 && (
+                    <span className="rounded-md bg-amber-glow/15 text-amber-glow px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                      {mul}×
+                    </span>
+                  )}
+                  <span>{label}</span>
+                </div>
+                <span className="text-muted-foreground tabular-nums">
+                  up to {cap} pts/match
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="pt-2 border-t border-border space-y-1 text-xs text-muted-foreground">
+          <div>
+            <span className="font-bold text-foreground">+ Booster:</span> doubles all points for one
+            match per matchday (applied after the round multiplier).
+          </div>
+          <div>
+            <span className="font-bold text-foreground">+ Underdog bonus:</span> flat +5 for rare
+            exact scorelines (predicted by &lt;10% of users). Not multiplied.
+          </div>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 function ScoringLegend() {
   const items = [
     ["+3", "Correct result"],
@@ -236,7 +292,7 @@ function ScoringLegend() {
     ["+2", "Correct away goals"],
     ["+3", "Correct goal difference"],
     ["+3", "Correct first scorer"],
-    ["+5", "Underdog bonus (<10%)"],
+    ["+5", "Underdog bonus (<10%, flat)"],
     ["2×", "Booster multiplier"],
   ];
   return (
