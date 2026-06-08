@@ -815,6 +815,23 @@ export const adminScoreMatchdayFn = createServerFn({ method: "POST" })
     return { ok: true, users_scored: (count as number) ?? 0 };
   });
 
+export const adminScoreMatchFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ match_id: z.number().int() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: count, error } = await supabase.rpc("score_match" as never, {
+      _match_id: data.match_id,
+      _caller_id: userId,
+    } as never);
+    if (error) {
+      console.error("[adminScoreMatchFn]", error);
+      throw new Error(error.message || "Failed to score match.");
+    }
+    return { ok: true, predictions_scored: (count as number) ?? 0 };
+  });
+
 
 export const adminAddMatchdayFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
