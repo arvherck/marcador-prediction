@@ -103,7 +103,7 @@ function CallbackPage() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, recordConsent]);
 
   return (
     <AuthShell>
