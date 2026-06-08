@@ -382,6 +382,27 @@ export type Database = {
         }
         Relationships: []
       }
+      test_users: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       tournament_predictions: {
         Row: {
           created_at: string
@@ -555,10 +576,24 @@ export type Database = {
           home_goals: number
         }[]
       }
+      add_test_users_to_league: {
+        Args: { _caller_id: string; _league_id: string }
+        Returns: number
+      }
       cascade_knockout_winners: { Args: { _caller_id: string }; Returns: Json }
       clear_test_scores: {
         Args: { _caller_id: string; _matchday_id?: number; _scope: string }
         Returns: Json
+      }
+      create_test_user_predictions: {
+        Args: { _caller_id: string; _matchday_id: number; _user_id: string }
+        Returns: number
+      }
+      delete_test_users: {
+        Args: { _caller_id: string }
+        Returns: {
+          user_id: string
+        }[]
       }
       fill_random_scores: {
         Args: { _caller_id: string; _matchday_id?: number; _scope: string }
