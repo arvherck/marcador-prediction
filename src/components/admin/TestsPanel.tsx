@@ -209,6 +209,7 @@ const CATEGORY_ORDER: Category[] = [
   "🏟️ Standings Trigger",
   "🔒 Prediction Locking",
   "🤝 Ligas",
+  "🧪 Pre-WC Test Matches",
 ];
 
 export function TestsPanel() {
