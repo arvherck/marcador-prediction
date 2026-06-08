@@ -313,10 +313,12 @@ export function TestsPanel() {
 
   return (
     <>
+      <UiTestPreviewPanel />
       <TestDataPanel />
       <EdgeCasesPanel />
       <PredictionLockPanel />
       <StandingsVerifierPanel />
+
 
       {/* 🚀 Launch Readiness */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
