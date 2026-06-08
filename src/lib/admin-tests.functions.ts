@@ -934,6 +934,7 @@ async function seedEdgeMatch(
     booster?: boolean;
   }>,
   actual: { home: number; away: number; scorer: "home" | "away" | "none" },
+  opts?: { phase?: string },
 ): Promise<number> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -944,7 +945,7 @@ async function seedEdgeMatch(
       home_team: EDGE_TEAM,
       away_team: EDGE_TEAM,
       kickoff_at: future,
-      phase: "Group stage",
+      phase: opts?.phase ?? "Group stage",
       teams_confirmed: true,
     })
     .select("id")
