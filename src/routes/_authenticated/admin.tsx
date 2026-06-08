@@ -167,6 +167,10 @@ function AdminInner({ displayName }: { displayName?: string }) {
             </div>
           </Section>
 
+          <Section id="bracket" title="Knockout Bracket">
+            <KnockoutBracketPanel />
+          </Section>
+
           <Section id="api-sync" title="API Sync">
             <ApiSyncPanel />
           </Section>
