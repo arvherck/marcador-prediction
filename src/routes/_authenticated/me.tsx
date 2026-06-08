@@ -93,9 +93,10 @@ function MePage() {
         </Section>
       )}
 
-      <Section title="Points per matchday">
-        <BarChart data={(scores.data as Score[] | undefined) ?? []} />
+      <Section title="Points per round">
+        <RoundBarChart data={(rounds.data as PointsByRoundRow[] | undefined) ?? []} />
       </Section>
+
 
       <Section title="Rank over time">
         <RankChart data={(scores.data as Score[] | undefined) ?? []} />
