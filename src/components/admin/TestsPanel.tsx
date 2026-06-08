@@ -1,8 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { TestDataPanel } from "@/components/admin/TestDataPanel";
+import {
+  buildReport,
+  toMarkdown,
+  toJson,
+  loadHistory,
+  saveToHistory,
+  formatHistoryLabel,
+  downloadFilename,
+  type Report,
+  type RunResult,
+} from "@/lib/test-report";
 
 import {
   testAdminExists,
@@ -226,24 +237,90 @@ const CATEGORY_ORDER: Category[] = [
   "🧪 Pre-WC Test Matches",
 ];
 
-export function TestsPanel() {
-  const [state, setState] = useState<Record<string, RunState>>({});
+type TestsPanelProps = { adminDisplayName?: string };
 
-  const runOne = async (t: TestDef) => {
+const STANDINGS_TEST: TestDef = {
+  id: "standings-verifier",
+  label: "Standings calculate correctly from results",
+  category: "🏟️ Standings Trigger",
+  run: () => testStandingsVerifier(),
+};
+
+const ALL_SUITE_TESTS: TestDef[] = [
+  ...TESTS,
+  ...EDGE_TESTS,
+  ...LOCK_TESTS,
+  STANDINGS_TEST,
+];
+
+export function TestsPanel({ adminDisplayName }: TestsPanelProps = {}) {
+  const [state, setState] = useState<Record<string, RunState>>({});
+  const [durations, setDurations] = useState<Record<string, number>>({});
+  const [lastReport, setLastReport] = useState<Report | null>(null);
+  const [historicalReport, setHistoricalReport] = useState<Report | null>(null);
+  const [history, setHistory] = useState<Report[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [isRunningAll, setIsRunningAll] = useState(false);
+
+  useEffect(() => {
+    setHistory(loadHistory());
+  }, []);
+
+  const runOne = async (t: TestDef): Promise<TestResult> => {
     setState((s) => ({ ...s, [t.id]: "running" }));
+    const start = Date.now();
     try {
       const r = await t.run();
       setState((s) => ({ ...s, [t.id]: r }));
+      setDurations((d) => ({ ...d, [t.id]: Date.now() - start }));
+      return r;
     } catch (e) {
-      setState((s) => ({
-        ...s,
-        [t.id]: { status: "fail", message: e instanceof Error ? e.message : String(e) },
-      }));
+      const r: TestResult = { status: "fail", message: e instanceof Error ? e.message : String(e) };
+      setState((s) => ({ ...s, [t.id]: r }));
+      setDurations((d) => ({ ...d, [t.id]: Date.now() - start }));
+      return r;
     }
   };
 
   const runAll = async () => {
-    for (const t of TESTS) await runOne(t);
+    setHistoricalReport(null);
+    setIsRunningAll(true);
+    const start = Date.now();
+    const runs: RunResult[] = [];
+    const localDurations: Record<string, number> = {};
+    try {
+      for (const t of ALL_SUITE_TESTS) {
+        const tStart = Date.now();
+        const r = await runOne(t);
+        const dur = Date.now() - tStart;
+        localDurations[t.id] = dur;
+        runs.push({
+          id: t.id,
+          name: t.label,
+          category: t.category,
+          critical: t.critical,
+          result: r,
+          duration_ms: dur,
+        });
+      }
+    } finally {
+      setIsRunningAll(false);
+    }
+    const durationMs = Date.now() - start;
+    const report = buildReport({
+      runs,
+      durationMs,
+      env: {
+        supabase_url: import.meta.env.VITE_SUPABASE_URL ?? "",
+        app_version: "0.0.0",
+        admin_display_name: adminDisplayName ?? "(unknown)",
+      },
+      appUrl: typeof window !== "undefined" ? window.location.origin : "",
+    });
+    setLastReport(report);
+    saveToHistory(report);
+    setHistory(loadHistory());
   };
 
   const criticals = TESTS.filter((t) => t.critical);
@@ -280,6 +357,37 @@ export function TestsPanel() {
     {} as Record<Category, TestDef[]>,
   );
 
+  const exportsEnabled = !!lastReport || !!historicalReport;
+  const activeReport = historicalReport ?? lastReport;
+
+  const handleCopy = async () => {
+    if (!activeReport) return;
+    try {
+      await navigator.clipboard.writeText(toMarkdown(activeReport));
+      toast.success("Report copied ✓ — paste into Claude or Lovable");
+    } catch {
+      toast.error("Could not copy to clipboard");
+    }
+  };
+
+  const handleDownload = () => {
+    if (!activeReport) return;
+    const blob = new Blob([toJson(activeReport)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = downloadFilename(activeReport);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const loadHistorical = (r: Report) => {
+    setHistoricalReport(r);
+    setHistoryOpen(false);
+  };
+
   const renderTestRow = (t: TestDef) => {
     const s = state[t.id];
     const status =
@@ -311,8 +419,54 @@ export function TestsPanel() {
     );
   };
 
+  // (durations tracked but currently surfaced only via report)
+  void durations;
+
+
+
   return (
     <>
+      {/* How-to info box */}
+      <div className="rounded-2xl border border-border bg-card mb-4">
+        <button
+          onClick={() => setInfoOpen((v) => !v)}
+          className="w-full px-4 py-3 flex items-center justify-between text-left"
+        >
+          <div className="font-semibold text-sm">ℹ️ How to use the test report</div>
+          <span className="text-xs text-muted-foreground">{infoOpen ? "▲" : "▼"}</span>
+        </button>
+        {infoOpen && (
+          <div className="px-4 pb-4 text-sm text-muted-foreground space-y-1">
+            <div>1. Click <strong>▶ Run all tests</strong></div>
+            <div>2. Click <strong>📋 Copy report</strong></div>
+            <div>
+              3. Paste into Claude with the message:
+              <div className="mt-1 ml-4 italic">
+                "Here is my Marcador test report. Please analyse the failures and write Lovable fix prompts for each."
+              </div>
+            </div>
+            <div>4. Paste the fix prompts into Lovable</div>
+            <div>5. After Lovable applies fixes, git pull and re-run tests to verify</div>
+          </div>
+        )}
+      </div>
+
+      {historicalReport && (
+        <div className="rounded-2xl border border-amber-glow/40 bg-amber-500/10 px-4 py-3 mb-4 flex items-center justify-between gap-3">
+          <div className="text-sm">
+            📜 Viewing historical report from{" "}
+            <strong>{new Date(historicalReport.report_generated_at).toLocaleString()}</strong> —
+            click "Run all tests" for current results
+          </div>
+          <button
+            onClick={() => setHistoricalReport(null)}
+            className="rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-muted"
+          >
+            Return to live
+          </button>
+        </div>
+      )}
+
       <UiTestPreviewPanel />
       <TestDataPanel />
       <EdgeCasesPanel />
@@ -358,19 +512,58 @@ export function TestsPanel() {
 
       {/* Full suite, grouped */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+        <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-b border-border">
           <div>
             <div className="font-semibold">Full test suite</div>
             <div className="text-xs text-muted-foreground">
-              {TESTS.length} tests across {CATEGORY_ORDER.length} categories.
+              {ALL_SUITE_TESTS.length} tests (main + edge cases + lock + standings).
             </div>
           </div>
-          <button
-            onClick={runAll}
-            className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground"
-          >
-            ▶ Run all tests
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={runAll}
+              disabled={isRunningAll}
+              className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-50"
+            >
+              {isRunningAll ? "Running…" : "▶ Run all tests"}
+            </button>
+            <button
+              onClick={handleCopy}
+              disabled={!exportsEnabled}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-40"
+            >
+              📋 Copy report
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={!exportsEnabled}
+              className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-40"
+            >
+              ⬇️ Download report
+            </button>
+            <div className="relative">
+              <button
+                onClick={() => setHistoryOpen((v) => !v)}
+                disabled={history.length === 0}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-40"
+              >
+                📜 History ({history.length})
+              </button>
+              {historyOpen && history.length > 0 && (
+                <div className="absolute right-0 mt-1 w-80 max-w-[90vw] z-20 rounded-lg border border-border bg-popover shadow-lg overflow-hidden">
+                  {history.map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => loadHistorical(r)}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-muted border-b border-border last:border-b-0"
+                    >
+                      {formatHistoryLabel(r)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {allRun && (

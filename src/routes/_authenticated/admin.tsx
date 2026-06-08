@@ -238,7 +238,7 @@ function AdminInner({ displayName }: { displayName?: string }) {
           </Section>
 
           <Section id="tests" title="Tests">
-            <TestsPanel />
+            <TestsPanel adminDisplayName={displayName} />
           </Section>
 
           <Section id="advanced" title="Advanced">

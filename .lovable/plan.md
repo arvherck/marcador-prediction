@@ -1,43 +1,77 @@
-## Investigation
+## Goal
+Add a client-side test report export feature to the 🧪 Tests section of the admin Panel de Control. No changes to existing test logic or test cases — pure read-on-top of current `TestsPanel` state.
 
-The "Group standings accuracy" test fails because the **expected values in the test fixture are wrong**, not the database calculation. I recomputed each team by hand from the 6 Group A matches the test applies — the DB-produced standings are arithmetically correct; the hardcoded expectations in `src/lib/admin-tests.functions.ts` do not match the match results they're verifying against.
+## UI changes (in `src/components/admin/TestsPanel.tsx`)
 
-### Recomputed from the test's own match list
+1. Next to **▶ Run all tests** in the "Full test suite" header, add three buttons:
+   - **📋 Copy report** → builds markdown, writes to clipboard, toast: *"Report copied ✓ — paste into Claude or Lovable"*.
+   - **⬇️ Download report** → builds JSON, downloads as `marcador-test-report-YYYYMMDD-HHmm.json`.
+   - **📜 History** → dropdown (popover) listing last 5 reports from localStorage; clicking one re-displays its results.
+   - All three disabled until `allRun === true` at least once in the session (or a historical report is loaded).
 
-Matches applied (Scenario 1):
+2. Add a collapsible info box at the top of `TestsPanel` with the 5-step "How to use this report" instructions (default collapsed; uses existing card styling).
+
+3. When viewing a historical report, render a banner at top:
+   *"Viewing historical report from {time} — click 'Run all tests' for current results"*, plus a "Return to live" button. Clicking **Run all tests** also clears historical view.
+
+## Report generation (new file `src/lib/test-report.ts`)
+
+Pure helper module, no server calls. Exports:
+
+- `buildReport(tests, results, env)` → in-memory structure with summary, launch readiness, categories, environment.
+- `toMarkdown(report)` → exact markdown spec in the prompt (header, Launch Readiness with critical list, Failed Tests with category/error/expected/actual/likely cause/file hint, Warnings, Passed compact list, Category Summary table with all 10 categories from spec, Suggested Fix Prompts for failed tests only, Environment).
+- `toJson(report)` → JSON shape per spec (pretty-printed 2-space).
+- `FIX_PROMPT_TEMPLATES: Record<testId, (ctx) => string>` — lookup keyed by test id covering the templates in the prompt; fallback generic template for any other failure.
+- `FILE_HINTS: Record<testId, string>` — short file/function hint per known test (e.g. `score_matchday` → `supabase migrations + src/lib/game.functions.ts`). Generic empty for others.
+- `LIKELY_CAUSES: Record<testId, string>` — one-sentence diagnoses for known failures.
+
+## State changes in `TestsPanel`
+
+- Track `startedAt` / `finishedAt` to compute `duration_ms` (set in `runAll`; per-test durations optional, default 0 if not measured cheaply — store `Date.now()` deltas around each `runOne` inside `runAll` to populate `duration_ms` per test).
+- Track `lastReport` so Copy/Download act on the most recent run.
+- On `runAll` completion: build report, save into `localStorage` key `marcador_test_reports` as newest-first array, capped at 5. Wrap reads/writes in try/catch (fail silently).
+- `historicalView: report | null` — when set, render results from the historical report's per-test status instead of live `state`.
+
+## Category mapping for report
+
+The spec's "Category Summary" lists 10 categories including some not in current `TESTS` array (e.g. *Security & RLS* vs current *🔐 Auth & RLS*, *Round Multipliers* vs *✖️ Multipliers*, plus *Launch Readiness* as a virtual category derived from `critical` flag). Mapping table:
+
+```text
+spec category          → source
+Data Integrity         → "📊 Data Integrity"
+Security & RLS         → "🔐 Auth & RLS"
+Scoring Engine         → "⚽ Scoring Engine" + EDGE_TESTS
+Round Multipliers      → "✖️ Multipliers"
+Tournament Winner      → "🏆 Tournament Winner"
+Prediction Locking     → "🔒 Prediction Locking" + LOCK_TESTS
+Standings Trigger      → "🏟️ Standings Trigger" + standings verifier
+Ligas                  → "🤝 Ligas"
+Pre-WC Test Matches    → "🧪 Pre-WC Test Matches"
+Launch Readiness       → virtual: all tests with critical=true
 ```
-Mexico 2-0 South Africa
-South Korea 1-1 Czechia
-Mexico 1-0 South Korea
-Czechia 3-1 South Africa
-Czechia 0-0 Mexico
-South Africa 2-2 South Korea
-```
 
-| Team        | P | W | D | L | GF | GA | GD | Pts | Current expected (wrong) |
-|-------------|---|---|---|---|----|----|----|-----|--------------------------|
-| Mexico      | 3 | 2 | 1 | 0 | 3  | 0  | +3 | 7   | ✓ matches |
-| Czechia     | 3 | 1 | 2 | 0 | 4  | 2  | +2 | 5   | ✗ test says D=1 L=1 GA=3 GD=1 Pts=4 |
-| South Korea | 3 | 0 | 2 | 1 | 3  | 4  | −1 | 2   | ✓ matches |
-| South Africa| 3 | 0 | 1 | 2 | 3  | 7  | −4 | 1   | ✗ test says GA=6 GD=−3 |
+Edge cases, lock tests, and standings verifier currently live in sibling panels with their own state. Decision needed (see question below).
 
-Scenario 2 (Mexico vs South Africa rewritten to 0-0):
+## Environment fields
 
-| Team         | P | W | D | L | GF | GA | GD | Pts | Current expected (wrong) |
-|--------------|---|---|---|---|----|----|----|-----|--------------------------|
-| Mexico       | 3 | 1 | 2 | 0 | 1  | 0  | +1 | 5   | ✓ matches |
-| South Africa | 3 | 0 | 2 | 1 | 3  | 5  | −2 | 2   | ✗ test says GA=4 GD=−1 |
+- `supabase_url`: `import.meta.env.VITE_SUPABASE_URL`
+- `app_version`: read from `package.json` via Vite `?raw` import or hardcode `__APP_VERSION__` via `define`. Simplest: import `version` from `../../package.json`.
+- `admin_display_name`: from existing auth context / profile query already used elsewhere in admin panel.
+- `app_url`: `window.location.origin`.
 
-The DB's `recalculate_team_standing` trigger output (shown via the ❌ markers in the screenshot) matches my hand-calculated values exactly. The test's hardcoded `STANDINGS_SCENARIO_1.Czechia`, `STANDINGS_SCENARIO_1["South Africa"]`, and `STANDINGS_SCENARIO_2["South Africa"]` are wrong.
+## Out of scope
 
-## Fix
+- No new server functions, migrations, or test logic changes.
+- No edits to the "Run all tests" function beyond adding report capture.
 
-Edit `src/lib/admin-tests.functions.ts` only — no DB or trigger changes.
+---
 
-1. `STANDINGS_SCENARIO_1.Czechia` → `{ played: 3, won: 1, drawn: 2, lost: 0, goals_for: 4, goals_against: 2, goal_difference: 2, points: 5 }`
-2. `STANDINGS_SCENARIO_1["South Africa"]` → `{ played: 3, won: 0, drawn: 1, lost: 2, goals_for: 3, goals_against: 7, goal_difference: -4, points: 1 }`
-3. `STANDINGS_SCENARIO_2["South Africa"]` → `{ played: 3, won: 0, drawn: 2, lost: 1, goals_for: 3, goals_against: 5, goal_difference: -2, points: 2 }`
+## One clarifying question
 
-The expected ordering (Mexico > Czechia > South Korea > South Africa) stays the same — both old and corrected Czechia totals still rank 2nd, and SA still 4th.
+The current panel runs **TESTS** (main suite), **EDGE_TESTS**, **LOCK_TESTS**, and **standings verifier** as separate "Run all" buttons with isolated state. The spec's report covers Scoring Engine edge cases, Prediction Locking, and Standings Trigger as their own categories.
 
-After the fix the test should pass green.
+Two options:
+- **A. Main "Run all tests" runs only `TESTS`** (current behavior); report covers only those. Edge/Lock/Standings categories appear in summary only if user ran them separately, otherwise show as "not run".
+- **B. Make "Run all tests" run everything** (TESTS + EDGE_TESTS + LOCK_TESTS + standings verifier) so a single click produces a complete report. Longer runtime but matches the spec's intent of a one-button complete report.
+
+I'd recommend **B** so the exported report is genuinely self-contained. Confirm before I implement, or say "A" to keep current scope.
