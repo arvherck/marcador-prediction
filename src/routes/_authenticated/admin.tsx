@@ -232,6 +232,10 @@ function AdminInner({ displayName }: { displayName?: string }) {
             <DonationsPanel />
           </Section>
 
+          <Section id="feedback" title="Feedback">
+            <FeedbackPanel />
+          </Section>
+
           <Section id="tests" title="Tests">
             <TestsPanel />
           </Section>
