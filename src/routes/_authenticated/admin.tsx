@@ -12,6 +12,7 @@ import {
   adminListPredictionsFn,
   adminMatchdayScoringSummaryFn,
   adminScoreMatchdayFn,
+  adminScoreMatchFn,
   adminSetMatchStatusFn,
   adminSetResultFn,
   adminUpdateMatchTeamsFn,
@@ -49,6 +50,7 @@ type Match = {
   phase: string | null;
   teams_confirmed?: boolean;
   status?: MatchStatusT | null;
+  unscored_count?: number;
 };
 type Matchday = {
   id: number;
@@ -57,6 +59,7 @@ type Matchday = {
   is_scored: boolean;
   matches: Match[] | null;
   prediction_count?: number;
+  unscored_match_count?: number;
 };
 
 function effectiveStatus(m: Match): MatchStatusT {
@@ -537,6 +540,11 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
                 .map((s) => `${STATUS_META[s].icon} ${counts[s]} ${STATUS_META[s].label.toLowerCase()}`)
                 .join(" · ") || "No matches"}
             </div>
+            {(md.unscored_match_count ?? 0) > 0 && (
+              <div className="text-[11px] font-bold text-amber-glow mt-0.5">
+                ● {md.unscored_match_count} match{md.unscored_match_count === 1 ? "" : "es"} need scoring
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -834,6 +842,7 @@ function ResultRow({
           >
             {m.is_final ? "Update" : "Save"}
           </button>
+          <ScoreMatchButton match={m} onChange={onChange} />
           <span
             className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${STATUS_META[eff].cls}`}
             title={`Status: ${STATUS_META[eff].label}`}
@@ -862,6 +871,46 @@ function ResultRow({
     </div>
   );
 }
+
+function ScoreMatchButton({ match, onChange }: { match: Match; onChange: () => void }) {
+  const qc = useQueryClient();
+  const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const canScore = match.status === "completed" && match.is_final;
+  const score = useMutation({
+    mutationFn: () => adminScoreMatchFn({ data: { match_id: match.id } }),
+    onSuccess: (r) => {
+      setFlash({ kind: "ok", msg: `✓ ${r.predictions_scored} predictions scored` });
+      setTimeout(() => setFlash(null), 3000);
+      qc.invalidateQueries();
+      onChange();
+    },
+    onError: (e) => {
+      setFlash({ kind: "err", msg: e instanceof Error ? e.message : "Error" });
+    },
+  });
+  return (
+    <>
+      <button
+        onClick={() => score.mutate()}
+        disabled={!canScore || score.isPending}
+        title={canScore ? "Score this match now" : "Save a result first to enable scoring"}
+        className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+      >
+        Score
+      </button>
+      {flash && (
+        <span
+          className={`text-[11px] font-medium ${flash.kind === "ok" ? "text-success" : "text-destructive"}`}
+        >
+          {flash.msg}
+        </span>
+      )}
+    </>
+  );
+}
+
+
+
 
 
 function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
