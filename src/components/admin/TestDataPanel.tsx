@@ -38,9 +38,67 @@ export function TestDataPanel() {
   >(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // Multi-user simulation state
+  const [simCount, setSimCount] = useState<number>(5);
+  const [simResult, setSimResult] = useState<{
+    users_created: number;
+    predictions_added: number;
+    leaderboard: { user_id: string; display_name: string; total_points: number }[];
+  } | null>(null);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  const [selectedLeague, setSelectedLeague] = useState<string>("");
+
   const mds = useQuery({
     queryKey: ["admin-matchdays-slim"],
     queryFn: () => adminListMatchdaysSlimFn(),
+  });
+
+  const testUsers = useQuery({
+    queryKey: ["admin-test-users"],
+    queryFn: () => adminListTestUsersFn(),
+  });
+
+  const leagues = useQuery({
+    queryKey: ["admin-leagues-for-test"],
+    queryFn: () => adminListLeaguesForTestFn(),
+  });
+
+  const createUsers = useMutation({
+    mutationFn: () => adminCreateTestUsersFn({ data: { count: simCount } }),
+    onSuccess: (r) => {
+      setSimResult({
+        users_created: r.users_created,
+        predictions_added: r.predictions_added,
+        leaderboard: r.leaderboard,
+      });
+      toast.success(`${r.users_created} test users created · ${r.predictions_added} predictions added`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const removeUsers = useMutation({
+    mutationFn: () => adminDeleteTestUsersFn(),
+    onSuccess: (r) => {
+      setSimResult(null);
+      setRemoveConfirmOpen(false);
+      toast.success(`✓ ${r.removed} test users removed`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Error");
+      setRemoveConfirmOpen(false);
+    },
+  });
+
+  const addToLeague = useMutation({
+    mutationFn: () => adminAddTestUsersToLeagueFn({ data: { league_id: selectedLeague } }),
+    onSuccess: (r) => {
+      const ligaName = leagues.data?.find((l) => l.id === selectedLeague)?.name ?? "liga";
+      toast.success(`✓ Added ${r.added} test users to ${ligaName}`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
   const fill = useMutation({
