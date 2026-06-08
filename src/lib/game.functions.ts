@@ -145,6 +145,7 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
       supabase
         .from("matchdays")
         .select("id, name, starts_at, is_scored")
+        .not("name", "like", "\\_\\_%")
         .order("starts_at", { ascending: true }),
       supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final, status"),
       supabase.from("predictions").select("match_id").eq("user_id", userId),
@@ -640,6 +641,7 @@ export const adminListMatchdays = createServerFn({ method: "GET" })
     const { data: mds, error } = await supabase
       .from("matchdays")
       .select("*")
+      .not("name", "like", "\\_\\_%")
       .order("starts_at", { ascending: true });
     if (error) throw safeError(error, "game");
     const { data: ms, error: mErr } = await supabase
@@ -1120,7 +1122,7 @@ export const getFixtureStatsPublic = createServerFn({ method: "GET" }).handler(
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ count: matchCount }, { count: mdCount }] = await Promise.all([
       supabaseAdmin.from("matches").select("id", { count: "exact", head: true }),
-      supabaseAdmin.from("matchdays").select("id", { count: "exact", head: true }),
+      supabaseAdmin.from("matchdays").select("id", { count: "exact", head: true }).not("name", "like", "\\_\\_%"),
     ]);
     return { matches: matchCount ?? 0, matchdays: mdCount ?? 0 };
   },

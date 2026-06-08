@@ -1,44 +1,50 @@
-## Root cause
+## 1. Delete the orphaned `__probe` data now
 
-The three "Scoring engine" tests and "Booster doubles points" all funnel through `scoreAndGetPoints()` in `src/lib/admin-tests.functions.ts`, which calls:
+Run a single SQL cleanup (via the data-insert tool) that targets only rows whose matchday name starts with `__`:
 
-```ts
-authedSupabase.rpc("score_matchday", { _matchday_id: mdId })
+```sql
+DELETE FROM predictions
+ WHERE match_id IN (
+   SELECT id FROM matches WHERE matchday_id IN (
+     SELECT id FROM matchdays WHERE name LIKE '\_\_%' ESCAPE '\'
+   )
+ );
+DELETE FROM matches
+ WHERE matchday_id IN (
+   SELECT id FROM matchdays WHERE name LIKE '\_\_%' ESCAPE '\'
+ );
+DELETE FROM matchday_scores
+ WHERE matchday_id IN (
+   SELECT id FROM matchdays WHERE name LIKE '\_\_%' ESCAPE '\'
+ );
+DELETE FROM matchdays WHERE name LIKE '\_\_%' ESCAPE '\';
 ```
 
-But the DB function signature is `score_matchday(_matchday_id INT, _caller_id UUID)` — it requires both args. PostgREST therefore rejects the call with `PGRST202 Could not find the function public.score_matchday(_matchday_id) in the schema cache` (confirmed in the dev-server log). The error is then re-thrown by `safeError`, surfacing as the generic "Something went wrong" for the booster test, and as the stale "duplicate key … matchdays_pkey" message that's still cached on the panel from earlier runs (will clear once tests stop throwing on the RPC).
+Currently this only removes the single `__probe` row (id 13) plus any of its (zero) children. No production data is touched.
 
-The other game-logic tests (Predictions lock at kickoff, Standings trigger) don't touch `score_matchday`, which matches the screenshot (they're green).
+## 2. Harden the test suite cleanup
 
-## Fix
+`src/lib/admin-tests.functions.ts` already wraps inserts in try/finally (`withTempScenario`, `testKickoffLock`), but `__probe` shows the safety net is needed. Changes:
 
-In `src/lib/admin-tests.functions.ts`, update `scoreAndGetPoints` to pass the caller id and call via the admin client (so we don't depend on the per-request auth client for an admin-gated RPC):
+- Add a `purgeTestArtifacts()` helper that deletes every `matchdays` row whose `name LIKE '\_\_%'` plus cascading `matches`, `predictions`, `matchday_scores`.
+- Call `purgeTestArtifacts()` at the START of `withTempScenario` and `testKickoffLock` (defensive sweep before seeding) and again in their `finally` blocks (defence in depth in case the existing per-id cleanup misses anything, e.g. an id-mismatch or partial failure).
+- Keep all existing try/finally logic.
 
-```ts
-async function scoreAndGetPoints(mdId, userId, matchId) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { error } = await supabaseAdmin.rpc("score_matchday", {
-    _matchday_id: mdId,
-    _caller_id: userId,
-  });
-  if (error) throw new Error(error.message);
-  const { data, error: qErr } = await supabaseAdmin
-    .from("predictions")
-    .select("points")
-    .eq("user_id", userId)
-    .eq("match_id", matchId)
-    .maybeSingle();
-  if (qErr) throw new Error(qErr.message);
-  return data?.points ?? 0;
-}
-```
+## 3. Safety net: hide `__`-prefixed matchdays everywhere
 
-Drop the now-unused `authedSupabase` parameter at the four call sites in `testScoringExact`, `testScoringCorrectResult`, `testScoringWrongResult`, and `testBoosterDoubles`.
+Add a `.not("name", "like", "\\_\\_%")` filter to every query that lists matchdays for a UI or for a user-visible count. Files/locations:
 
-## Verify
+- `src/lib/game.functions.ts`
+  - `getPlayMatchdayStatus` (≈ line 146) — user Play view.
+  - `adminListMatchdays` (≈ line 641) — admin Results & scoring panel.
+  - `getFixtureStatsPublic` (≈ line 1123) — public matchday count.
+- `src/lib/admin-tests.functions.ts`
+  - `testMatchdays` (≈ line 56) — exclude `__` rows so the "expected 9" check stays correct even if a test is mid-flight.
 
-Re-run the Game Logic block in the Admin → Tests panel. Expect all six tests green (exact 13 pts, correct-result 6 pts, wrong-result 0 pts, booster doubles, lock, standings trigger).
+No changes to scoring logic, RPCs (`score_matchday`, `matchday_leaderboard`, `my_leagues`), or any matchday whose name does not start with `__`.
 
-## Out of scope
+## Technical notes
 
-No DB migration, no signature change to `score_matchday`, no edits to other tests.
+- PostgREST `.not("name", "like", "\\_\\_%")` escapes the literal underscores so we only match the double-underscore prefix, not any single-underscore name.
+- The SQL cleanup uses the data-insert tool (DELETE on existing tables, no schema change → no migration needed).
+- No new RLS, no new tables, no edge-function changes.
