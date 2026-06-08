@@ -1,89 +1,66 @@
-# Feedback System Plan
+# Profile Editing on Mi Marcador
 
-## 1. Database (migration)
+## 1. Server function
 
-New table `public.feedback`:
-- `id uuid pk default gen_random_uuid()`
-- `user_id uuid null` (FK `profiles.user_id`, on delete set null)
-- `display_name text null`
-- `category text not null check (category in ('bug','suggestion','question','other'))`
-- `message text not null check (char_length(message) between 10 and 1000)`
-- `page text null`
-- `created_at timestamptz not null default now()`
-- `is_read boolean not null default false`
-- `admin_notes text null`
+Add `updateProfileFn` in `src/lib/auth.functions.ts`:
 
-Indexes: `(is_read, created_at desc)`, `(user_id, created_at desc)`.
+- `createServerFn({ method: "POST" }).middleware([requireSupabaseAuth])`
+- Zod input:
+  - `display_name`: trim, min 2, max 40, regex `/^[\p{L}\p{N} _-]+$/u` (letters/digits/spaces/`_-`)
+  - `country`: trim, min 2, max 60
+  - `favourite_team`: trim, min 2, max 60
+- Handler:
+  1. Query `profiles` for any other row where `display_name = data.display_name AND user_id <> userId`. If found, throw a typed error → frontend maps to "This display name is already taken — please choose another".
+  2. Upsert into `profiles` on `user_id` with the three fields.
+  3. Return `{ ok: true }`.
 
-GRANTs:
-- `GRANT INSERT ON public.feedback TO anon, authenticated` (guests can submit)
-- `GRANT SELECT ON public.feedback TO authenticated` (filtered by RLS)
-- `GRANT ALL ON public.feedback TO service_role`
+Keep `completeOnboardingFn` unchanged (onboarding flow can stay distinct).
 
-RLS:
-- Insert anon: allow when `user_id IS NULL` and message length valid
-- Insert authenticated: allow when `user_id = auth.uid()` OR `user_id IS NULL`
-- Select authenticated: allow when `user_id = auth.uid()` OR `public.has_role(auth.uid(),'admin')`
-- Update authenticated: only admins (for `is_read`, `admin_notes`)
+## 2. Inline edit form on Mi Marcador
 
-Realtime:
-- `ALTER PUBLICATION supabase_realtime ADD TABLE public.feedback;`
+Edit `src/routes/_authenticated/me.tsx`:
 
-Rate limiting via trigger (`BEFORE INSERT`):
-- If `NEW.user_id IS NOT NULL` and `(SELECT count(*) FROM feedback WHERE user_id = NEW.user_id AND created_at > now() - interval '24 hours') >= 5` → `RAISE EXCEPTION 'rate_limit_exceeded'`
-- For guests (user_id null): rate-limit per page+message hash isn't reliable; skip server enforcement (the modal will only be shown once per session via localStorage soft limit). Acceptable since RLS still bounds the table.
+- Replace the header block (lines ~66–88) with a new `ProfileHeader` component that holds `editing` state.
+- Display mode:
+  - Existing "Profile / Mi Marcador" header
+  - Amber circle avatar showing initials derived from current `display_name` (1–2 chars), reusing the `bg-amber-gradient` styling used in `AppShell`'s "M" badge
+  - Name · country · favourite team line
+  - Small **✏️ Edit** amber text button to the right of the name
+  - Donor badge, total points box, streak row (unchanged)
+- Edit mode (replaces the name/country/team line, keeps total/streak below):
+  - Display name input with live character count `X / 40` and inline validation errors
+  - Country input (placeholder "Where you're tuning in from")
+  - Favourite team `<select>` populated from `TEAMS_2026` (alphabetical, current value pre-selected)
+  - Full-width amber **Save changes** button
+  - **Cancel** text link below that resets local state and returns to display mode
+  - Inline error region for server/validation errors
 
-Admin helper RPC `feedback_unread_count()` (SECURITY DEFINER, admin-only) returning int — used for badge without exposing rows.
+## 3. Save flow
 
-## 2. Frontend — submission
+- Client-side validation first (lengths, character regex). On fail, show inline error, do not call server.
+- If all fields equal current profile values, just exit edit mode (no server call).
+- `useMutation` calling `updateProfileFn`:
+  - `onSuccess`:
+    - `router.invalidate()` so `me.profile` (from route context loader) refreshes
+    - `queryClient.invalidateQueries()` for `["leaderboard"]`, `["my-history"]`, `["my-stats"]` so leaderboards and history show the new name immediately
+    - Toast: `Profile updated ✓`
+    - Switch to display mode
+  - `onError`: map `display_name_taken` error code → "This display name is already taken — please choose another"; otherwise generic "Could not save profile. Please try again."
+- Avatar initials derive from the form's current `display_name` value while editing for live preview.
 
-New `src/components/feedback/FeedbackModal.tsx`:
-- shadcn `Dialog` + `Select` + `Textarea` + `Button`
-- Category options with emojis (bug/suggestion/question/other)
-- Character counter `X / 1000`, validates 10–1000
-- Pulls `display_name` from current profile (or "Guest" when signed-out)
-- Auto-captures `window.location.pathname + search`
-- On submit → insert via `supabase.from('feedback').insert(...)` directly (RLS-safe). Maps `rate_limit_exceeded` error to friendly message.
-- Success → `toast.success("Thanks for your feedback! ⚽")` and close
+## 4. Verifications (no code changes expected)
 
-Footer link "Send feedback" added in:
-- `src/components/AppShell.tsx` footer (next to Rules · Support)
-- `src/routes/index.tsx` landing footer
-- `src/routes/rules.tsx` footer
+- Leaderboard RPCs already join `profiles` live — display name updates flow through automatically.
+- Predictions-by-matchday admin viewer reads `profiles.display_name` live — same.
 
-Single shared `FeedbackButton` wrapper component used in all three.
+## Files
 
-## 3. Admin Panel — Feedback tab
+- Modified: `src/lib/auth.functions.ts` (add `updateProfileFn`)
+- Modified: `src/routes/_authenticated/me.tsx` (new inline `ProfileHeader` with display/edit modes)
+- No migration required.
 
-`src/components/admin/FeedbackPanel.tsx`:
-- Header with filter bar (category select, read/unread toggle, search input)
-- "Mark all as read" button
-- Table rows (date, user/Guest, category badge color-coded, message preview, page, bold if unread)
-- Click row → expandable detail card: full message, user details, page URL, admin notes textarea (autosave on blur), Mark read/unread buttons
-- Data fetched via direct `supabase.from('feedback').select('*, profiles(display_name, ...)')` (admin RLS allows)
-- Mutations: `update({ is_read })`, `update({ admin_notes })`
+## Out of scope
 
-Wire tab into `src/routes/_authenticated/admin.tsx` sidebar nav with `💬 Feedback` label and badge count.
-
-## 4. Realtime unread badge
-
-In the admin route:
-- `useQuery(['feedback-unread'])` calling `supabase.rpc('feedback_unread_count')`
-- Subscribe to `feedback` channel on mount; on any `INSERT` or `UPDATE`, invalidate the query
-- Badge shows count + red dot when > 0
-
-## 5. Guest support
-
-Modal works without auth — `user_id` null, `display_name` "Guest". Insert allowed by anon RLS policy.
-
-## 6. Files
-
-- migration (new)
-- `src/components/feedback/FeedbackModal.tsx` (new)
-- `src/components/feedback/FeedbackButton.tsx` (new)
-- `src/components/admin/FeedbackPanel.tsx` (new)
-- edits: `src/components/AppShell.tsx`, `src/routes/index.tsx`, `src/routes/rules.tsx`, `src/routes/_authenticated/admin.tsx`
-
-## Open question
-
-Guest rate limiting: server-side per-IP isn't available without extra infra. Plan uses a client-side soft cap (5/day via localStorage) for guests; authenticated users get the hard DB-trigger limit. OK to proceed?
+- Email and password are not editable here.
+- No avatar image upload — initials only.
+- No redirect to onboarding screen after edit.
