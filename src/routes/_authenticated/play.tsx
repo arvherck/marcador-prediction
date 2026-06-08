@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Calendar, Trophy } from "lucide-react";
+import { Calendar, HelpCircle, Trophy } from "lucide-react";
 import { z } from "zod";
 import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { AppShell } from "@/components/AppShell";
@@ -12,6 +12,7 @@ import { useGuestGate } from "@/components/GuestGate";
 import { useGuest } from "@/lib/guest";
 import { ByDateView } from "@/components/play/ByDateView";
 import { ByMatchdayView } from "@/components/play/ByMatchdayView";
+import { HowToPlayModal } from "@/components/play/HowToPlayModal";
 import {
   getAllMatches,
   getAllMatchesPublic,
