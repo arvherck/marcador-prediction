@@ -122,6 +122,31 @@ export const updateProfileFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const recordConsentFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      age_confirmed: z.literal(true),
+      privacy_accepted: z.literal(true),
+    }),
+  )
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("profiles")
+      .upsert(
+        {
+          user_id: userId,
+          age_confirmed: true,
+          privacy_accepted: true,
+          consent_recorded_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" },
+      );
+    if (error) throw safeError(error, "auth");
+    return { ok: true };
+  });
+
 export const deleteAccountFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
