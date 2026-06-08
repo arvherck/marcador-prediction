@@ -395,10 +395,22 @@ export const setBoosterFn = createServerFn({ method: "POST" })
 
     const { data: existing } = await supabase
       .from("predictions")
-      .select("id")
+      .select("id, booster")
       .eq("user_id", userId)
       .eq("match_id", data.match_id)
       .maybeSingle();
+
+    // Toggle off: booster is already applied to this match — remove it.
+    if (existing?.booster === true) {
+      const { error: offErr } = await supabase
+        .from("predictions")
+        .update({ booster: false })
+        .eq("user_id", userId)
+        .eq("match_id", data.match_id);
+      if (offErr) throw new Error(offErr.message);
+      return { ok: true, applied: false };
+    }
+
     if (!existing) {
       const { error } = await supabase.from("predictions").insert({
         user_id: userId,
@@ -430,8 +442,9 @@ export const setBoosterFn = createServerFn({ method: "POST" })
       .eq("user_id", userId)
       .eq("match_id", data.match_id);
     if (setErr) throw new Error(setErr.message);
-    return { ok: true };
+    return { ok: true, applied: true };
   });
+
 
 // ---------- Leaderboards ----------
 
