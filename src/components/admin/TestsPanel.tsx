@@ -30,6 +30,13 @@ import {
   testEdgeUnderdogBelow10pct,
   testEdgeRescoreNoDouble,
   testEdgeResultCorrection,
+  testLockUiPastMatch,
+  testLockServerRejectsPastInsert,
+  testLockServerRejectsCompleted,
+  testLockServerRejectsUpdate,
+  testLockServerAcceptsFuture,
+  testLockReopensWhenKickoffMovedFuture,
+  testLockRelocksWhenKickoffMovedPast,
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
@@ -88,6 +95,16 @@ const EDGE_TESTS: TestDef[] = [
   { id: "edge-correction", label: "Result correction recalculates correctly", category: "Game logic", run: () => testEdgeResultCorrection() },
 ];
 
+const LOCK_TESTS: TestDef[] = [
+  { id: "lock-ui-past", label: "UI: past matches render locked", category: "Auth & security", run: () => testLockUiPastMatch() },
+  { id: "lock-srv-past", label: "Server rejects insert on past match", category: "Auth & security", run: () => testLockServerRejectsPastInsert() },
+  { id: "lock-srv-completed", label: "Server rejects insert on completed match", category: "Auth & security", run: () => testLockServerRejectsCompleted() },
+  { id: "lock-srv-update", label: "Server rejects update after kickoff", category: "Auth & security", run: () => testLockServerRejectsUpdate() },
+  { id: "lock-future-ok", label: "Future match accepts prediction", category: "Auth & security", run: () => testLockServerAcceptsFuture() },
+  { id: "lock-reopen", label: "Moving kickoff to future reopens predictions", category: "Auth & security", run: () => testLockReopensWhenKickoffMovedFuture() },
+  { id: "lock-relock", label: "Moving kickoff back to past re-locks", category: "Auth & security", run: () => testLockRelocksWhenKickoffMovedPast() },
+];
+
 export function TestsPanel() {
   const [state, setState] = useState<Record<string, RunState>>({});
 
@@ -141,6 +158,7 @@ export function TestsPanel() {
     <>
       <TestDataPanel />
       <EdgeCasesPanel />
+      <PredictionLockPanel />
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="px-4 py-3 flex items-center justify-between border-b border-border">
         <div>
@@ -261,6 +279,72 @@ function EdgeCasesPanel() {
       </div>
       <div className="divide-y divide-border">
         {EDGE_TESTS.map((t) => {
+          const s = state[t.id];
+          const status =
+            !s || s === "idle" ? "idle" : s === "running" ? "running" : s.status;
+          const message =
+            s && typeof s !== "string"
+              ? s.message
+              : s === "running"
+                ? "Running…"
+                : "Not run";
+          return (
+            <div key={t.id} className="px-4 py-2.5 flex items-center gap-3">
+              <span className="text-base w-6 text-center">{ICON[status]}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium">{t.label}</div>
+                <div className="text-xs text-muted-foreground truncate">{message}</div>
+              </div>
+              <button
+                onClick={() => runOne(t)}
+                disabled={s === "running"}
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+              >
+                ▶ Run
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PredictionLockPanel() {
+  const [state, setState] = useState<Record<string, RunState>>({});
+  const runOne = async (t: TestDef) => {
+    setState((s) => ({ ...s, [t.id]: "running" }));
+    try {
+      const r = await t.run();
+      setState((s) => ({ ...s, [t.id]: r }));
+    } catch (e) {
+      setState((s) => ({
+        ...s,
+        [t.id]: { status: "fail", message: e instanceof Error ? e.message : String(e) },
+      }));
+    }
+  };
+  const runAll = async () => {
+    for (const t of LOCK_TESTS) await runOne(t);
+  };
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+        <div>
+          <div className="font-semibold">Prediction locking</div>
+          <div className="text-xs text-muted-foreground">
+            Verifies predictions cannot be submitted or modified after kickoff. Runs as a temporary non-admin user against the real lock trigger.
+          </div>
+        </div>
+        <button
+          onClick={runAll}
+          className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground"
+        >
+          ▶ Run all lock tests
+        </button>
+      </div>
+      <div className="divide-y divide-border">
+        {LOCK_TESTS.map((t) => {
           const s = state[t.id];
           const status =
             !s || s === "idle" ? "idle" : s === "running" ? "running" : s.status;
