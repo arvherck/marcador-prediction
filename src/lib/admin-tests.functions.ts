@@ -36,9 +36,11 @@ export const testMatchCount = createServerFn({ method: "POST" })
   .handler(async ({ context }): Promise<TestResult> => {
     await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Exclude any leftover __test rows so the launch-readiness count is honest.
     const { count, error } = await supabaseAdmin
       .from("matches")
-      .select("id", { count: "exact", head: true });
+      .select("id", { count: "exact", head: true })
+      .neq("home_team", "__test");
     if (error) return { status: "fail", message: error.message };
     if (count === 104) return { status: "pass", message: "All 104 matches imported." };
     return {
@@ -46,6 +48,7 @@ export const testMatchCount = createServerFn({ method: "POST" })
       message: `Only ${count ?? 0} matches found — re-run CSV import`,
     };
   });
+
 
 export const testMatchdays = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -134,10 +137,34 @@ export const testStandingsPopulated = createServerFn({ method: "POST" })
       .from("wc_standings")
       .select("id", { count: "exact", head: true });
     if (error) return { status: "fail", message: error.message };
-    return count === 48
-      ? { status: "pass", message: "All 48 standings rows present." }
-      : { status: "fail", message: `Groups table incomplete — ${count ?? 0} rows found` };
+    if (count !== 48) {
+      return { status: "fail", message: `Groups table incomplete — ${count ?? 0} rows found (expected 48)` };
+    }
+    // Secondary check: 12 groups A–L, each with 4 teams.
+    const { data: groups, error: gErr } = await supabaseAdmin
+      .from("wc_groups")
+      .select("id, name");
+    if (gErr) return { status: "fail", message: gErr.message };
+    const letters = (groups ?? []).map((g) => (g.name.match(/Group ([A-L])/) ?? [])[1]).filter(Boolean).sort();
+    const expectedLetters = "ABCDEFGHIJKL".split("");
+    const missing = expectedLetters.filter((l) => !letters.includes(l));
+    if (missing.length) {
+      return { status: "fail", message: `Missing groups: ${missing.join(", ")}` };
+    }
+    const { data: per, error: pErr } = await supabaseAdmin
+      .from("wc_standings")
+      .select("group_id");
+    if (pErr) return { status: "fail", message: pErr.message };
+    const counts = new Map<number, number>();
+    for (const r of per ?? []) counts.set(r.group_id as number, (counts.get(r.group_id as number) ?? 0) + 1);
+
+    const bad = [...counts.entries()].filter(([, n]) => n !== 4);
+    if (bad.length) {
+      return { status: "fail", message: `${bad.length} groups have ≠ 4 teams` };
+    }
+    return { status: "pass", message: "All 12 groups have 4 teams (48 rows) ✓" };
   });
+
 
 // ---------- Auth & Security ----------
 
@@ -1824,6 +1851,665 @@ export const testEdgeMultiplierUnderdogFlat = createServerFn({ method: "POST" })
         : fail(31, got);
     } catch (e) {
       await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// ============================================================================
+// v2 — Multipliers, tournament winner, schema/diagnostics, ligas, data integrity
+// ============================================================================
+
+async function adminDiag(callerId: string, kind: string, arg: string): Promise<Record<string, unknown>> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.rpc("admin_diag", {
+    _caller_id: callerId,
+    _kind: kind,
+    _arg: arg,
+  });
+  if (error) throw new Error(error.message);
+  return (data ?? {}) as Record<string, unknown>;
+}
+
+// --- Multiplier value tests (per phase) ---
+
+async function multiplierCheck(
+  phases: string[],
+  expected: number,
+): Promise<TestResult> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin
+    .from("matches")
+    .select("id, phase, points_multiplier")
+    .in("phase", phases)
+    .neq("home_team", "__test");
+  if (error) return { status: "fail", message: error.message };
+  const rows = data ?? [];
+  if (rows.length === 0) {
+    return { status: "warn", message: `No matches found for ${phases.join(", ")}` };
+  }
+  const wrong = rows.filter((m) => (m.points_multiplier ?? 1) !== expected);
+  return wrong.length === 0
+    ? { status: "pass", message: `${rows.length} matches at ×${expected} ✓` }
+    : { status: "fail", message: `${wrong.length}/${rows.length} matches have wrong multiplier (expected ×${expected})` };
+}
+
+export const testMultiplierGroupStage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return multiplierCheck(["Group Stage"], 1);
+  });
+
+export const testMultiplierR32 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return multiplierCheck(["Round of 32"], 2);
+  });
+
+export const testMultiplierR16 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return multiplierCheck(["Round of 16"], 3);
+  });
+
+export const testMultiplierQF = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return multiplierCheck(["Quarterfinal", "Third Place"], 4);
+  });
+
+export const testMultiplierSemi = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return multiplierCheck(["Semifinal"], 5);
+  });
+
+export const testMultiplierFinal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return multiplierCheck(["Final"], 6);
+  });
+
+// --- Multiplier applies in scoring ---
+
+export const testMultiplierAppliesR32Scoring = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const pts = await withTempScenario(async ({ mdId }) => {
+        const matchId = await seedEdgeMatch(
+          mdId,
+          [{ userId: context.userId, home: 2, away: 1, scorer: "home" }],
+          { home: 2, away: 1, scorer: "home" },
+          { phase: "Round of 32" },
+        );
+        await scoreMd(mdId, context.userId);
+        return getPoints(context.userId, matchId);
+      });
+      await purgeEdgeMatches();
+      // 13 base × 2 multiplier = 26
+      return pts === 26
+        ? { status: "pass", message: "13 × 2 = 26 pts ✓" }
+        : { status: "fail", message: `Expected 26 pts, got ${pts}` };
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Booster + multiplier combinations ---
+
+export const testBoosterWithGroupMultiplier = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const pts = await withTempScenario(async ({ mdId }) => {
+        const matchId = await seedEdgeMatch(
+          mdId,
+          [{ userId: context.userId, home: 2, away: 1, scorer: "home", booster: true }],
+          { home: 2, away: 1, scorer: "home" },
+          { phase: "Group Stage" },
+        );
+        await scoreMd(mdId, context.userId);
+        return getPoints(context.userId, matchId);
+      });
+      await purgeEdgeMatches();
+      // 13 × 1 × 2 = 26
+      return pts === 26
+        ? { status: "pass", message: "13 × 1 × 2 = 26 pts ✓" }
+        : { status: "fail", message: `Expected 26 pts, got ${pts}` };
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testBoosterWithSemifinal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const pts = await withTempScenario(async ({ mdId }) => {
+        const matchId = await seedEdgeMatch(
+          mdId,
+          [{ userId: context.userId, home: 1, away: 0, scorer: "home", booster: true }],
+          { home: 1, away: 0, scorer: "home" },
+          { phase: "Semifinal" },
+        );
+        await scoreMd(mdId, context.userId);
+        return getPoints(context.userId, matchId);
+      });
+      await purgeEdgeMatches();
+      // 13 × 5 × 2 = 130
+      return pts === 130
+        ? { status: "pass", message: "13 × 5 × 2 = 130 pts ✓" }
+        : { status: "fail", message: `Expected 130 pts, got ${pts}` };
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Underdog NOT multiplied (flat +5) ---
+
+export const testUnderdogFlatR32 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const pts = await withEdgeUsers(10, async (extraIds) => {
+        return withTempScenario(async ({ mdId }) => {
+          // Caller picks 3-2; 10 others pick a different score so caller is <10%.
+          const preds = [
+            { userId: context.userId, home: 3, away: 2, scorer: "home" as const },
+            ...extraIds.map((id) => ({
+              userId: id,
+              home: 1,
+              away: 0,
+              scorer: "home" as const,
+            })),
+          ];
+          const matchId = await seedEdgeMatch(
+            mdId,
+            preds,
+            { home: 3, away: 2, scorer: "home" },
+            { phase: "Round of 32" },
+          );
+          await scoreMd(mdId, context.userId);
+          return getPoints(context.userId, matchId);
+        });
+      });
+      await purgeEdgeMatches();
+      // 13 × 2 + 5 (flat underdog) = 31
+      return pts === 31
+        ? { status: "pass", message: "13×2 + 5 (flat underdog) = 31 pts ✓" }
+        : { status: "fail", message: `Expected 31 pts, got ${pts}` };
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Tournament winner ---
+
+const TP_COLS = ["id", "user_id", "predicted_winner", "created_at", "points_awarded"];
+const TS_COLS = ["id", "actual_winner", "predictions_locked"];
+
+export const testTournamentPredictionsTableExists = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const res = await adminDiag(context.userId, "columns", "tournament_predictions");
+      const cols = (res.columns ?? []) as string[];
+      const missing = TP_COLS.filter((c) => !cols.includes(c));
+      return missing.length === 0
+        ? { status: "pass", message: `All expected columns present (${cols.length})` }
+        : { status: "fail", message: `Missing columns: ${missing.join(", ")}` };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testTournamentSettingsTableExists = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const res = await adminDiag(context.userId, "columns", "tournament_settings");
+      const cols = (res.columns ?? []) as string[];
+      const missing = TS_COLS.filter((c) => !cols.includes(c));
+      return missing.length === 0
+        ? { status: "pass", message: `All expected columns present (${cols.length})` }
+        : { status: "fail", message: `Missing columns: ${missing.join(", ")}` };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// Award helper used by both tournament-winner tests. Mirrors the loop in
+// adminSetTournamentWinnerFn so we don't have to make HTTP calls in tests.
+async function awardTournamentPoints(actualWinner: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: preds } = await supabaseAdmin
+    .from("tournament_predictions")
+    .select("id, predicted_winner");
+  for (const p of preds ?? []) {
+    const pts = p.predicted_winner === actualWinner ? 50 : 0;
+    await supabaseAdmin.from("tournament_predictions").update({ points_awarded: pts }).eq("id", p.id);
+  }
+}
+
+async function runTournamentWinnerScenario(
+  callerId: string,
+  predicted: string,
+  actual: string,
+): Promise<number> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  // Snapshot prior state to restore on cleanup.
+  const { data: priorPred } = await supabaseAdmin
+    .from("tournament_predictions")
+    .select("id, predicted_winner, points_awarded")
+    .eq("user_id", callerId)
+    .maybeSingle();
+  const { data: priorSettings } = await supabaseAdmin
+    .from("tournament_settings")
+    .select("actual_winner, predictions_locked")
+    .eq("id", 1)
+    .maybeSingle();
+
+  try {
+    // Set caller's prediction (upsert)
+    if (priorPred) {
+      await supabaseAdmin
+        .from("tournament_predictions")
+        .update({ predicted_winner: predicted, points_awarded: null })
+        .eq("id", priorPred.id);
+    } else {
+      await supabaseAdmin
+        .from("tournament_predictions")
+        .insert({ user_id: callerId, predicted_winner: predicted });
+    }
+    // Ensure settings row exists
+    if (priorSettings) {
+      await supabaseAdmin
+        .from("tournament_settings")
+        .update({ actual_winner: actual, updated_at: new Date().toISOString() })
+        .eq("id", 1);
+    } else {
+      await supabaseAdmin
+        .from("tournament_settings")
+        .insert({ id: 1, actual_winner: actual });
+    }
+    await awardTournamentPoints(actual);
+    const { data: row } = await supabaseAdmin
+      .from("tournament_predictions")
+      .select("points_awarded")
+      .eq("user_id", callerId)
+      .maybeSingle();
+    return row?.points_awarded ?? -1;
+  } finally {
+    // Restore caller prediction
+    if (priorPred) {
+      await supabaseAdmin
+        .from("tournament_predictions")
+        .update({
+          predicted_winner: priorPred.predicted_winner,
+          points_awarded: priorPred.points_awarded,
+        })
+        .eq("id", priorPred.id);
+    } else {
+      await supabaseAdmin.from("tournament_predictions").delete().eq("user_id", callerId);
+    }
+    // Restore settings
+    if (priorSettings) {
+      await supabaseAdmin
+        .from("tournament_settings")
+        .update({
+          actual_winner: priorSettings.actual_winner,
+          predictions_locked: priorSettings.predictions_locked,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", 1);
+    }
+    // Re-award using restored actual winner so other users' points_awarded
+    // values reflect the restored state.
+    const restoredWinner = priorSettings?.actual_winner ?? null;
+    if (restoredWinner) await awardTournamentPoints(restoredWinner);
+  }
+}
+
+export const testTournamentWinnerAwards50 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const pts = await runTournamentWinnerScenario(context.userId, "Brazil", "Brazil");
+      return pts === 50
+        ? { status: "pass", message: "Correct winner = +50 ✓" }
+        : { status: "fail", message: `Expected 50, got ${pts}` };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testTournamentWinnerWrongAwards0 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const pts = await runTournamentWinnerScenario(context.userId, "France", "Brazil");
+      return pts === 0
+        ? { status: "pass", message: "Wrong winner = 0 ✓" }
+        : { status: "fail", message: `Expected 0, got ${pts}` };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Standings trigger existence ---
+
+export const testStandingsTriggerExists = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const res = await adminDiag(context.userId, "trigger_exists", "trg_recalculate_group_standings");
+      if (res.exists === true && res.enabled === true) {
+        return { status: "pass", message: "trg_recalculate_group_standings is enabled ✓" };
+      }
+      return {
+        status: "fail",
+        message: "Standings trigger not found — group standings won't update automatically",
+      };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Ligas ---
+
+const RX_INVITE = /^MRC-[A-Z0-9]{4}$/;
+
+export const testLigaInviteCodeFormat = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.from("leagues").select("id, invite_code");
+    if (error) return { status: "fail", message: error.message };
+    const bad = (data ?? []).filter((l) => !RX_INVITE.test(l.invite_code ?? ""));
+    return bad.length === 0
+      ? { status: "pass", message: `${data?.length ?? 0} leagues, all codes valid ✓` }
+      : { status: "fail", message: `${bad.length} leagues have malformed invite codes` };
+  });
+
+async function withTestLeague<T>(
+  callerId: string,
+  fn: (leagueId: string, code: string) => Promise<T>,
+): Promise<T> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const code = `MRC-T${Math.floor(Math.random() * 900 + 100)}`;
+  const { data: lg, error } = await supabaseAdmin
+    .from("leagues")
+    .insert({ name: "__test_liga", invite_code: code, owner_id: callerId })
+    .select("id, invite_code")
+    .single();
+  if (error || !lg) throw new Error(error?.message ?? "league create failed");
+  try {
+    return await fn(lg.id, lg.invite_code);
+  } finally {
+    await supabaseAdmin.from("league_members").delete().eq("league_id", lg.id);
+    await supabaseAdmin.from("leagues").delete().eq("id", lg.id);
+  }
+}
+
+export const testLigaJoinValidCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const ok = await withTestLeague(context.userId, async (leagueId, code) => {
+        const { data, error } = await supabaseAdmin.rpc("find_league_by_code", { _code: code });
+        if (error) throw new Error(error.message);
+        if (!data) throw new Error("find_league_by_code returned null");
+        const { error: jErr } = await supabaseAdmin
+          .from("league_members")
+          .upsert(
+            { league_id: leagueId, user_id: context.userId },
+            { onConflict: "league_id,user_id", ignoreDuplicates: true },
+          );
+        if (jErr) throw new Error(jErr.message);
+        const { count } = await supabaseAdmin
+          .from("league_members")
+          .select("league_id", { count: "exact", head: true })
+          .eq("league_id", leagueId)
+          .eq("user_id", context.userId);
+        return count === 1;
+      });
+      return ok
+        ? { status: "pass", message: "Join with valid code created membership ✓" }
+        : { status: "fail", message: "Membership row not found after join" };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testLigaJoinInvalidCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const { data, error } = await supabaseAdmin.rpc("find_league_by_code", { _code: "MRC-ZZZZ" });
+      if (error) return { status: "fail", message: `Unexpected RPC error: ${error.message}` };
+      if (data) return { status: "fail", message: "Invalid code unexpectedly resolved to a league" };
+      return { status: "pass", message: "Invalid code rejected gracefully ✓" };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testLigaJoinTwice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const result = await withTestLeague(context.userId, async (leagueId) => {
+        await supabaseAdmin.from("league_members").upsert(
+          { league_id: leagueId, user_id: context.userId },
+          { onConflict: "league_id,user_id", ignoreDuplicates: true },
+        );
+        const { error: e2 } = await supabaseAdmin.from("league_members").upsert(
+          { league_id: leagueId, user_id: context.userId },
+          { onConflict: "league_id,user_id", ignoreDuplicates: true },
+        );
+        if (e2) return { ok: false, msg: e2.message };
+        const { count } = await supabaseAdmin
+          .from("league_members")
+          .select("league_id", { count: "exact", head: true })
+          .eq("league_id", leagueId)
+          .eq("user_id", context.userId);
+        return { ok: count === 1, msg: `member count = ${count}` };
+      });
+      return result.ok
+        ? { status: "pass", message: "Second join was idempotent ✓" }
+        : { status: "fail", message: `Duplicate handled badly: ${result.msg}` };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Validate prediction trigger preserved ---
+
+export const testValidatePredictionTriggerScoped = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const res = await adminDiag(context.userId, "trigger_def", "validate_prediction_trigger");
+      if (res.exists !== true) {
+        return { status: "fail", message: "validate_prediction_trigger missing" };
+      }
+      if (res.enabled !== true) {
+        return { status: "fail", message: "Trigger present but disabled" };
+      }
+      const def = String(res.definition ?? "");
+      const needed = ["home_goals", "away_goals", "first_scorer", "booster"];
+      const missing = needed.filter((c) => !def.includes(c));
+      if (missing.length) {
+        return { status: "fail", message: `Trigger missing column scope: ${missing.join(", ")}` };
+      }
+      if (def.includes("points")) {
+        return { status: "fail", message: "Trigger unexpectedly fires on points column" };
+      }
+      return { status: "pass", message: "Trigger scoped to editable columns ✓" };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Scoring function signatures ---
+
+export const testScoreMatchdayUsesCallerId = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const res = await adminDiag(context.userId, "proc_body", "score_matchday");
+      const body = String(res.body ?? "");
+      if (!body.includes("_caller_id")) {
+        return { status: "fail", message: "score_matchday does not reference _caller_id" };
+      }
+      if (body.includes("auth.uid()")) {
+        return { status: "fail", message: "score_matchday still uses auth.uid() — scoring will fail" };
+      }
+      return { status: "pass", message: "score_matchday uses _caller_id ✓" };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testScoreMatchExists = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const res = await adminDiag(context.userId, "proc_exists", "score_match");
+      const count = Number(res.count ?? 0);
+      return count >= 1
+        ? { status: "pass", message: "score_match function present ✓" }
+        : { status: "fail", message: "score_match function missing — per-match scoring won't work" };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testScoreMatchUsesCallerId = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const res = await adminDiag(context.userId, "proc_body", "score_match");
+      const body = String(res.body ?? "");
+      if (!body.includes("_caller_id")) {
+        return { status: "fail", message: "score_match does not reference _caller_id" };
+      }
+      if (body.includes("auth.uid()")) {
+        return { status: "fail", message: "score_match still uses auth.uid()" };
+      }
+      return { status: "pass", message: "score_match uses _caller_id ✓" };
+    } catch (e) {
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// --- Data integrity ---
+
+export const testNoNullMultiplier = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { count, error } = await supabaseAdmin
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .is("points_multiplier", null);
+    if (error) return { status: "fail", message: error.message };
+    return (count ?? 0) === 0
+      ? { status: "pass", message: "All matches have a multiplier ✓" }
+      : { status: "fail", message: `${count} matches have null multiplier` };
+  });
+
+export const testNoTestMatches = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { count, error } = await supabaseAdmin
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .eq("home_team", "__test");
+    if (error) return { status: "fail", message: error.message };
+    return (count ?? 0) === 0
+      ? { status: "pass", message: "No test matches in production ✓" }
+      : { status: "fail", message: `${count} test matches found — run Clear test data before going live` };
+  });
+
+export const testNoTestUsers = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { count, error } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id", { count: "exact", head: true })
+      .like("display_name", "Test User %");
+    if (error) return { status: "fail", message: error.message };
+    return (count ?? 0) === 0
+      ? { status: "pass", message: "No test users in production ✓" }
+      : { status: "fail", message: `${count} test users found — run Remove test users before going live` };
+  });
+
+export const testKnockoutPlaceholdersSet = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("matches")
+      .select("id, phase, home_placeholder, away_placeholder, teams_confirmed")
+      .in("phase", ["Round of 32", "Round of 16", "Quarterfinal", "Third Place", "Semifinal", "Final"])
+      .eq("teams_confirmed", false);
+    if (error) return { status: "fail", message: error.message };
+    const bad = (data ?? []).filter((m) => !m.home_placeholder || !m.away_placeholder);
+    return bad.length === 0
+      ? { status: "pass", message: `${data?.length ?? 0} unconfirmed knockout matches all have placeholders ✓` }
+      : { status: "fail", message: `${bad.length} knockout matches have no placeholder text — users will see blank team names` };
+  });
+
+// --- Routes ---
+
+export const testRulesRouteExists = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const mod = await import("@/routeTree.gen");
+      const tree = JSON.stringify(mod);
+      return tree.includes("/rules")
+        ? { status: "pass", message: "/rules route registered ✓" }
+        : { status: "fail", message: "Rules page not found in route tree" };
+    } catch (e) {
       return { status: "fail", message: e instanceof Error ? e.message : String(e) };
     }
   });

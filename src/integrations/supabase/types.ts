@@ -583,6 +583,10 @@ export type Database = {
         Args: { _caller_id: string; _league_id: string }
         Returns: number
       }
+      admin_diag: {
+        Args: { _arg: string; _caller_id: string; _kind: string }
+        Returns: Json
+      }
       cascade_knockout_winners: { Args: { _caller_id: string }; Returns: Json }
       clear_test_scores: {
         Args: { _caller_id: string; _matchday_id?: number; _scope: string }
