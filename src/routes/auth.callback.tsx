@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { AuthShell } from "@/components/auth/AuthShell";
+import { recordConsentFn } from "@/lib/auth.functions";
 
 export const Route = createFileRoute("/auth/callback")({
   head: () => ({
@@ -16,6 +18,7 @@ export const Route = createFileRoute("/auth/callback")({
 
 function CallbackPage() {
   const navigate = useNavigate();
+  const recordConsent = useServerFn(recordConsentFn);
 
   useEffect(() => {
     let cancelled = false;
