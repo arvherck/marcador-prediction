@@ -49,6 +49,7 @@ type Match = {
   first_scorer: string | null;
   is_final: boolean;
   phase: string | null;
+  points_multiplier?: number | null;
   teams_confirmed?: boolean;
   status?: MatchStatusT | null;
   unscored_count?: number;
