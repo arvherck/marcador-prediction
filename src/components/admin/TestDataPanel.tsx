@@ -7,6 +7,11 @@ import {
   adminFillTestPredictionsFn,
   adminRunTestCycleFn,
   adminListMatchdaysSlimFn,
+  adminCreateTestUsersFn,
+  adminListTestUsersFn,
+  adminDeleteTestUsersFn,
+  adminListLeaguesForTestFn,
+  adminAddTestUsersToLeagueFn,
   type FilledMatch,
 } from "@/lib/admin-tests.functions";
 
