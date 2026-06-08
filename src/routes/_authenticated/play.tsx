@@ -54,6 +54,8 @@ function PlayPage() {
   const guest = useGuest();
   const guestGate = useGuestGate();
   const qc = useQueryClient();
+  const [howToPlayOpen, setHowToPlayOpen] = useState(false);
+
 
   const matchesQ = useQuery({
     queryKey: ["all-matches", guest ? "guest" : me.id],
