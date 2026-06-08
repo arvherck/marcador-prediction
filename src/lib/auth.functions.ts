@@ -77,3 +77,47 @@ export const completeOnboardingFn = createServerFn({ method: "POST" })
     if (error) throw safeError(error, "auth");
     return { ok: true };
   });
+
+export const updateProfileFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      display_name: z
+        .string()
+        .trim()
+        .min(2)
+        .max(40)
+        .regex(/^[\p{L}\p{N} _-]+$/u, "Invalid characters in display name"),
+      country: z.string().trim().min(2).max(60),
+      favourite_team: z.string().trim().min(2).max(60),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // Uniqueness check (case-insensitive) against other users
+    const { data: existing, error: lookupErr } = await supabase
+      .from("profiles")
+      .select("user_id")
+      .ilike("display_name", data.display_name)
+      .neq("user_id", userId)
+      .limit(1);
+    if (lookupErr) throw safeError(lookupErr, "auth");
+    if (existing && existing.length > 0) {
+      throw new Error("display_name_taken");
+    }
+
+    const { error } = await supabase
+      .from("profiles")
+      .upsert(
+        {
+          user_id: userId,
+          display_name: data.display_name,
+          country: data.country,
+          favourite_team: data.favourite_team,
+        },
+        { onConflict: "user_id" },
+      );
+    if (error) throw safeError(error, "auth");
+    return { ok: true };
+  });
