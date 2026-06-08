@@ -1,5 +1,9 @@
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
 import { TestDataPanel } from "@/components/admin/TestDataPanel";
+
 import {
   testAdminExists,
   testBoosterDoubles,
@@ -73,6 +77,12 @@ import {
   testPreWcBelgiumTunisia,
   testPreWcScoringBelgium13,
   testPreWcExcludedFromLeaderboard,
+  testUiTestMatchesExist,
+  testUiLiveMatchState,
+  testUiTbdBlocksPrediction,
+  adminGetUiTestPreviewFn,
+  adminSetUiTestPreviewFn,
+
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
@@ -155,10 +165,14 @@ const TESTS: TestDef[] = [
   { id: "liga-join-twice", label: "Cannot join same liga twice (idempotent)", category: "🤝 Ligas", run: () => testLigaJoinTwice() },
 
   // 🧪 Pre-WC Test Matches
-  { id: "prewc-exist", label: "Pre-WC friendly test matches exist (6)", category: "🧪 Pre-WC Test Matches", run: () => testPreWcFriendliesExist() },
+  { id: "prewc-exist", label: "Pre-WC friendly test matches exist", category: "🧪 Pre-WC Test Matches", run: () => testPreWcFriendliesExist() },
   { id: "prewc-belgium", label: "Belgium 5-0 Tunisia stored correctly", category: "🧪 Pre-WC Test Matches", run: () => testPreWcBelgiumTunisia() },
   { id: "prewc-score-13", label: "Perfect 5-0 Belgium prediction scores 13 pts", category: "🧪 Pre-WC Test Matches", run: () => testPreWcScoringBelgium13() },
   { id: "prewc-leaderboard", label: "Test matchday excluded from leaderboard", category: "🧪 Pre-WC Test Matches", run: () => testPreWcExcludedFromLeaderboard() },
+  { id: "ui-test-exist", label: "UI test matches exist (4)", category: "🧪 Pre-WC Test Matches", run: () => testUiTestMatchesExist() },
+  { id: "ui-test-live", label: "Live match card state is testable", category: "🧪 Pre-WC Test Matches", run: () => testUiLiveMatchState() },
+  { id: "ui-test-tbd", label: "TBD match blocks predictions", category: "🧪 Pre-WC Test Matches", run: () => testUiTbdBlocksPrediction() },
+
 ];
 
 type RunState = "idle" | "running" | TestResult;
@@ -299,10 +313,12 @@ export function TestsPanel() {
 
   return (
     <>
+      <UiTestPreviewPanel />
       <TestDataPanel />
       <EdgeCasesPanel />
       <PredictionLockPanel />
       <StandingsVerifierPanel />
+
 
       {/* 🚀 Launch Readiness */}
       <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
@@ -555,6 +571,57 @@ function StandingsVerifierPanel() {
             </pre>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function UiTestPreviewPanel() {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["ui-test-preview"],
+    queryFn: () => adminGetUiTestPreviewFn(),
+    refetchInterval: 30_000,
+  });
+  const m = useMutation({
+    mutationFn: (enabled: boolean) => adminSetUiTestPreviewFn({ data: { enabled } }),
+    onSuccess: (r) => {
+      qc.setQueryData(["ui-test-preview"], r);
+      qc.invalidateQueries({ queryKey: ["all-matches"] });
+      qc.invalidateQueries({ queryKey: ["matchdays-progress"] });
+      toast.success(r.enabled ? "UI test preview enabled (30 min)" : "UI test preview disabled");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+  const enabled = q.data?.enabled ?? false;
+  const expiresAt = q.data?.expiresAt ?? null;
+  const minutesLeft =
+    expiresAt ? Math.max(0, Math.round((new Date(expiresAt).getTime() - Date.now()) / 60_000)) : 0;
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
+      <div className="px-4 py-3 border-b border-border">
+        <div className="font-semibold">UI Test Preview</div>
+        <div className="text-xs text-muted-foreground">
+          Show the hidden test matchday on the Play screen for your admin account only.
+        </div>
+      </div>
+      <div className="px-4 py-3 flex items-center justify-between gap-3">
+        <div className="text-sm">
+          <div className="font-medium">Preview UI test matches in Play screen</div>
+          <div className="text-xs text-muted-foreground">
+            Auto-disables after 30 minutes. Admin-only — does not affect other users.
+            {enabled && expiresAt && (
+              <span className="ml-1 text-amber-glow font-medium">
+                · {minutesLeft}m left
+              </span>
+            )}
+          </div>
+        </div>
+        <Switch
+          checked={enabled}
+          disabled={m.isPending || q.isLoading}
+          onCheckedChange={(v) => m.mutate(v)}
+        />
       </div>
     </div>
   );

@@ -2570,9 +2570,11 @@ export const testPreWcFriendliesExist = createServerFn({ method: "POST" })
       .select("id", { count: "exact", head: true })
       .eq("matchday_id", mdId);
     if (error) return { status: "fail", message: error.message };
-    if (count === 6) return { status: "pass", message: "6 Pre-WC friendly test matches present ✓" };
-    return { status: "fail", message: `Expected 6 Pre-WC test matches, found ${count ?? 0}` };
+    if (count !== null && count >= 6)
+      return { status: "pass", message: `${count} Pre-WC friendly test matches present ✓` };
+    return { status: "fail", message: `Expected at least 6 Pre-WC test matches, found ${count ?? 0}` };
   });
+
 
 export const testPreWcBelgiumTunisia = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -2719,4 +2721,142 @@ export const testPreWcExcludedFromLeaderboard = createServerFn({ method: "POST" 
         await supabaseAdmin.from("matchday_scores").insert(prior);
       }
     }
+  });
+
+// ============================================================
+// UI Test Matches — admin preview toggle + tests
+// ============================================================
+
+const UI_PREVIEW_MINUTES = 30;
+
+export const adminGetUiTestPreviewFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<{ enabled: boolean; expiresAt: string | null }> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("profiles")
+      .select("ui_test_preview_until")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    const until = data?.ui_test_preview_until ?? null;
+    const enabled = !!until && new Date(until).getTime() > Date.now();
+    return { enabled, expiresAt: enabled ? until : null };
+  });
+
+export const adminSetUiTestPreviewFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { enabled: boolean }) => z.object({ enabled: z.boolean() }).parse(d))
+  .handler(async ({ context, data }): Promise<{ enabled: boolean; expiresAt: string | null }> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const expiresAt = data.enabled
+      ? new Date(Date.now() + UI_PREVIEW_MINUTES * 60_000).toISOString()
+      : null;
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({ ui_test_preview_until: expiresAt })
+      .eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { enabled: data.enabled, expiresAt };
+  });
+
+// ---------- Tests ----------
+
+export const testUiTestMatchesExist = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { status: "fail", message: "Pre-WC test matchday not found" };
+    const { count, error } = await supabaseAdmin
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .eq("matchday_id", mdId)
+      .or("home_team.like.UI_Test%,home_team.eq.Winner Group A,home_team.eq.Winner Group B");
+    if (error) return { status: "fail", message: error.message };
+    if (count === 4) return { status: "pass", message: "4 UI test matches present ✓" };
+    return { status: "fail", message: `UI test matches not found (got ${count ?? 0}, expected 4)` };
+  });
+
+export const testUiLiveMatchState = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { status: "fail", message: "Pre-WC test matchday not found" };
+    const { data, error } = await supabaseAdmin
+      .from("matches")
+      .select("status, kickoff_at, home_score")
+      .eq("matchday_id", mdId)
+      .eq("home_team", "UI_Test_Live_Home")
+      .maybeSingle();
+    if (error || !data) return { status: "fail", message: error?.message ?? "UI live match not found" };
+    const inPast = new Date(data.kickoff_at).getTime() < Date.now();
+    if (data.status === "live" && inPast && data.home_score === null) {
+      return { status: "pass", message: "Live match in correct state ✓" };
+    }
+    return {
+      status: "fail",
+      message: `status=${data.status}, kickoff_past=${inPast}, home_score=${data.home_score}`,
+    };
+  });
+
+export const testUiTbdBlocksPrediction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { status: "fail", message: "Pre-WC test matchday not found" };
+    const { data: match } = await supabaseAdmin
+      .from("matches")
+      .select("id, teams_confirmed")
+      .eq("matchday_id", mdId)
+      .eq("home_team", "Winner Group A")
+      .maybeSingle();
+    if (!match) return { status: "fail", message: "TBD match (Winner Group A) not found" };
+    if (match.teams_confirmed) {
+      return { status: "fail", message: "TBD match has teams_confirmed=true — expected false" };
+    }
+
+    // Pick any non-admin user to attempt the insert as (so validate_prediction
+    // doesn't bypass via admin role).
+    const { data: nonAdmin } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id")
+      .neq("user_id", context.userId)
+      .limit(1)
+      .maybeSingle();
+    if (!nonAdmin) {
+      // Fall back: the trigger always raises for unconfirmed teams regardless
+      // of caller, so attempt as admin — should still raise.
+    }
+    const targetUser = nonAdmin?.user_id ?? context.userId;
+
+    await supabaseAdmin.from("predictions").delete().eq("user_id", targetUser).eq("match_id", match.id);
+
+    // Use a fresh anon client with the user JWT? Service role bypasses RLS but
+    // NOT triggers — validate_prediction will still fire because admin check
+    // only matches auth.uid()=admin, which is NULL under service role.
+    const { error: insErr } = await supabaseAdmin.from("predictions").insert({
+      user_id: targetUser,
+      match_id: match.id,
+      home_goals: 1,
+      away_goals: 0,
+      first_scorer: "home",
+      booster: false,
+    });
+    // Clean up if it somehow inserted
+    await supabaseAdmin.from("predictions").delete().eq("user_id", targetUser).eq("match_id", match.id);
+
+    if (insErr && /Teams not confirmed/i.test(insErr.message)) {
+      return { status: "pass", message: "TBD match correctly rejects predictions ✓" };
+    }
+    if (insErr) {
+      return { status: "warn", message: `Rejected with unexpected error: ${insErr.message}` };
+    }
+    return { status: "fail", message: "Insert succeeded — TBD match should block predictions" };
   });

@@ -14,6 +14,8 @@ import { ByDateView } from "@/components/play/ByDateView";
 import { ByMatchdayView } from "@/components/play/ByMatchdayView";
 import { ClosingSoonBanner } from "@/components/play/ClosingSoonBanner";
 import { HowToPlayModal } from "@/components/play/HowToPlayModal";
+import { UiTestPreviewBanner } from "@/components/play/UiTestPreviewBanner";
+
 import {
   getAllMatches,
   getAllMatchesPublic,
@@ -124,7 +126,9 @@ function PlayPage() {
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
+      <UiTestPreviewBanner isAdmin={!!me.is_admin} />
       {!guest && (
+
         <ClosingSoonBanner
           matches={matches}
           view={view}
