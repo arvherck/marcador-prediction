@@ -1,29 +1,21 @@
-## Add Privacy Policy page
+## Add "Download my data" GDPR export
 
-### New file: `src/routes/privacy.tsx`
-- Public route `/privacy` (mirrors `rules.tsx` structure: header with logo + back link, dark theme, amber headings, TOC sidebar on desktop).
-- `head()` with title "Privacy Policy — Marcador", description, og tags, canonical URL.
-- Page sections (plain English, per spec):
-  1. Who we are
-  2. What data we collect
-  3. Why we collect it & legal basis
-  4. How long we keep your data
-  5. Who we share with (Supabase, Stripe)
-  6. Your GDPR rights
-  7. Cookies & local storage
-  8. Children (18+)
-  9. Changes to this policy
-  10. Contact
-- "Last updated: June 2026" note at the top and in footer of page.
-- Bottom: "← Back to Marcador" link to `/`.
+### Server function: `src/lib/auth.functions.ts`
+Add `exportMyDataFn` (GET, `requireSupabaseAuth`). Queries (all scoped to `userId`):
+- `profiles` — display_name, country, favourite_team, created_at, current_streak, longest_streak.
+- `tournament_predictions` — predicted_winner, created_at, points_awarded.
+- `predictions` joined with `matches` (home_team, away_team, kickoff_at, phase) → list with predicted_home_goals, predicted_away_goals, predicted_first_scorer, booster_applied, points_earned, submitted_at.
+- Leagues: call existing `my_leagues()` RPC; map to `{ name, invite_code, role: owner_id===userId ? "owner" : "member", joined_at }` (fetch `joined_at` from `league_members` for the user).
+- Totals: call `global_leaderboard()` RPC, find row where `id === userId` → `total_points`, `overall_rank` (null if absent).
 
-### Footer links (add "Privacy" alongside Rules)
-- `src/components/AppShell.tsx` footer — insert `<Link to="/privacy">Privacy</Link>` between Rules and FeedbackButton.
-- `src/routes/index.tsx` landing footer — same insertion.
-- `src/routes/rules.tsx` footer — add Privacy link for consistency.
+Return object matches the spec exactly. No emails, no auth data.
 
-### Signup screen
-- `src/routes/auth.signup.tsx` — add a small line under the form: "By creating an account you agree to our [Rules] and [Privacy Policy]."
+### Mi Marcador page: `src/routes/_authenticated/me.tsx`
+Add a new `<YourDataSection />` rendered just above `<DangerZone />`:
+- Card with heading "Your data", subtext per spec, "Download my data" button.
+- On click: call `useServerFn(exportMyDataFn)`, build a `Blob` with `JSON.stringify(data, null, 2)`, create object URL, programmatically click an `<a>` with `download="marcador-data-export.json"`, revoke URL.
+- Show `toast.success("Your data export is downloading ✓")` after trigger; toast.error on failure.
+- Loading state on button while fetching.
 
 ### Out of scope
-- No DB changes, no content updates to rules page, no cookie banner (storage is essential-only per policy text).
+- No DB migrations, no admin UI, no rate limit (small file, authenticated only).
