@@ -1,70 +1,62 @@
-# Admin Test Data tools
+# Multi-user simulation tool
 
-Add a "Test Data" subsection inside the existing 🧪 Tests area (`TestsPanel` in `src/components/admin/TestsPanel.tsx`) with an amber warning banner and four tools backed by new admin-only RPCs and server functions. Test-only — never overwrites real results, fully gated by admin role.
+Adds a "Multi-user simulation" card to the existing Test Data subsection in 🧪 Tests. Creates N fake auth users with profiles, varied predictions, optional liga membership — all gated by admin role and fully cleanable.
 
 ## 1. Database migration
 
-### New table `public.api_sync_log` (used for action logging)
+### New table `public.test_users`
 
-Columns: `action text not null`, `description text`, `actor_id uuid`, `meta jsonb`, plus standard `id/created_at`. Grants: `service_role` full, `authenticated` SELECT (admin-only via policy). RLS: only `has_role(auth.uid(),'admin')` can SELECT; no INSERT/UPDATE/DELETE from clients (server fns use service_role-equivalent via SECURITY DEFINER inserts inside RPCs).
+```
+id          uuid PK default gen_random_uuid()
+user_id     uuid not null references auth.users on delete cascade unique
+email       text not null
+created_at  timestamptz not null default now()
+```
 
-### New SECURITY DEFINER functions (all check `has_role(_caller_id,'admin')` first; log to `api_sync_log` with `action='test_data'`)
+Grants: `SELECT, DELETE` to `authenticated`; `ALL` to `service_role`. RLS on; single policy: admins (`has_role(auth.uid(),'admin')`) can `ALL`. Used only as a registry so we can find what to clean up.
 
-- `fill_random_scores(_caller_id uuid, _scope text, _matchday_id int default null) returns jsonb` — `_scope` ∈ `'current' | 'all_groups' | 'matchday'`. Selects eligible matches:
-  - `home_score IS NULL`
-  - `status <> 'completed'`
-  - `teams_confirmed = true`
-  - For `current`: smallest matchday id that still has eligible matches.
-  - For `all_groups`: `matchday_id BETWEEN 1 AND 3` (the 72 group matches).
-  - For `matchday`: `matchday_id = _matchday_id`.
-  
-  Per match generates a weighted random scoreline:
-  - 60% Low: `0-0,1-0,0-1,1-1,2-0,0-2,2-1,1-2`
-  - 30% Mid: `2-2,3-1,1-3,3-0,0-3,3-2,2-3`
-  - 10% High: `4-0,0-4,4-1,1-4,4-2,3-3,5-1,5-2`
-  
-  Sets `first_scorer` per rules (home/away/random/none), `is_final=true`, `status='completed'`. Does NOT run scoring. Returns `{ filled: int, matches: [{id, home_team, away_team, home_score, away_score, first_scorer}, ...] }`.
+### New SECURITY DEFINER RPCs
 
-- `clear_test_scores(_caller_id uuid, _scope text, _matchday_id int default null) returns jsonb` — Same scope semantics. For each selected match: set `home_score=null, away_score=null, first_scorer=null, is_final=false, status='upcoming'`; set `predictions.points=null` for those matches; for any matchday where ALL its matches are now cleared, delete `matchday_scores` rows for that matchday and reset `matchdays.is_scored=false`. Reset `profiles.current_streak=0, longest_streak=0` for all profiles. Returns `{ cleared: int }`.
+- `create_test_user_predictions(_caller_id uuid, _user_id uuid, _matchday_id int) returns int` — inserts a varied random scoreline (same weighted buckets as `_random_test_scoreline`) for every `teams_confirmed=true` match in `_matchday_id` for `_user_id`. Picks one of those predictions and sets `booster=true`. For ~20% of inserts where the match already has `home_score IS NOT NULL`, copies the real result to seed some scoring hits. Admin check on `_caller_id`. Logs to `api_sync_log`. (`validate_prediction` already bypasses for admin role, and these inserts run via the admin server fn that uses `supabaseAdmin` — RLS is bypassed.)
 
-- `fill_test_predictions(_caller_id uuid) returns jsonb` — For every match with `teams_confirmed=true` and `status IN ('upcoming','completed')` and no existing prediction from `_caller_id`: insert a prediction with the same weighted-random scoreline + consistent `first_scorer`, `booster=false`. After insert, pick one random prediction per matchday and set its `booster=true`. Returns `{ created: int }`.
+- `delete_test_users(_caller_id uuid) returns int` — for every `user_id` in `test_users`, deletes `predictions`, `matchday_scores`, `league_members`, `profiles`, `test_users` rows. Returns count. Auth user rows are deleted separately by the server fn via the admin API. Admin check + log.
 
-  Bypasses the `validate_prediction` lock by inserting via SECURITY DEFINER with a session GUC `app.test_mode = 'true'`; `validate_prediction` already short-circuits on points-only updates — for test-mode INSERTs we extend it minimally: if GUC `app.test_mode='true'` and caller is admin, skip the lock check. (Change is additive, does NOT affect normal predictions, and the existing points-UPDATE fix stays intact.)
-
-- `run_test_cycle(_caller_id uuid) returns jsonb` — Calls `fill_test_predictions` (if no admin predictions exist), then `fill_random_scores(_caller_id,'current')`, then `score_matchday(<that matchday>, _caller_id)`. Returns `{ matches_scored, predictions_evaluated, admin_points, admin_rank, matchday_id }` computed from `matchday_scores`.
-
-### Safety guard inside every RPC
-
-Skips any match where `home_score IS NOT NULL` AND the most recent result write was strictly before `current_date` (i.e. real pre-existing results from prior days are never touched — defensive layer in addition to the `home_score IS NULL` filter). Implemented via the eligibility WHERE clause; no separate timestamp column needed because the existing filter `home_score IS NULL` already prevents overwriting any real result.
+- `add_test_users_to_league(_caller_id uuid, _league_id uuid) returns int` — bulk-inserts every `test_users.user_id` into `league_members` (on conflict do nothing). Admin check + log. Returns count added.
 
 ## 2. Server functions (`src/lib/admin-tests.functions.ts`)
 
-Add — all use `requireSupabaseAuth`, call the matching RPC with `_caller_id: userId`:
+All use `requireSupabaseAuth` + `assertAdmin(userId)` and the admin Supabase client for auth-user operations.
 
-- `adminFillRandomScoresFn({ scope, matchday_id? })`
-- `adminClearTestScoresFn({ scope, matchday_id? })`
-- `adminFillTestPredictionsFn()`
-- `adminRunTestCycleFn()`
-- `adminListMatchdaysSlimFn()` (id+name only, for the matchday picker) — or reuse the existing `adminListMatchdays`.
+- `adminCreateTestUsersFn({ count })` — `count` clamped 1–10. For each `i` in 1..count:
+  1. `supabaseAdmin.auth.admin.createUser({ email: 'testuser{i}@marcador-test.com', password: 'TestMarcador2026!', email_confirm: true })`. If the email already exists, look up the existing user instead and reuse.
+  2. Insert/upsert `profiles` row with `display_name: 'Test User {i}'`, random `country`/`favourite_team` from the 8-team list.
+  3. Insert into `test_users (user_id, email)` on conflict do nothing.
+  4. Call `create_test_user_predictions(userId, current_md)` where `current_md` = smallest matchday id with `teams_confirmed=true` matches.
+  Returns `{ users_created, predictions_added, current_md, leaderboard_preview }` where the preview reads `matchday_scores` for those users (may be empty if scoring not yet run).
 
-## 3. UI — extend `TestsPanel.tsx`
+- `adminListTestUsersFn()` — returns the rows from `test_users` joined with `profiles.display_name` and any existing `matchday_scores.total_points` for the current matchday, plus a count, for the status display.
 
-Add a new "Test Data" section above the existing "Pre-release checks" card:
+- `adminDeleteTestUsersFn()` — calls `delete_test_users`, then iterates the returned user_ids and calls `supabaseAdmin.auth.admin.deleteUser(id)` to remove auth rows. Returns `{ removed }`.
 
-- Amber banner: ⚠️ "Test tools only. These actions modify real database data. Do not use after the tournament starts."
-- Four cards in a vertical stack:
-  1. **Fill random scores** — scope dropdown (`current` default, `all_groups`, `matchday`) + conditional matchday picker, "Fill random scores" button. On success → green text "✓ N matches filled with random scores" + `<details>` listing `Team A 2 – 1 Team B` rows.
-  2. **Clear test scores** — same scope picker, "Clear test scores" button → opens AlertDialog with the exact copy from the spec, "Cancel" / "Clear test data" buttons. On confirm runs RPC and shows "✓ Test data cleared for X matches".
-  3. **Fill test predictions** — single button. Shows "✓ X predictions created for admin".
-  4. **Run full test cycle** — single button. Shows multiline result block with matches scored, predictions evaluated, admin points, admin rank.
+- `adminListLeaguesForTestFn()` — lists `id,name` from `leagues` for the dropdown.
 
-All actions show toast errors on failure. After any mutation, `queryClient.invalidateQueries()` so the admin matchday lists refresh.
+- `adminAddTestUsersToLeagueFn({ league_id })` — calls `add_test_users_to_league`.
 
-Section is rendered only inside `TestsPanel`, which is already inside the admin-gated route — non-admins never see it.
+## 3. UI — extend `TestDataPanel.tsx`
 
-## 4. Out of scope / preserved
+Add a 5th card titled "Multi-user simulation" (below Run full test cycle):
 
-- `score_matchday`, `score_match`, `validate_prediction` semantics for normal users, and any existing scoring logic remain unchanged.
-- No edits to real match data outside the eligibility filter.
-- No new UI surface for non-admins.
+- Number input (1–10, default 5) and **Create test users & predictions** button.
+- **Remove all test users** button (with inline confirm dialog).
+- Status block: shows current count + table of `Test User N — country — points` when any exist. Refreshed via `useQuery(['admin-test-users'])`.
+- After creation, shows `✓ N test users created · M predictions added` plus a mini leaderboard.
+- **Add test users to a liga** section: visible only when test users exist — `<select>` of existing leagues + button → toast `✓ Added N test users to {liga name}`.
 
+All actions invalidate queries on success and show toast errors on failure.
+
+## 4. Safety / preserved
+
+- Every created email matches `@marcador-test.com`; the cleanup uses the `test_users` registry plus an email-suffix filter as a fallback.
+- Admin role enforced in both server fns (`assertAdmin`) and RPCs (`has_role`).
+- No changes to scoring, `validate_prediction`, `score_matchday`, `score_match`, or any real user data.
+- All actions logged to `api_sync_log` with `action='test_data'`.
