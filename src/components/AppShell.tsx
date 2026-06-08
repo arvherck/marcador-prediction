@@ -146,6 +146,8 @@ export function AppShell({
           <Link to="/rules" className="hover:text-amber-glow transition-colors">
             Rules
           </Link>
+          <span aria-hidden>·</span>
+          <FeedbackButton displayName={displayName} />
         </div>
       </footer>
 
