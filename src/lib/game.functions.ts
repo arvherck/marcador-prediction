@@ -1149,3 +1149,140 @@ export const getFixtureStatsPublic = createServerFn({ method: "GET" }).handler(
     return { matches: matchCount ?? 0, matchdays: mdCount ?? 0 };
   },
 );
+
+// ---------- Knockout bracket administration ----------
+
+export type KnockoutRow = {
+  id: number;
+  matchday_id: number;
+  phase: string | null;
+  home_team: string | null;
+  away_team: string | null;
+  home_placeholder: string | null;
+  away_placeholder: string | null;
+  auto_populated: boolean;
+  teams_confirmed: boolean;
+  is_final: boolean;
+  kickoff_at: string;
+};
+
+export const adminBracketStatus = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: rows, error } = await supabase
+      .from("matches")
+      .select(
+        "id, matchday_id, phase, home_team, away_team, home_placeholder, away_placeholder, auto_populated, teams_confirmed, is_final, kickoff_at",
+      )
+      .gte("matchday_id", 4)
+      .order("id");
+    if (error) throw safeError(error, "game");
+
+    const { count: groupRemaining } = await supabase
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .lte("matchday_id", 3)
+      .neq("status", "completed");
+
+    return {
+      rows: (rows ?? []) as KnockoutRow[],
+      groupStageComplete: (groupRemaining ?? 0) === 0,
+      groupRemaining: groupRemaining ?? 0,
+    };
+  });
+
+export const adminPopulateBracket = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      thirdAssignment: z
+        .record(z.string().regex(/^[1-8]$/), z.string().min(1))
+        .optional(),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data: result, error } = await supabase.rpc("populate_knockout_brackets", {
+      _caller_id: userId,
+      _third_assignment: data.thirdAssignment
+        ? (data.thirdAssignment as Record<string, string>)
+        : null,
+    });
+    if (error) throw safeError(error, "game");
+    // Run cascade in case any knockout match is already final.
+    await supabase.rpc("cascade_knockout_winners", { _caller_id: userId });
+    return result as Record<string, unknown>;
+  });
+
+export const adminCascadeKnockout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { data, error } = await supabase.rpc("cascade_knockout_winners", { _caller_id: userId });
+    if (error) throw safeError(error, "game");
+    return data as Record<string, unknown>;
+  });
+
+export const adminOverrideKnockoutTeams = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      match_id: z.number().int(),
+      home_team: z.string().trim().min(1).max(80).nullable(),
+      away_team: z.string().trim().min(1).max(80).nullable(),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("matches")
+      .update({
+        home_team: data.home_team,
+        away_team: data.away_team,
+        teams_confirmed: data.home_team !== null && data.away_team !== null,
+        auto_populated: false,
+      })
+      .eq("id", data.match_id)
+      .gte("matchday_id", 4);
+    if (error) throw safeError(error, "game");
+    return { ok: true };
+  });
+
+export const adminResetKnockoutMatch = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ match_id: z.number().int() }))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase.rpc("reset_knockout_match", {
+      _caller_id: userId,
+      _match_id: data.match_id,
+    });
+    if (error) throw safeError(error, "game");
+    return { ok: true };
+  });
+
+export const adminUpdateStandingsCards = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      team: z.string().trim().min(1).max(80),
+      yellow_cards: z.number().int().min(0).max(50),
+      red_cards: z.number().int().min(0).max(20),
+    }),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await assertAdmin(supabase, userId);
+    const { error } = await supabase
+      .from("wc_standings")
+      .update({ yellow_cards: data.yellow_cards, red_cards: data.red_cards })
+      .eq("team", data.team);
+    if (error) throw safeError(error, "game");
+    return { ok: true };
+  });
