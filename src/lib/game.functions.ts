@@ -93,6 +93,7 @@ function mapMatch(
     host_country: m.host_country ?? null,
     group_letter: m.group_letter ?? null,
     phase: m.phase ?? null,
+    points_multiplier: m.points_multiplier ?? 1,
     teams_confirmed: m.teams_confirmed ?? true,
     status,
     effective_status,
