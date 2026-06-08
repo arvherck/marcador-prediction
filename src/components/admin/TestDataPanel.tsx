@@ -155,6 +155,16 @@ export function TestDataPanel() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
+  const removePreWc = useMutation({
+    mutationFn: () => adminRemovePreWcTestMatchesFn(),
+    onSuccess: (r) => {
+      if (r.removed) toast.success("✓ Pre-WC test matches removed");
+      else toast.message("No pre-WC test matches found");
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
   const scopeLabel = (s: Scope, mdId?: number | "") => {
     if (s === "current") return "current matchday";
     if (s === "all_groups") return "all group stage matches (72)";
