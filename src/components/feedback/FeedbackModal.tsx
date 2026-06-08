@@ -97,61 +97,72 @@ export function FeedbackModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Send feedback ⚽</DialogTitle>
-          <DialogDescription>
-            Found a bug? Got a suggestion? We'd love to hear from you.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Category
-            </label>
-            <Select value={category} onValueChange={(v) => setCategory(v as Category)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CATEGORIES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">
-              Message
-            </label>
-            <Textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value.slice(0, MAX))}
-              placeholder="Tell us what's on your mind..."
-              rows={5}
-              maxLength={MAX}
-            />
-            <div className="flex justify-between text-xs">
-              <span
-                className={
-                  count > 0 && count < MIN ? "text-destructive" : "text-muted-foreground"
-                }
-              >
-                {count < MIN && count > 0 ? `At least ${MIN} characters` : ""}
-              </span>
-              <span className="text-muted-foreground">
-                {count} / {MAX}
-              </span>
+      <DialogContent
+        className="p-0 gap-0 overflow-hidden flex flex-col max-h-[90vh] w-full max-w-md
+          left-0 right-0 bottom-0 top-auto translate-x-0 translate-y-0 rounded-t-2xl rounded-b-none data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom
+          sm:left-[50%] sm:top-[50%] sm:bottom-auto sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-lg"
+      >
+        <form onSubmit={submit} className="flex flex-col min-h-0 flex-1">
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b border-border">
+            <DialogTitle>Send feedback ⚽</DialogTitle>
+            <DialogDescription>
+              Found a bug? Got a suggestion? We'd love to hear from you.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Category
+              </label>
+              <Select value={category} onValueChange={(v) => setCategory(v as Category)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Message
+              </label>
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value.slice(0, MAX))}
+                placeholder="Tell us what's on your mind..."
+                rows={5}
+                maxLength={MAX}
+              />
+              <div className="flex justify-between text-xs">
+                <span
+                  className={
+                    count > 0 && count < MIN ? "text-destructive" : "text-muted-foreground"
+                  }
+                >
+                  {count < MIN && count > 0 ? `At least ${MIN} characters` : ""}
+                </span>
+                <span className="text-muted-foreground">
+                  {count} / {MAX}
+                </span>
+              </div>
+            </div>
+            {error && (
+              <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
+                {error}
+              </p>
+            )}
           </div>
-          {error && (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-              {error}
-            </p>
-          )}
-          <div className="flex items-center justify-end gap-3 pt-2">
+
+          <div
+            className="shrink-0 border-t border-border bg-background px-6 py-4 flex items-center justify-end gap-3"
+            style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+          >
             <button
               type="button"
               onClick={() => onOpenChange(false)}
