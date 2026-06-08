@@ -84,7 +84,8 @@ type Category =
   | "🏆 Tournament Winner"
   | "🔒 Prediction Locking"
   | "🏟️ Standings Trigger"
-  | "🤝 Ligas";
+  | "🤝 Ligas"
+  | "🧪 Pre-WC Test Matches";
 
 type TestDef = {
   id: string;
