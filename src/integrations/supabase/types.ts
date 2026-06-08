@@ -38,6 +38,33 @@ export type Database = {
         }
         Relationships: []
       }
+      api_sync_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          meta: Json | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          meta?: Json | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          meta?: Json | null
+        }
+        Relationships: []
+      }
       api_usage: {
         Row: {
           calls_made: number
@@ -520,7 +547,24 @@ export type Database = {
       }
     }
     Functions: {
+      _random_test_scoreline: {
+        Args: never
+        Returns: {
+          away_goals: number
+          first_scorer: string
+          home_goals: number
+        }[]
+      }
       cascade_knockout_winners: { Args: { _caller_id: string }; Returns: Json }
+      clear_test_scores: {
+        Args: { _caller_id: string; _matchday_id?: number; _scope: string }
+        Returns: Json
+      }
+      fill_random_scores: {
+        Args: { _caller_id: string; _matchday_id?: number; _scope: string }
+        Returns: Json
+      }
+      fill_test_predictions: { Args: { _caller_id: string }; Returns: Json }
       find_league_by_code: { Args: { _code: string }; Returns: string }
       global_leaderboard: {
         Args: { _league_id?: string }
@@ -584,6 +628,7 @@ export type Database = {
         Args: { _label: string; _runners: Json; _thirds: Json; _winners: Json }
         Returns: string
       }
+      run_test_cycle: { Args: { _caller_id: string }; Returns: Json }
       score_match: {
         Args: { _caller_id: string; _match_id: number }
         Returns: number
