@@ -777,8 +777,9 @@ function ResultRow({
             <div className="font-medium">
               {m.home_team} <span className="text-muted-foreground">vs</span> {m.away_team}
             </div>
-            <div className="text-[11px] text-muted-foreground flex items-center gap-2">
+            <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
               <span>{m.phase ?? "—"}</span>
+              {isKnockout && <MultiplierEditor match={m} onChange={onChange} />}
               {isKnockout && confirmed && (
                 <button
                   onClick={() => setEditTeams(true)}
