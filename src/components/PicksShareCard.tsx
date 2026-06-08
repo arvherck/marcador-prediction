@@ -58,15 +58,15 @@ export const PicksShareCard = forwardRef<HTMLDivElement, Props>(function PicksSh
               }`}
             >
               <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                <span className="text-lg">{teamFlag(m.home_team)}</span>
-                <span className="text-xs font-semibold truncate">{m.home_team}</span>
+                <span className="text-lg">{teamFlag(m.home_team ?? "")}</span>
+                <span className="text-xs font-semibold truncate">{m.home_team ?? ""}</span>
               </div>
               <div className="font-score font-bold text-base tabular-nums px-2 text-amber-glow">
                 {d.home}–{d.away}
               </div>
               <div className="flex-1 min-w-0 flex items-center gap-1.5 justify-end">
-                <span className="text-xs font-semibold truncate text-right">{m.away_team}</span>
-                <span className="text-lg">{teamFlag(m.away_team)}</span>
+                <span className="text-xs font-semibold truncate text-right">{m.away_team ?? ""}</span>
+                <span className="text-lg">{teamFlag(m.away_team ?? "")}</span>
               </div>
               {boosted && (
                 <Zap size={14} className="text-primary shrink-0" fill="currentColor" />
