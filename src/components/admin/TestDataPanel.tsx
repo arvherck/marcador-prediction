@@ -12,6 +12,7 @@ import {
   adminDeleteTestUsersFn,
   adminListLeaguesForTestFn,
   adminAddTestUsersToLeagueFn,
+  adminRemovePreWcTestMatchesFn,
   type FilledMatch,
 } from "@/lib/admin-tests.functions";
 
@@ -149,6 +150,16 @@ export function TestDataPanel() {
     mutationFn: () => adminRunTestCycleFn(),
     onSuccess: (r) => {
       setCycleResult(r);
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const removePreWc = useMutation({
+    mutationFn: () => adminRemovePreWcTestMatchesFn(),
+    onSuccess: (r) => {
+      if (r.removed) toast.success("✓ Pre-WC test matches removed");
+      else toast.message("No pre-WC test matches found");
       qc.invalidateQueries();
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
@@ -415,6 +426,22 @@ export function TestDataPanel() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Tool 6: Pre-WC test matches cleanup */}
+      <div className="px-4 py-3 border-t border-border space-y-2">
+        <div className="font-medium text-sm">Pre-WC test matches</div>
+        <div className="text-[11px] text-muted-foreground">
+          Removes the hidden "Test — Pre-WC Friendlies (June 2026)" matchday, its 6 matches, all
+          predictions on them and any matchday scores.
+        </div>
+        <button
+          onClick={() => removePreWc.mutate()}
+          disabled={removePreWc.isPending}
+          className="rounded-lg border border-destructive text-destructive px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+        >
+          {removePreWc.isPending ? "Removing…" : "Remove pre-WC test matches"}
+        </button>
       </div>
 
       {removeConfirmOpen && (

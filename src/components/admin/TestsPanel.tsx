@@ -69,6 +69,10 @@ import {
   testNoTestUsers,
   testKnockoutPlaceholdersSet,
   testRulesRouteExists,
+  testPreWcFriendliesExist,
+  testPreWcBelgiumTunisia,
+  testPreWcScoringBelgium13,
+  testPreWcExcludedFromLeaderboard,
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
@@ -80,7 +84,8 @@ type Category =
   | "🏆 Tournament Winner"
   | "🔒 Prediction Locking"
   | "🏟️ Standings Trigger"
-  | "🤝 Ligas";
+  | "🤝 Ligas"
+  | "🧪 Pre-WC Test Matches";
 
 type TestDef = {
   id: string;
@@ -148,6 +153,12 @@ const TESTS: TestDef[] = [
   { id: "liga-join-valid", label: "Join with valid code succeeds", category: "🤝 Ligas", run: () => testLigaJoinValidCode() },
   { id: "liga-join-invalid", label: "Join with invalid code rejected", category: "🤝 Ligas", run: () => testLigaJoinInvalidCode() },
   { id: "liga-join-twice", label: "Cannot join same liga twice (idempotent)", category: "🤝 Ligas", run: () => testLigaJoinTwice() },
+
+  // 🧪 Pre-WC Test Matches
+  { id: "prewc-exist", label: "Pre-WC friendly test matches exist (6)", category: "🧪 Pre-WC Test Matches", run: () => testPreWcFriendliesExist() },
+  { id: "prewc-belgium", label: "Belgium 5-0 Tunisia stored correctly", category: "🧪 Pre-WC Test Matches", run: () => testPreWcBelgiumTunisia() },
+  { id: "prewc-score-13", label: "Perfect 5-0 Belgium prediction scores 13 pts", category: "🧪 Pre-WC Test Matches", run: () => testPreWcScoringBelgium13() },
+  { id: "prewc-leaderboard", label: "Test matchday excluded from leaderboard", category: "🧪 Pre-WC Test Matches", run: () => testPreWcExcludedFromLeaderboard() },
 ];
 
 type RunState = "idle" | "running" | TestResult;
@@ -198,6 +209,7 @@ const CATEGORY_ORDER: Category[] = [
   "🏟️ Standings Trigger",
   "🔒 Prediction Locking",
   "🤝 Ligas",
+  "🧪 Pre-WC Test Matches",
 ];
 
 export function TestsPanel() {

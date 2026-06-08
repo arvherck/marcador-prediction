@@ -59,6 +59,7 @@ export const testMatchdays = createServerFn({ method: "POST" })
       .from("matchdays")
       .select("id, name")
       .not("name", "like", "\\_\\_%")
+      .eq("is_test", false)
       .order("id");
     if (error) return { status: "fail", message: error.message };
     if ((data?.length ?? 0) === 9)
@@ -2513,5 +2514,209 @@ export const testRulesRouteExists = createServerFn({ method: "POST" })
         : { status: "fail", message: "Rules page not found in route tree" };
     } catch (e) {
       return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// ============================================================
+// Pre-WC Friendly test matches — seed, cleanup, and tests
+// ============================================================
+
+const PRE_WC_MD_NAME = "Test — Pre-WC Friendlies (June 2026)";
+
+async function getPreWcMatchdayId(): Promise<number | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("matchdays")
+    .select("id")
+    .eq("name", PRE_WC_MD_NAME)
+    .eq("is_test", true)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
+export const adminRemovePreWcTestMatchesFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { removed: false, matches: 0 };
+
+    const { data: matchRows } = await supabaseAdmin
+      .from("matches")
+      .select("id")
+      .eq("matchday_id", mdId);
+    const matchIds = (matchRows ?? []).map((r) => r.id);
+
+    if (matchIds.length) {
+      await supabaseAdmin.from("predictions").delete().in("match_id", matchIds);
+    }
+    await supabaseAdmin.from("matchday_scores").delete().eq("matchday_id", mdId);
+    await supabaseAdmin.from("matches").delete().eq("matchday_id", mdId);
+    await supabaseAdmin.from("matchdays").delete().eq("id", mdId);
+
+    return { removed: true, matches: matchIds.length };
+  });
+
+export const testPreWcFriendliesExist = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { status: "fail", message: "Pre-WC test matches not found" };
+    const { count, error } = await supabaseAdmin
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .eq("matchday_id", mdId);
+    if (error) return { status: "fail", message: error.message };
+    if (count === 6) return { status: "pass", message: "6 Pre-WC friendly test matches present ✓" };
+    return { status: "fail", message: `Expected 6 Pre-WC test matches, found ${count ?? 0}` };
+  });
+
+export const testPreWcBelgiumTunisia = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { status: "fail", message: "Pre-WC test matches not found" };
+    const { data, error } = await supabaseAdmin
+      .from("matches")
+      .select("home_score, away_score, first_scorer")
+      .eq("matchday_id", mdId)
+      .eq("home_team", "Belgium")
+      .eq("away_team", "Tunisia")
+      .maybeSingle();
+    if (error || !data) return { status: "fail", message: error?.message ?? "Belgium-Tunisia match not found" };
+    if (data.home_score === 5 && data.away_score === 0 && data.first_scorer === "home") {
+      return { status: "pass", message: "Belgium 5-0 Tunisia stored correctly ✓" };
+    }
+    return {
+      status: "fail",
+      message: `Got ${data.home_score}-${data.away_score} first=${data.first_scorer}, expected 5-0 home`,
+    };
+  });
+
+export const testPreWcScoringBelgium13 = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const userId = context.userId;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { status: "fail", message: "Pre-WC test matches not found" };
+
+    const { data: match } = await supabaseAdmin
+      .from("matches")
+      .select("id")
+      .eq("matchday_id", mdId)
+      .eq("home_team", "Belgium")
+      .eq("away_team", "Tunisia")
+      .maybeSingle();
+    if (!match) return { status: "fail", message: "Belgium-Tunisia match not found" };
+
+    // Snapshot + remove any existing prediction so insert succeeds
+    const { data: prior } = await supabaseAdmin
+      .from("predictions")
+      .select("home_goals, away_goals, first_scorer, booster, points")
+      .eq("user_id", userId)
+      .eq("match_id", match.id)
+      .maybeSingle();
+    await supabaseAdmin.from("predictions").delete().eq("user_id", userId).eq("match_id", match.id);
+
+    try {
+      // Use admin/user-authenticated client so validate_prediction trigger bypasses for admins
+      const { error: insErr } = await context.supabase
+        .from("predictions")
+        .insert({
+          user_id: userId,
+          match_id: match.id,
+          home_goals: 5,
+          away_goals: 0,
+          first_scorer: "home",
+          booster: false,
+        });
+      if (insErr) return { status: "fail", message: `insert failed: ${insErr.message}` };
+
+      const { error: scoreErr } = await supabaseAdmin.rpc("score_match", {
+        _match_id: match.id,
+        _caller_id: userId,
+      });
+      if (scoreErr) return { status: "fail", message: `score_match failed: ${scoreErr.message}` };
+
+      const { data: pred } = await supabaseAdmin
+        .from("predictions")
+        .select("points")
+        .eq("user_id", userId)
+        .eq("match_id", match.id)
+        .maybeSingle();
+      const got = pred?.points ?? null;
+      if (got === 13) return { status: "pass", message: "Perfect 5-0 Belgium prediction = 13 pts ✓" };
+      return { status: "fail", message: `Expected 13 pts, got ${got}` };
+    } finally {
+      // Cleanup
+      await supabaseAdmin.from("predictions").delete().eq("user_id", userId).eq("match_id", match.id);
+      await supabaseAdmin.from("matchday_scores").delete().eq("user_id", userId).eq("matchday_id", mdId);
+      if (prior) {
+        await supabaseAdmin.from("predictions").insert({
+          user_id: userId,
+          match_id: match.id,
+          home_goals: prior.home_goals,
+          away_goals: prior.away_goals,
+          first_scorer: prior.first_scorer,
+          booster: prior.booster,
+          points: prior.points,
+        });
+      }
+    }
+  });
+
+export const testPreWcExcludedFromLeaderboard = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const userId = context.userId;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const mdId = await getPreWcMatchdayId();
+    if (mdId == null) return { status: "fail", message: "Pre-WC test matches not found" };
+
+    const before = await supabaseAdmin.rpc("global_leaderboard");
+    if (before.error) return { status: "fail", message: before.error.message };
+    type LbRow = { id: string; total_points: number };
+    const beforeTotal = (before.data as LbRow[] | null)?.find((r) => r.id === userId)?.total_points ?? 0;
+
+    // Snapshot any existing matchday_scores row for admin on test matchday
+    const { data: prior } = await supabaseAdmin
+      .from("matchday_scores")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("matchday_id", mdId)
+      .maybeSingle();
+    await supabaseAdmin.from("matchday_scores").delete().eq("user_id", userId).eq("matchday_id", mdId);
+
+    try {
+      const { error: insErr } = await supabaseAdmin.from("matchday_scores").insert({
+        user_id: userId,
+        matchday_id: mdId,
+        total_points: 999,
+        rank: 1,
+        correct_results: 99,
+        exact_scores: 99,
+        correct_first_scorers: 99,
+      });
+      if (insErr) return { status: "fail", message: `insert matchday_scores: ${insErr.message}` };
+
+      const after = await supabaseAdmin.rpc("global_leaderboard");
+      if (after.error) return { status: "fail", message: after.error.message };
+      const afterTotal = (after.data as LbRow[] | null)?.find((r) => r.id === userId)?.total_points ?? 0;
+      const delta = afterTotal - beforeTotal;
+      if (delta === 0) return { status: "pass", message: "Test matchday scores excluded from leaderboard ✓" };
+      return { status: "fail", message: `Leaderboard total changed by ${delta} (expected 0)` };
+    } finally {
+      await supabaseAdmin.from("matchday_scores").delete().eq("user_id", userId).eq("matchday_id", mdId);
+      if (prior) {
+        await supabaseAdmin.from("matchday_scores").insert(prior);
+      }
     }
   });
