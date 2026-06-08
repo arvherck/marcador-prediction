@@ -39,6 +39,19 @@ export type MatchRow = {
 
 const scorerEnum = z.enum(["home", "away", "none"]);
 
+// Fetch IDs of matchdays flagged as internal/test fixtures.
+// Used to hide them from all user-facing reads (play screen, leaderboard, stats).
+async function getTestMatchdayIds(
+  client: { from: (t: string) => { select: (s: string) => { eq: (c: string, v: boolean) => Promise<{ data: Array<{ id: number }> | null }> } } },
+): Promise<number[]> {
+  const { data } = await client.from("matchdays").select("id").eq("is_test", true);
+  return (data ?? []).map((r) => r.id);
+}
+function notInList(ids: number[]): string {
+  // PostgREST `in` filter expects `(1,2,3)`; use sentinel when empty
+  return `(${ids.length ? ids.join(",") : "0"})`;
+}
+
 function mapMatch(
   m: {
     id: number;
