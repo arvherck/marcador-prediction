@@ -132,18 +132,35 @@ export const recordConsentFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const { error } = await supabase
+    const now = new Date().toISOString();
+    const { data: existing } = await supabase
       .from("profiles")
-      .upsert(
-        {
-          user_id: userId,
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
           age_confirmed: true,
           privacy_accepted: true,
-          consent_recorded_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" },
-      );
-    if (error) throw safeError(error, "auth");
+          consent_recorded_at: now,
+        })
+        .eq("user_id", userId);
+      if (error) throw safeError(error, "auth");
+    } else {
+      const { error } = await supabase.from("profiles").insert({
+        user_id: userId,
+        display_name: "",
+        country: "",
+        favourite_team: "",
+        age_confirmed: true,
+        privacy_accepted: true,
+        consent_recorded_at: now,
+      });
+      if (error) throw safeError(error, "auth");
+    }
     return { ok: true };
   });
 
