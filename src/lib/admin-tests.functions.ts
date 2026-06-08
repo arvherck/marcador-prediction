@@ -155,8 +155,9 @@ export const testStandingsPopulated = createServerFn({ method: "POST" })
       .from("wc_standings")
       .select("group_id");
     if (pErr) return { status: "fail", message: pErr.message };
-    const counts = new Map<string, number>();
-    for (const r of per ?? []) counts.set(r.group_id, (counts.get(r.group_id) ?? 0) + 1);
+    const counts = new Map<number, number>();
+    for (const r of per ?? []) counts.set(r.group_id as number, (counts.get(r.group_id as number) ?? 0) + 1);
+
     const bad = [...counts.entries()].filter(([, n]) => n !== 4);
     if (bad.length) {
       return { status: "fail", message: `${bad.length} groups have ≠ 4 teams` };
