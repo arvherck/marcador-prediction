@@ -213,7 +213,10 @@ export type Database = {
       }
       matchday_scores: {
         Row: {
+          correct_first_scorers: number
+          correct_results: number
           created_at: string
+          exact_scores: number
           id: string
           matchday_id: number
           rank: number | null
@@ -222,7 +225,10 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          correct_first_scorers?: number
+          correct_results?: number
           created_at?: string
+          exact_scores?: number
           id?: string
           matchday_id: number
           rank?: number | null
@@ -231,7 +237,10 @@ export type Database = {
           user_id: string
         }
         Update: {
+          correct_first_scorers?: number
+          correct_results?: number
           created_at?: string
+          exact_scores?: number
           id?: string
           matchday_id?: number
           rank?: number | null
@@ -663,12 +672,16 @@ export type Database = {
       global_leaderboard: {
         Args: { _league_id?: string }
         Returns: {
+          correct_first_scorers: number
+          correct_results: number
           country: string
           current_streak: number
           display_name: string
+          exact_scores: number
           favourite_team: string
           id: string
           last_md_points: number
+          rank: number
           scored_predictions: number
           total_points: number
         }[]
@@ -687,8 +700,11 @@ export type Database = {
       matchday_leaderboard: {
         Args: { _league_id?: string; _matchday_id?: number }
         Returns: {
+          correct_first_scorers: number
+          correct_results: number
           country: string
           display_name: string
+          exact_scores: number
           favourite_team: string
           id: string
           matchday_id: number

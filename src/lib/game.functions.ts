@@ -408,6 +408,10 @@ export const getLeaderboard = createServerFn({ method: "GET" })
       scored_predictions: number;
       last_md_points: number;
       current_streak: number;
+      rank: number | null;
+      correct_results: number;
+      exact_scores: number;
+      correct_first_scorers: number;
     }>;
   });
 
@@ -450,17 +454,23 @@ export const getMatchdayLeaderboard = createServerFn({ method: "GET" })
       favourite_team: string;
       total_points: number;
       rank: number | null;
+      correct_results: number;
+      exact_scores: number;
+      correct_first_scorers: number;
     }>;
     if (!list.length) return { matchday: null, rows: [] as Array<never> };
     return {
       matchday: { id: list[0].matchday_id, name: list[0].matchday_name },
-      rows: list.map(({ id, display_name, country, favourite_team, total_points, rank }) => ({
+      rows: list.map(({ id, display_name, country, favourite_team, total_points, rank, correct_results, exact_scores, correct_first_scorers }) => ({
         id,
         display_name,
         country,
         favourite_team,
         total_points,
         rank,
+        correct_results,
+        exact_scores,
+        correct_first_scorers,
       })),
     };
   });
@@ -484,6 +494,10 @@ export const getLeaderboardPublic = createServerFn({ method: "GET" })
       scored_predictions: number;
       last_md_points: number;
       current_streak: number;
+      rank: number | null;
+      correct_results: number;
+      exact_scores: number;
+      correct_first_scorers: number;
     }>;
   });
 
@@ -513,17 +527,23 @@ export const getMatchdayLeaderboardPublic = createServerFn({ method: "GET" })
       favourite_team: string;
       total_points: number;
       rank: number | null;
+      correct_results: number;
+      exact_scores: number;
+      correct_first_scorers: number;
     }>;
     if (!list.length) return { matchday: null, rows: [] as Array<never> };
     return {
       matchday: { id: list[0].matchday_id, name: list[0].matchday_name },
-      rows: list.map(({ id, display_name, country, favourite_team, total_points, rank }) => ({
+      rows: list.map(({ id, display_name, country, favourite_team, total_points, rank, correct_results, exact_scores, correct_first_scorers }) => ({
         id,
         display_name,
         country,
         favourite_team,
         total_points,
         rank,
+        correct_results,
+        exact_scores,
+        correct_first_scorers,
       })),
     };
 

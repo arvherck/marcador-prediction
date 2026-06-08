@@ -50,6 +50,10 @@ type OverallRow = {
   total_points: number;
   last_md_points: number;
   current_streak: number;
+  rank?: number | null;
+  correct_results?: number;
+  exact_scores?: number;
+  correct_first_scorers?: number;
 };
 
 type MatchdayRow = {
@@ -59,6 +63,9 @@ type MatchdayRow = {
   favourite_team: string;
   total_points: number;
   rank: number | null;
+  correct_results?: number;
+  exact_scores?: number;
+  correct_first_scorers?: number;
 };
 
 function LeaderboardPage() {
@@ -123,24 +130,40 @@ function OverallTab({ meId, isGuest, leagueId }: { meId: string; isGuest?: boole
   if (q.isLoading) return <SkeletonBoard />;
   if (!rows.length) return <EmptyState />;
 
+  const rankCounts = new Map<number, number>();
+  rows.forEach((r) => {
+    const k = r.rank ?? 0;
+    rankCounts.set(k, (rankCounts.get(k) ?? 0) + 1);
+  });
+
   return (
     <Board>
-      {rows.map((row, i) => (
-        <Row
-          key={row.id}
-          rank={i + 1}
-          isMe={row.id === meId}
-          name={row.display_name}
-          country={row.country}
-          favourite={row.favourite_team}
-          primary={row.total_points}
-          streak={row.current_streak}
-          donor={donorSet.has(row.id)}
-          secondary={
-            row.last_md_points > 0 ? `+${row.last_md_points} last MD` : "—"
-          }
-        />
-      ))}
+      {rows.map((row, i) => {
+        const rk = row.rank ?? i + 1;
+        const tied = (rankCounts.get(rk) ?? 0) > 1 && row.rank != null;
+        return (
+          <Row
+            key={row.id}
+            rank={rk}
+            tied={tied}
+            tieInfo={
+              tied
+                ? `Tied on points — ranked by correct results (${row.correct_results ?? 0}), exact scores (${row.exact_scores ?? 0}), correct first scorers (${row.correct_first_scorers ?? 0})`
+                : undefined
+            }
+            isMe={row.id === meId}
+            name={row.display_name}
+            country={row.country}
+            favourite={row.favourite_team}
+            primary={row.total_points}
+            streak={row.current_streak}
+            donor={donorSet.has(row.id)}
+            secondary={
+              row.last_md_points > 0 ? `+${row.last_md_points} last MD` : "—"
+            }
+          />
+        );
+      })}
     </Board>
   );
 }
@@ -181,20 +204,39 @@ function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
       {rows.length === 0 ? (
         <EmptyState />
       ) : (
-        <Board>
-          {rows.map((row, i) => (
-            <Row
-              key={row.id}
-              rank={row.rank ?? i + 1}
-              isMe={row.id === meId}
-              name={row.display_name}
-              country={row.country}
-              favourite={row.favourite_team}
-              primary={row.total_points}
-              donor={donorSet.has(row.id)}
-            />
-          ))}
-        </Board>
+        (() => {
+          const rankCounts = new Map<number, number>();
+          rows.forEach((r) => {
+            const k = r.rank ?? 0;
+            rankCounts.set(k, (rankCounts.get(k) ?? 0) + 1);
+          });
+          return (
+            <Board>
+              {rows.map((row, i) => {
+                const rk = row.rank ?? i + 1;
+                const tied = (rankCounts.get(rk) ?? 0) > 1 && row.rank != null;
+                return (
+                  <Row
+                    key={row.id}
+                    rank={rk}
+                    tied={tied}
+                    tieInfo={
+                      tied
+                        ? `Tied on points — ranked by correct results (${row.correct_results ?? 0}), exact scores (${row.exact_scores ?? 0}), correct first scorers (${row.correct_first_scorers ?? 0})`
+                        : undefined
+                    }
+                    isMe={row.id === meId}
+                    name={row.display_name}
+                    country={row.country}
+                    favourite={row.favourite_team}
+                    primary={row.total_points}
+                    donor={donorSet.has(row.id)}
+                  />
+                );
+              })}
+            </Board>
+          );
+        })()
       )}
     </>
   );
@@ -255,6 +297,8 @@ function Board({ children }: { children: React.ReactNode }) {
 
 function Row({
   rank,
+  tied,
+  tieInfo,
   isMe,
   name,
   country,
@@ -265,6 +309,8 @@ function Row({
   donor,
 }: {
   rank: number;
+  tied?: boolean;
+  tieInfo?: string;
   isMe: boolean;
   name: string;
   country: string;
@@ -277,6 +323,7 @@ function Row({
   const isTop3 = rank <= 3;
   return (
     <div
+      title={tieInfo}
       className={`flex items-center justify-between gap-3 px-4 py-3 border-b border-border last:border-0 ${
         isMe ? "bg-primary/10 ring-1 ring-inset ring-primary/40" : ""
       }`}
@@ -287,11 +334,13 @@ function Row({
             isTop3 ? "text-amber-glow" : "text-muted-foreground"
           }`}
         >
-          {isTop3 ? <Trophy size={18} className="fill-current" /> : rank}
+          {isTop3 ? <Trophy size={18} className="fill-current" /> : (
+            <span>{tied && <span className="text-muted-foreground/70 mr-0.5">=</span>}{rank}</span>
+          )}
         </div>
         {isTop3 && (
-          <div className="font-score font-bold text-sm text-muted-foreground tabular-nums w-5 -ml-1">
-            {rank}
+          <div className="font-score font-bold text-sm text-muted-foreground tabular-nums w-6 -ml-1">
+            {tied && <span className="text-muted-foreground/70">=</span>}{rank}
           </div>
         )}
         <div className="text-xl leading-none" aria-hidden>
