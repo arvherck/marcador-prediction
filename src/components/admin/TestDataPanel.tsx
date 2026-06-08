@@ -83,7 +83,7 @@ export function TestDataPanel() {
   });
 
   const cycle = useMutation({
-    mutationFn: () => adminRunTestCycleFn({ data: undefined as never }),
+    mutationFn: () => adminRunTestCycleFn(),
     onSuccess: (r) => {
       setCycleResult(r);
       qc.invalidateQueries();
