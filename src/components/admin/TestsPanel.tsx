@@ -419,9 +419,10 @@ export function TestsPanel({ adminDisplayName }: TestsPanelProps = {}) {
     );
   };
 
-  // suppress unused var warnings for memo placeholder
-  void useMemo;
+  // (durations tracked but currently surfaced only via report)
   void durations;
+
+
 
   return (
     <>
