@@ -1,62 +1,57 @@
-# Multi-user simulation tool
+# Edge case score tester
 
-Adds a "Multi-user simulation" card to the existing Test Data subsection in 🧪 Tests. Creates N fake auth users with profiles, varied predictions, optional liga membership — all gated by admin role and fully cleanable.
+Adds a new "Scoring edge cases" card to the existing 🧪 Tests section that runs 13 isolated, fully-automated scoring tests in temporary matchdays.
 
-## 1. Database migration
+Reuses the existing `withTempScenario` / `seedMatchAndPrediction` / `scoreAndGetPoints` helpers in `src/lib/admin-tests.functions.ts` (already prefix matchdays with `__test_` and purge on every run). All temp matches will use `home_team='__test'` as requested for the manual cleanup query, on top of the existing prefix-based purge.
 
-### New table `public.test_users`
+## Heads-up on existing test conflict
 
-```
-id          uuid PK default gen_random_uuid()
-user_id     uuid not null references auth.users on delete cascade unique
-email       text not null
-created_at  timestamptz not null default now()
-```
+The user's spec for **Correct result wrong score** (pred 2-0 vs actual 1-0) expects 8 pts: `3 result + 2 away (0=0) + 3 scorer`. The existing `testScoringCorrectResult` runs the same scenario but asserts 6 — it's wrong and will start failing once the matching edge-case test passes. I'll leave it untouched and surface the discrepancy in the new panel; if you want me to also update the old test or remove it, say so.
 
-Grants: `SELECT, DELETE` to `authenticated`; `ALL` to `service_role`. RLS on; single policy: admins (`has_role(auth.uid(),'admin')`) can `ALL`. Used only as a registry so we can find what to clean up.
+## 1. New server functions (append to `src/lib/admin-tests.functions.ts`)
 
-### New SECURITY DEFINER RPCs
+All under a new `// ---------- Edge case scoring ----------` section. Each one: `assertAdmin` → `withTempScenario` → `seedMatchAndPrediction` (with `home_team:'__test'`, `away_team:'__test'`) → `scoreAndGetPoints` → assert exact integer → returns `{ status:'pass'|'fail', message }` with expected vs actual on fail. Try/finally is already guaranteed by `withTempScenario`.
 
-- `create_test_user_predictions(_caller_id uuid, _user_id uuid, _matchday_id int) returns int` — inserts a varied random scoreline (same weighted buckets as `_random_test_scoreline`) for every `teams_confirmed=true` match in `_matchday_id` for `_user_id`. Picks one of those predictions and sets `booster=true`. For ~20% of inserts where the match already has `home_score IS NOT NULL`, copies the real result to seed some scoring hits. Admin check on `_caller_id`. Logs to `api_sync_log`. (`validate_prediction` already bypasses for admin role, and these inserts run via the admin server fn that uses `supabaseAdmin` — RLS is bypassed.)
+Single-user tests (12 of 13):
 
-- `delete_test_users(_caller_id uuid) returns int` — for every `user_id` in `test_users`, deletes `predictions`, `matchday_scores`, `league_members`, `profiles`, `test_users` rows. Returns count. Auth user rows are deleted separately by the server fn via the admin API. Admin check + log.
+- `testEdgeExactScoreline` — 2-1 home/home → 13
+- `testEdgeCorrectResultWrongScore` — pred 2-0/home, actual 3-0/home → 8
+- `testEdgeWrongFirstScorer` — pred 1-0/home, actual 1-0/away → 10
+- `testEdgeDrawCorrect` — 1-1/home both sides → 13
+- `testEdgeZeroZeroDraw` — 0-0/none both sides → 13
+- `testEdgeZeroZeroBooster` — 0-0/none booster, actual 0-0 → 26
+- `testEdgeWrongResult` — pred 2-0, actual 0-1 → 0
+- `testEdgeAwayWin` — 0-2/away both sides → 13
+- `testEdgeBooster` — 1-0/home booster, actual 1-0/home → 26
+- `testEdgeUnderdog10pct` — see below (NOT below threshold → 13)
+- `testEdgeUnderdogBelow10pct` — see below (fires → 18)
+- `testEdgeRescoreNoDouble` — score once, capture pts, score same matchday again, assert unchanged
+- `testEdgeResultCorrection` — actual 2-1 vs pred 2-1 → 13, update match to 1-1, re-score, assert 0
 
-- `add_test_users_to_league(_caller_id uuid, _league_id uuid) returns int` — bulk-inserts every `test_users.user_id` into `league_members` (on conflict do nothing). Admin check + log. Returns count added.
+### Underdog tests
 
-## 2. Server functions (`src/lib/admin-tests.functions.ts`)
+`predictions.user_id` FKs `auth.users` with a unique `(user_id, match_id)`, so the N predictions need N distinct auth users. New helper `withExtraTestUsers(n, fn)` does:
 
-All use `requireSupabaseAuth` + `assertAdmin(userId)` and the admin Supabase client for auth-user operations.
+1. Loops `i=1..n-1` calling `supabaseAdmin.auth.admin.createUser({ email: 'edge-${ts}-${i}@marcador-edgetest.com', password: TestMarcador2026!, email_confirm: true })` and collects ids.
+2. Runs `fn(ids)`.
+3. In `finally`, deletes those auth users (CASCADE removes their predictions).
 
-- `adminCreateTestUsersFn({ count })` — `count` clamped 1–10. For each `i` in 1..count:
-  1. `supabaseAdmin.auth.admin.createUser({ email: 'testuser{i}@marcador-test.com', password: 'TestMarcador2026!', email_confirm: true })`. If the email already exists, look up the existing user instead and reuse.
-  2. Insert/upsert `profiles` row with `display_name: 'Test User {i}'`, random `country`/`favourite_team` from the 8-team list.
-  3. Insert into `test_users (user_id, email)` on conflict do nothing.
-  4. Call `create_test_user_predictions(userId, current_md)` where `current_md` = smallest matchday id with `teams_confirmed=true` matches.
-  Returns `{ users_created, predictions_added, current_md, leaderboard_preview }` where the preview reads `matchday_scores` for those users (may be empty if scoring not yet run).
+For the **below 10%** test (N=11): admin predicts 3-2 (boosterless), 10 helper users predict 0-0. Actual = 3-2/home. Score, read admin's points, assert 18 (`3+2+2+3+3 + 5` underdog; no booster, no first-scorer mismatch).
 
-- `adminListTestUsersFn()` — returns the rows from `test_users` joined with `profiles.display_name` and any existing `matchday_scores.total_points` for the current matchday, plus a count, for the status display.
+For the **at 10%** test (N=10): admin predicts 3-2, 9 helpers predict 0-0. Actual = 3-2/home. Admin should get exactly 13 (no +5 because share = 0.1 is NOT `< 0.1`).
 
-- `adminDeleteTestUsersFn()` — calls `delete_test_users`, then iterates the returned user_ids and calls `supabaseAdmin.auth.admin.deleteUser(id)` to remove auth rows. Returns `{ removed }`.
+### Rescore + correction tests
 
-- `adminListLeaguesForTestFn()` — lists `id,name` from `leagues` for the dropdown.
+Both use the existing `seedMatchAndPrediction` then call `score_matchday` twice via the `supabaseAdmin.rpc('score_matchday', ...)` helper. The correction variant updates `matches.home_score / away_score / first_scorer` between scoring runs.
 
-- `adminAddTestUsersToLeagueFn({ league_id })` — calls `add_test_users_to_league`.
+## 2. Wire into `TestsPanel.tsx`
 
-## 3. UI — extend `TestDataPanel.tsx`
+Add a new card **above** "Pre-release checks" (so it sits between `<TestDataPanel />` and the existing panel):
 
-Add a 5th card titled "Multi-user simulation" (below Run full test cycle):
+- Header: "Scoring edge cases" + helper "Verifies the scoring engine against tricky scenarios that are commonly miscalculated."
+- "▶ Run all edge case tests" button (sequential like existing `runAll`)
+- 13 rows, each: status icon (✅/❌/⏳) + label + "Run" button
+- Failures show `expected X, got Y` from the server fn's message
+- New `EDGE_TESTS: TestDef[]` array using the same `RunState` machinery already in the file (refactor: pull `RunState`, `ICON`, and run helpers into either a small shared block or copy locally — copy is fine, the panel is internal)
 
-- Number input (1–10, default 5) and **Create test users & predictions** button.
-- **Remove all test users** button (with inline confirm dialog).
-- Status block: shows current count + table of `Test User N — country — points` when any exist. Refreshed via `useQuery(['admin-test-users'])`.
-- After creation, shows `✓ N test users created · M predictions added` plus a mini leaderboard.
-- **Add test users to a liga** section: visible only when test users exist — `<select>` of existing leagues + button → toast `✓ Added N test users to {liga name}`.
-
-All actions invalidate queries on success and show toast errors on failure.
-
-## 4. Safety / preserved
-
-- Every created email matches `@marcador-test.com`; the cleanup uses the `test_users` registry plus an email-suffix filter as a fallback.
-- Admin role enforced in both server fns (`assertAdmin`) and RPCs (`has_role`).
-- No changes to scoring, `validate_prediction`, `score_matchday`, `score_match`, or any real user data.
-- All actions logged to `api_sync_log` with `action='test_data'`.
+No DB migration. No changes to scoring functions, no changes to `TestDataPanel`, no changes to other admin tests. All cleanup goes through the existing `purgeTestArtifacts` (matchday-name prefix) plus an extra fallback `DELETE FROM matches WHERE home_team='__test'` at the end of each test for belt-and-braces safety.

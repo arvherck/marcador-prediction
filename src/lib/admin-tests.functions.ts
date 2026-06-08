@@ -919,3 +919,430 @@ export const adminAddTestUsersToLeagueFn = createServerFn({ method: "POST" })
     if (error) throw safeError(error, "game");
     return { added: Number(res ?? 0) };
   });
+
+// ---------- Edge case scoring ----------
+
+const EDGE_TEAM = "__test";
+
+async function seedEdgeMatch(
+  mdId: number,
+  preds: Array<{
+    userId: string;
+    home: number;
+    away: number;
+    scorer: "home" | "away" | "none";
+    booster?: boolean;
+  }>,
+  actual: { home: number; away: number; scorer: "home" | "away" | "none" },
+): Promise<number> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: match, error: mErr } = await supabaseAdmin
+    .from("matches")
+    .insert({
+      matchday_id: mdId,
+      home_team: EDGE_TEAM,
+      away_team: EDGE_TEAM,
+      kickoff_at: future,
+      phase: "Group stage",
+      teams_confirmed: true,
+    })
+    .select("id")
+    .single();
+  if (mErr || !match) throw new Error(mErr?.message ?? "Failed to seed edge match");
+
+  for (const p of preds) {
+    const { error: pErr } = await supabaseAdmin.from("predictions").insert({
+      user_id: p.userId,
+      match_id: match.id,
+      home_goals: p.home,
+      away_goals: p.away,
+      first_scorer: p.scorer,
+      booster: p.booster ?? false,
+    });
+    if (pErr) throw new Error(pErr.message);
+  }
+
+  const { error: fErr } = await supabaseAdmin
+    .from("matches")
+    .update({
+      home_score: actual.home,
+      away_score: actual.away,
+      first_scorer: actual.scorer,
+      is_final: true,
+    })
+    .eq("id", match.id);
+  if (fErr) throw new Error(fErr.message);
+  return match.id;
+}
+
+async function getPoints(userId: string, matchId: number): Promise<number> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("predictions")
+    .select("points")
+    .eq("user_id", userId)
+    .eq("match_id", matchId)
+    .maybeSingle();
+  return data?.points ?? 0;
+}
+
+async function scoreMd(mdId: number, callerId: string) {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin.rpc("score_matchday", {
+    _matchday_id: mdId,
+    _caller_id: callerId,
+  });
+  if (error) throw new Error(error.message);
+}
+
+// Cleans up edge matches whose matchday wasn't deleted yet (extra safety).
+async function purgeEdgeMatches() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: ms } = await supabaseAdmin
+    .from("matches")
+    .select("id")
+    .eq("home_team", EDGE_TEAM);
+  const ids = (ms ?? []).map((m) => m.id);
+  if (!ids.length) return;
+  await supabaseAdmin.from("predictions").delete().in("match_id", ids);
+  await supabaseAdmin.from("matches").delete().in("id", ids);
+}
+
+// Spin up N-1 throwaway auth users so we can insert N distinct predictions
+// per match (predictions has UNIQUE (user_id, match_id)). Cleaned up in finally.
+async function withEdgeUsers<T>(
+  n: number,
+  fn: (extraUserIds: string[]) => Promise<T>,
+): Promise<T> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const ids: string[] = [];
+  const ts = Date.now();
+  try {
+    for (let i = 1; i <= n; i++) {
+      const email = `edge-${ts}-${i}@marcador-edgetest.com`;
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: "TestMarcador2026!",
+        email_confirm: true,
+      });
+      if (error || !data?.user) throw new Error(error?.message ?? "edge user create failed");
+      ids.push(data.user.id);
+    }
+    return await fn(ids);
+  } finally {
+    for (const id of ids) {
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(id);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+function pass(msg: string): TestResult {
+  return { status: "pass", message: msg };
+}
+function fail(expected: number, actual: number): TestResult {
+  return { status: "fail", message: `expected ${expected}, got ${actual}` };
+}
+
+async function runSingle(
+  userId: string,
+  pred: { home: number; away: number; scorer: "home" | "away" | "none"; booster?: boolean },
+  actual: { home: number; away: number; scorer: "home" | "away" | "none" },
+  expected: number,
+): Promise<TestResult> {
+  try {
+    const got = await withTempScenario(async ({ mdId }) => {
+      const matchId = await seedEdgeMatch(
+        mdId,
+        [{ userId, ...pred }],
+        actual,
+      );
+      await scoreMd(mdId, userId);
+      return getPoints(userId, matchId);
+    });
+    await purgeEdgeMatches();
+    return got === expected ? pass(`${expected} pts ✓`) : fail(expected, got);
+  } catch (e) {
+    await purgeEdgeMatches();
+    return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export const testEdgeExactScoreline = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 2, away: 1, scorer: "home" },
+      { home: 2, away: 1, scorer: "home" },
+      13,
+    );
+  });
+
+export const testEdgeCorrectResultWrongScore = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    // pred 2-0, actual 3-0: result +3, home 2≠3 +0, away 0=0 +2, GD 2≠3 +0, scorer +3 = 8
+    return runSingle(
+      context.userId,
+      { home: 2, away: 0, scorer: "home" },
+      { home: 3, away: 0, scorer: "home" },
+      8,
+    );
+  });
+
+export const testEdgeWrongFirstScorer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 1, away: 0, scorer: "home" },
+      { home: 1, away: 0, scorer: "away" },
+      10,
+    );
+  });
+
+export const testEdgeDrawCorrect = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 1, away: 1, scorer: "home" },
+      { home: 1, away: 1, scorer: "home" },
+      13,
+    );
+  });
+
+export const testEdgeZeroZeroDraw = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 0, away: 0, scorer: "none" },
+      { home: 0, away: 0, scorer: "none" },
+      13,
+    );
+  });
+
+export const testEdgeZeroZeroBooster = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 0, away: 0, scorer: "none", booster: true },
+      { home: 0, away: 0, scorer: "none" },
+      26,
+    );
+  });
+
+export const testEdgeWrongResult = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 2, away: 0, scorer: "home" },
+      { home: 0, away: 1, scorer: "away" },
+      0,
+    );
+  });
+
+export const testEdgeAwayWin = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 0, away: 2, scorer: "away" },
+      { home: 0, away: 2, scorer: "away" },
+      13,
+    );
+  });
+
+export const testEdgeBooster = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    return runSingle(
+      context.userId,
+      { home: 1, away: 0, scorer: "home", booster: true },
+      { home: 1, away: 0, scorer: "home" },
+      26,
+    );
+  });
+
+// Underdog at exactly 10% (1 of 10) → does NOT fire → 13
+export const testEdgeUnderdogAt10pct = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const got = await withTempScenario(async ({ mdId }) => {
+        return withEdgeUsers(9, async (extras) => {
+          const preds = [
+            {
+              userId: context.userId,
+              home: 3,
+              away: 2,
+              scorer: "home" as const,
+              booster: false,
+            },
+            ...extras.map((u) => ({
+              userId: u,
+              home: 0,
+              away: 0,
+              scorer: "none" as const,
+              booster: false,
+            })),
+          ];
+          const matchId = await seedEdgeMatch(mdId, preds, {
+            home: 3,
+            away: 2,
+            scorer: "home",
+          });
+          await scoreMd(mdId, context.userId);
+          return getPoints(context.userId, matchId);
+        });
+      });
+      await purgeEdgeMatches();
+      return got === 13 ? pass("at 10% → no underdog (13 pts) ✓") : fail(13, got);
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+// Underdog below 10% (1 of 11 ≈ 9.09%) → fires → 18
+export const testEdgeUnderdogBelow10pct = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const got = await withTempScenario(async ({ mdId }) => {
+        return withEdgeUsers(10, async (extras) => {
+          const preds = [
+            {
+              userId: context.userId,
+              home: 3,
+              away: 2,
+              scorer: "home" as const,
+              booster: false,
+            },
+            ...extras.map((u) => ({
+              userId: u,
+              home: 0,
+              away: 0,
+              scorer: "none" as const,
+              booster: false,
+            })),
+          ];
+          const matchId = await seedEdgeMatch(mdId, preds, {
+            home: 3,
+            away: 2,
+            scorer: "home",
+          });
+          await scoreMd(mdId, context.userId);
+          return getPoints(context.userId, matchId);
+        });
+      });
+      await purgeEdgeMatches();
+      return got === 18 ? pass("below 10% → underdog +5 (18 pts) ✓") : fail(18, got);
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testEdgeRescoreNoDouble = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    try {
+      const result = await withTempScenario(async ({ mdId }) => {
+        const matchId = await seedEdgeMatch(
+          mdId,
+          [
+            {
+              userId: context.userId,
+              home: 2,
+              away: 1,
+              scorer: "home",
+            },
+          ],
+          { home: 2, away: 1, scorer: "home" },
+        );
+        await scoreMd(mdId, context.userId);
+        const first = await getPoints(context.userId, matchId);
+        await scoreMd(mdId, context.userId);
+        const second = await getPoints(context.userId, matchId);
+        return { first, second };
+      });
+      await purgeEdgeMatches();
+      return result.first === result.second
+        ? pass(`re-score idempotent (${result.first} pts) ✓`)
+        : {
+            status: "fail",
+            message: `points changed: first=${result.first}, second=${result.second}`,
+          };
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+export const testEdgeResultCorrection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      const result = await withTempScenario(async ({ mdId }) => {
+        const matchId = await seedEdgeMatch(
+          mdId,
+          [
+            {
+              userId: context.userId,
+              home: 2,
+              away: 1,
+              scorer: "home",
+            },
+          ],
+          { home: 2, away: 1, scorer: "home" },
+        );
+        await scoreMd(mdId, context.userId);
+        const initial = await getPoints(context.userId, matchId);
+
+        // Correct the result to 1-1
+        await supabaseAdmin
+          .from("matches")
+          .update({ home_score: 1, away_score: 1, first_scorer: "home" })
+          .eq("id", matchId);
+        await scoreMd(mdId, context.userId);
+        const after = await getPoints(context.userId, matchId);
+        return { initial, after };
+      });
+      await purgeEdgeMatches();
+      if (result.initial !== 13) {
+        return {
+          status: "fail",
+          message: `initial scoring wrong: expected 13, got ${result.initial}`,
+        };
+      }
+      return result.after === 0
+        ? pass(`correction 13 → 0 ✓`)
+        : { status: "fail", message: `after correction: expected 0, got ${result.after}` };
+    } catch (e) {
+      await purgeEdgeMatches();
+      return { status: "fail", message: e instanceof Error ? e.message : String(e) };
+    }
+  });
