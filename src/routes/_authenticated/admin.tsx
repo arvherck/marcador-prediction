@@ -872,6 +872,46 @@ function ResultRow({
   );
 }
 
+function ScoreMatchButton({ match, onChange }: { match: Match; onChange: () => void }) {
+  const qc = useQueryClient();
+  const [flash, setFlash] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const canScore = match.status === "completed" && match.is_final;
+  const score = useMutation({
+    mutationFn: () => adminScoreMatchFn({ data: { match_id: match.id } }),
+    onSuccess: (r) => {
+      setFlash({ kind: "ok", msg: `✓ ${r.predictions_scored} predictions scored` });
+      setTimeout(() => setFlash(null), 3000);
+      qc.invalidateQueries();
+      onChange();
+    },
+    onError: (e) => {
+      setFlash({ kind: "err", msg: e instanceof Error ? e.message : "Error" });
+    },
+  });
+  return (
+    <>
+      <button
+        onClick={() => score.mutate()}
+        disabled={!canScore || score.isPending}
+        title={canScore ? "Score this match now" : "Save a result first to enable scoring"}
+        className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+      >
+        Score
+      </button>
+      {flash && (
+        <span
+          className={`text-[11px] font-medium ${flash.kind === "ok" ? "text-success" : "text-destructive"}`}
+        >
+          {flash.msg}
+        </span>
+      )}
+    </>
+  );
+}
+
+
+
+
 
 function PredictionsViewer({ matchdays }: { matchdays: Matchday[] }) {
   const [mdId, setMdId] = useState<number | "">("");
