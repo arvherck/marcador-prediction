@@ -37,6 +37,7 @@ import {
   testLockServerAcceptsFuture,
   testLockReopensWhenKickoffMovedFuture,
   testLockRelocksWhenKickoffMovedPast,
+  testStandingsVerifier,
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
@@ -159,6 +160,7 @@ export function TestsPanel() {
       <TestDataPanel />
       <EdgeCasesPanel />
       <PredictionLockPanel />
+      <StandingsVerifierPanel />
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
       <div className="px-4 py-3 flex items-center justify-between border-b border-border">
         <div>
@@ -371,6 +373,54 @@ function PredictionLockPanel() {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function StandingsVerifierPanel() {
+  const [s, setS] = useState<RunState>("idle");
+  const run = async () => {
+    setS("running");
+    try {
+      const r = await testStandingsVerifier();
+      setS(r);
+    } catch (e) {
+      setS({ status: "fail", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const status = s === "idle" || s === "running" ? s : s.status;
+  const message =
+    s && typeof s !== "string" ? s.message : s === "running" ? "Running…" : "Not run";
+  const detail = s && typeof s !== "string" ? s.detail : undefined;
+  return (
+    <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
+      <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+        <div>
+          <div className="font-semibold">Group standings accuracy</div>
+          <div className="text-xs text-muted-foreground">
+            Applies known Group A results, verifies every standings column and tiebreaker order, then restores originals.
+          </div>
+        </div>
+        <button
+          onClick={run}
+          disabled={s === "running"}
+          className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-50"
+        >
+          ▶ Run standings verification
+        </button>
+      </div>
+      <div className="px-4 py-2.5 flex items-start gap-3">
+        <span className="text-base w-6 text-center">{ICON[status]}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium">Standings calculate correctly from results</div>
+          <div className="text-xs text-muted-foreground">{message}</div>
+          {detail && (
+            <pre className="mt-2 text-[11px] leading-relaxed bg-muted/40 rounded p-2 whitespace-pre-wrap font-mono">
+{detail}
+            </pre>
+          )}
+        </div>
       </div>
     </div>
   );
