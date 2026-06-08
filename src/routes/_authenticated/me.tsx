@@ -68,29 +68,15 @@ function MePage() {
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
-      <header className="mb-6">
-        <div className="text-xs uppercase tracking-[0.2em] text-amber-glow font-semibold">
-          Profile
-        </div>
-        <h1 className="font-display font-bold text-3xl md:text-4xl mt-1">Mi Marcador</h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          {me.profile?.display_name} · {me.profile?.country} · {me.profile?.favourite_team}
-        </p>
-        {me.profile?.donor && (
-          <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-gradient/10 border border-primary/40 px-3 py-1 text-xs font-semibold text-amber-glow">
-            ⭐ Marcador Supporter
-          </div>
-        )}
-        <div className="mt-4 inline-flex items-baseline gap-2 rounded-xl bg-card border border-border px-4 py-2">
-          <span className="text-xs uppercase tracking-widest text-muted-foreground">Total</span>
-          <span className="font-score font-bold text-3xl text-amber-glow">{total}</span>
-          <span className="text-xs text-muted-foreground">pts</span>
-        </div>
-        <StreakRow
-          current={me.profile?.current_streak ?? 0}
-          longest={me.profile?.longest_streak ?? 0}
-        />
-      </header>
+      <ProfileHeader
+        displayName={me.profile?.display_name ?? ""}
+        country={me.profile?.country ?? ""}
+        favouriteTeam={me.profile?.favourite_team ?? ""}
+        donor={Boolean(me.profile?.donor)}
+        total={total}
+        currentStreak={me.profile?.current_streak ?? 0}
+        longestStreak={me.profile?.longest_streak ?? 0}
+      />
 
       {stats.data && (
         <Section title="At a glance">
