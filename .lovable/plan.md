@@ -1,72 +1,65 @@
-## Goal
+# UI Test Matches for Test Matchday
 
-Seed a single hidden "Test — Pre-WC Friendlies (June 2026)" matchday with 6 real, verifiable June 2026 friendly results so we can sanity-check scoring against known outcomes, without polluting user-facing views, leaderboards or streaks. Add badge + cleanup tool in admin, plus targeted tests.
+Adds 4 fictional, easily identifiable matches (prefix `UI_Test_` plus one knockout TBD row) to the existing `Test — Pre-WC Friendlies (June 2026)` matchday, plus an admin-only "Preview UI test matches" toggle so the test data can be exercised in the real Play screen UI without exposing it to regular users.
 
-## 1. Schema migration
+## 1. Seed data (data migration via insert tool)
 
-- `ALTER TABLE public.matchdays ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;`
-- Insert the test matchday `"Test — Pre-WC Friendlies (June 2026)"`, `starts_at = 2026-06-04 19:00 UTC`, `is_scored = false`, `is_test = true`.
-- Insert the 6 matches exactly as specified (teams, kickoff, scores, first_scorer, stadium, city), with `status='completed'`, `is_final=true`, `teams_confirmed=true`, `points_multiplier=1`, `phase='Friendly'`, linked to the new matchday id.
+Append to the existing `is_test = true` matchday (no schema change — `matches.status_check` already allows `live`):
 
-The match insert disables the `set_points_multiplier` and `recalculate_group_standings` triggers' interesting paths automatically because `phase='Friendly'` keeps `points_multiplier=1` and `group_letter` stays NULL.
+| # | home_team | away_team | kickoff | status | teams_confirmed | mult | phase |
+|---|-----------|-----------|---------|--------|-----------------|------|-------|
+| 7 | UI_Test_Home | UI_Test_Away | now()+2h | upcoming | true | 2 | Round of 32 |
+| 8 | UI_Test_Imminent_Home | UI_Test_Imminent_Away | now()+45m | upcoming | true | 1 | Group stage |
+| 9 | UI_Test_Live_Home | UI_Test_Live_Away | now()−30m | live | true | 3 | Round of 16 |
+| 10 | Winner Group A | Winner Group B | now()+7d | upcoming | false | 4 | Quarterfinal |
 
-## 2. Filter `is_test` matchdays from user-facing data
+All have `home_score/away_score/first_scorer = null`, `is_final = false`. Bypass `auto_confirm_teams` for match 10 by inserting `teams_confirmed = false` after the trigger fires (the trigger only flips `false → true` when the team names don't match TBD patterns; "Winner Group A/B" matches the regex, so it stays false). The `set_points_multiplier` trigger respects explicit values when phase default differs, but for matches 7/9/10 the phase default already equals the requested value, and for match 8 we pass `points_multiplier = 1` (group default).
 
-All edits in `src/lib/game.functions.ts`. Strategy: add an inner-join filter on `matchdays` wherever matches are read for players, and an `.eq("is_test", false)` on every direct `matchdays` list.
+Kickoff times are computed once at insert (`now() + interval ...`) — they are absolute timestamps, so match 8 will eventually leave the "closing soon" window and match 9's "live" state is a manual flag, not time-derived. Acceptable for a short-lived test toggle (see §3).
 
-- `getAllMatches` and `getAllMatchesPublic` — change `.from("matches").select("*")` to `.select("*, matchdays!inner(is_test)")` + `.eq("matchdays.is_test", false)`; strip the joined field before returning.
-- `getMatchdaysWithProgress` — keep `not name like __%`, also add `.eq("is_test", false)`.
-- `getMyProfileStatsFn` (total matches count) — join matchdays and exclude `is_test=true`.
-- `getMyMatchdayScoresFn` — embedded select on `matchdays(name, starts_at, is_test)`, filter out rows where `matchday.is_test=true` after fetch.
+## 2. User-facing read filters (verification only)
 
-Two RPCs need updating (single migration):
+Already in place from the previous turn — no code changes. Verify each path still excludes `is_test`:
 
-- `global_leaderboard`: in the `predictions pr JOIN matches mm` aggregate, also `JOIN matchdays md ON md.id = mm.matchday_id` and `WHERE md.is_test = false`; same when summing `matchday_scores` columns and selecting `last_md_points` (already filters `is_scored=true`, which excludes the new matchday — but we still need to exclude its `correct_results/exact_scores/correct_first_scorers` tallies, so the inner joins are required).
-- `matchday_leaderboard`: in the default `_matchday_id IS NULL` branch, restrict to `is_test=false` when selecting "latest scored matchday".
+- `getAllMatches` / `getAllMatchesPublic` (Play By Date + By Matchday)
+- `getMatchdaysWithProgress` (matchday tab list + progress bar denominator)
+- `getMyProfileStatsFn` total matches
+- `global_leaderboard` / `matchday_leaderboard` RPCs
+- Streak update inside `score_matchday` (only touches users with predictions on the scored matchday; test matchday is never scored via the normal flow)
 
-Streaks live inside `score_matchday` keyed by the matchday being scored; since the test matchday is never scored via the admin scoring action (it's already `is_final=true` but not scored, and we will not run `score_matchday` on it from the UI), streaks are unaffected. No code change needed for streaks.
+## 3. Admin-only "Preview UI test matches" toggle
 
-## 3. Admin Results & scoring — visible with badge
+Storage: a new admin-scoped serverFn pair backed by an in-memory map keyed by `userId` with a 30-minute expiry timestamp. No DB column needed — the toggle is intentionally ephemeral and per-admin.
 
-`src/lib/game.functions.ts` → `adminListMatchdays`: keep returning the test matchday (do NOT filter `is_test`). Add `is_test` to the existing `.select("*")` (already covered by `*`).
+- `adminGetUiTestPreviewFn` → `{ enabled: boolean, expiresAt: number | null }`
+- `adminSetUiTestPreviewFn({ enabled })` → sets/clears entry; enabling stamps `expiresAt = now + 30min`
 
-`src/routes/_authenticated/admin.tsx` (Results & scoring section): when `md.is_test === true`, render the matchday card with:
-- amber border (`border-amber-glow/60`)
-- a warning row above the title: `⚠️ Test data — not a real World Cup matchday` in amber text.
+Wiring:
 
-No other behavior change — existing scoring controls remain available so we can manually score the test matchday for verification.
+- `getAllMatches` / `getAllMatchesPublic` / `getMatchdaysWithProgress`: when the caller is an admin AND their preview flag is active (and not expired), drop the `is_test = false` filter. All other read paths (leaderboards, streaks, progress denominator) stay filtered — preview is visual only.
+- New `<UiTestPreviewBanner />` rendered above the Play screen tabs. Polls `adminGetUiTestPreviewFn` every 30 s; shows amber banner `⚠️ UI TEST MODE — test matches visible (auto-disables in Xm)` with a "Disable now" button. Hidden for non-admins or when disabled.
+- In `TestsPanel` (admin Tests section), add a Switch labeled "Preview UI test matches in Play screen" with helper text "Auto-disables after 30 minutes. Admin-only — does not affect other users."
 
-## 4. Admin Test Data panel — cleanup button
+## 4. Admin Results & scoring
 
-`src/components/admin/TestDataPanel.tsx` and `src/lib/admin-tests.functions.ts`:
+No code change — the test matchday block already shows all matches in the matchday; matches 7-10 will appear automatically beside the 6 historical ones under the existing amber `⚠️ Test data` badge.
 
-- New server function `adminRemovePreWcTestMatchesFn` (POST, admin-only). Uses `supabaseAdmin` to:
-  1. Find the matchday id by `name = 'Test — Pre-WC Friendlies (June 2026)' AND is_test = true` (maybeSingle).
-  2. `DELETE FROM predictions WHERE match_id IN (...)`.
-  3. `DELETE FROM matchday_scores WHERE matchday_id = $1`.
-  4. `DELETE FROM matches WHERE matchday_id = $1` (6 expected).
-  5. `DELETE FROM matchdays WHERE id = $1`.
-  6. Return `{ removed: true, matches: 6 }` (or `removed: false` if not present).
-- Add a new section in `TestDataPanel` titled "Pre-WC test matches" with a button `Remove pre-WC test matches`. On success: toast `✓ Pre-WC test matches removed`. On no-op: toast `No pre-WC test matches found`.
+## 5. New tests in `src/lib/admin-tests.functions.ts`
 
-## 5. Tests in the 🧪 Tests panel
+1. **UI test matches exist** — `SELECT count(*) WHERE md.is_test AND m.home_team LIKE 'UI_Test%'` → expect 4 (counts matches 7/8/9 + match 10's `Winner Group A` row via OR `home_team = 'Winner Group A'`). Per spec the count check is `LIKE 'UI_Test%'` only → expect 3; we'll follow spec exactly and assert 3, then a second assertion confirms the TBD row exists separately.
+2. **Live match card state** — fetch UI_Test_Live_Home row, assert `status='live' AND kickoff_at < now() AND home_score IS NULL`.
+3. **TBD match blocks predictions** — try `supabase.from('predictions').insert({...})` for the `Winner Group A` match via a temp service-role call as a non-admin test user; expect rejection from `validate_prediction` trigger (`teams_confirmed=false`).
 
-Add new category `🧪 Pre-WC Test Matches` (or place under 📊 Data Integrity). Four tests, all in `src/lib/admin-tests.functions.ts` and registered in `src/components/admin/TestsPanel.tsx`:
+## 6. Cleanup
 
-1. `testPreWcFriendliesExist` — counts matches via `from("matches").select("id", {count:"exact",head:true}).eq("matchdays.is_test", true)` (with inner join) on the named matchday. Pass when count = 6.
-2. `testPreWcBelgiumTunisia` — reads `home_score, away_score, first_scorer` for `home_team='Belgium' AND away_team='Tunisia'` on the test matchday. Pass when `5,0,'home'`.
-3. `testPreWcScoringBelgium13` — creates an ephemeral test user via `supabaseAdmin.auth.admin.createUser` (re-uses the `withLockTestUser` helper pattern), inserts a perfect 5-0/home prediction on Belgium-Tunisia, calls `score_match` via RPC, reads `predictions.points`, asserts `= 13`, then cleans up (delete prediction + delete auth user). This avoids polluting real users' totals.
-4. `testPreWcExcludedFromLeaderboard` — calls `global_leaderboard()` RPC and verifies no row's `total_points` includes credit from the test matchday: simplest check is that the sum of `matchday_scores` for the test matchday is 0 (i.e. it isn't scored) AND that the RPC's join excludes is_test (sanity: insert a fake `matchday_scores` row for an admin user on the test matchday with `total_points=999`, recompute leaderboard via RPC, ensure admin's total didn't jump by 999, then delete the fake row). Pass when delta = 0.
+Extend `adminRemovePreWcTestMatchesFn` (created last turn): also delete predictions + matches where `home_team LIKE 'UI_Test%' OR home_team = 'Winner Group A'` on the test matchday before deleting the matchday itself. The existing button label stays "Remove pre-WC test matches".
 
-## 6. Out of scope
+## Out of scope
 
-- No changes to the existing scoring engine.
-- No new user-facing UI for the test matchday (it stays hidden).
-- No edits to streak logic (test matchday is never scored).
+- No new banner/badge components in `MatchCard` — closing-soon banner, live badge, TBD greyed-out card, and multiplier badge are already implemented and will activate naturally once the rows are visible via the preview toggle.
+- No changes to scoring engine, streaks, or leaderboards.
+- No persistent storage of the preview flag — intentionally ephemeral.
 
-## Verification
+## Open question
 
-1. Run the migration; admin Results & scoring shows the new amber-badged matchday with the 6 matches at the expected scores.
-2. Play screen, By Date, By Matchday, leaderboard, streak counters, profile stats — nothing about the test matchday appears.
-3. Run the 4 new tests → all pass.
-4. Click "Remove pre-WC test matches" → toast confirms removal; tests #1–#4 then fail with `Pre-WC test matches not found` (expected).
+Spec says test #1 should pass if count = 4, but the SQL provided (`LIKE 'UI_Test%'`) only matches 3 of the 4 new rows (match 10 uses `Winner Group A`). I'll implement the assertion as **count = 4 using `home_team LIKE 'UI_Test%' OR home_team IN ('Winner Group A','Winner Group B')`** to match the stated pass condition. Flag if you'd rather assert exactly 3.
