@@ -1569,3 +1569,160 @@ export const testLockRelocksWhenKickoffMovedPast = createServerFn({ method: "POS
       await supabaseAdmin.from("matches").update({ kickoff_at: origKickoff }).eq("id", m.id);
     }
   });
+
+// ---------- Standings ----------
+
+type StandingExpected = {
+  played: number; won: number; drawn: number; lost: number;
+  goals_for: number; goals_against: number; goal_difference: number; points: number;
+};
+
+const STANDINGS_GROUP_A_MATCHES: Array<{
+  home: string; away: string; home_score: number; away_score: number;
+}> = [
+  { home: "Mexico", away: "South Africa", home_score: 2, away_score: 0 },
+  { home: "South Korea", away: "Czechia", home_score: 1, away_score: 1 },
+  { home: "Mexico", away: "South Korea", home_score: 1, away_score: 0 },
+  { home: "Czechia", away: "South Africa", home_score: 3, away_score: 1 },
+  { home: "Czechia", away: "Mexico", home_score: 0, away_score: 0 },
+  { home: "South Africa", away: "South Korea", home_score: 2, away_score: 2 },
+];
+
+const STANDINGS_SCENARIO_1: Record<string, StandingExpected> = {
+  Mexico:        { played: 3, won: 2, drawn: 1, lost: 0, goals_for: 3, goals_against: 0, goal_difference:  3, points: 7 },
+  Czechia:       { played: 3, won: 1, drawn: 1, lost: 1, goals_for: 4, goals_against: 3, goal_difference:  1, points: 4 },
+  "South Korea": { played: 3, won: 0, drawn: 2, lost: 1, goals_for: 3, goals_against: 4, goal_difference: -1, points: 2 },
+  "South Africa":{ played: 3, won: 0, drawn: 1, lost: 2, goals_for: 3, goals_against: 6, goal_difference: -3, points: 1 },
+};
+
+const STANDINGS_EXPECTED_ORDER = ["Mexico", "Czechia", "South Korea", "South Africa"];
+
+const STANDINGS_SCENARIO_2: Record<string, StandingExpected> = {
+  Mexico:         { played: 3, won: 1, drawn: 2, lost: 0, goals_for: 1, goals_against: 0, goal_difference:  1, points: 5 },
+  "South Africa": { played: 3, won: 0, drawn: 2, lost: 1, goals_for: 3, goals_against: 4, goal_difference: -1, points: 2 },
+};
+
+function firstScorerFor(h: number, a: number): "home" | "away" | "none" {
+  if (h === 0 && a === 0) return "none";
+  if (h > 0 && a === 0) return "home";
+  if (a > 0 && h === 0) return "away";
+  return "home";
+}
+
+function compareStanding(team: string, actual: StandingExpected | undefined, expected: StandingExpected): { ok: boolean; line: string } {
+  if (!actual) return { ok: false, line: `${team}: row missing ❌` };
+  const cols: Array<[string, keyof StandingExpected]> = [
+    ["P", "played"], ["W", "won"], ["D", "drawn"], ["L", "lost"],
+    ["GF", "goals_for"], ["GA", "goals_against"], ["GD", "goal_difference"], ["Pts", "points"],
+  ];
+  let ok = true;
+  const parts = cols.map(([label, key]) => {
+    const match = actual[key] === expected[key];
+    if (!match) ok = false;
+    return `${label} ${match ? "✅" : `❌(${actual[key]}≠${expected[key]})`}`;
+  });
+  return { ok, line: `${team}: ${parts.join(" ")}` };
+}
+
+export const testStandingsVerifier = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<TestResult> => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: original, error: snapErr } = await supabaseAdmin
+      .from("matches")
+      .select("id, home_team, away_team, home_score, away_score, status, is_final, first_scorer")
+      .eq("group_letter", "A");
+    if (snapErr || !original) return { status: "fail", message: `snapshot failed: ${snapErr?.message ?? "no rows"}` };
+    if (original.length !== 6) return { status: "fail", message: `expected 6 Group A matches, found ${original.length}` };
+
+    const findId = (home: string, away: string) =>
+      original.find((m) => m.home_team === home && m.away_team === away)?.id;
+
+    const detail: string[] = [];
+    let allOk = true;
+
+    try {
+      // Scenario 1: apply all 6 known scores
+      for (const s of STANDINGS_GROUP_A_MATCHES) {
+        const id = findId(s.home, s.away);
+        if (!id) return { status: "fail", message: `match not found: ${s.home} vs ${s.away}` };
+        const { error } = await supabaseAdmin
+          .from("matches")
+          .update({
+            home_score: s.home_score,
+            away_score: s.away_score,
+            first_scorer: firstScorerFor(s.home_score, s.away_score),
+            status: "completed",
+            is_final: true,
+          })
+          .eq("id", id);
+        if (error) throw new Error(`apply scenario 1: ${error.message}`);
+      }
+
+      const { data: s1Rows, error: s1Err } = await supabaseAdmin
+        .from("wc_standings")
+        .select("team, played, won, drawn, lost, goals_for, goals_against, goal_difference, points, wc_groups!inner(name)")
+        .eq("wc_groups.name", "Group A");
+      if (s1Err || !s1Rows) throw new Error(`read standings: ${s1Err?.message ?? "no rows"}`);
+      const s1Map = new Map(s1Rows.map((r) => [r.team, r as unknown as StandingExpected & { team: string }]));
+
+      detail.push("Scenario 1 — full group results:");
+      for (const team of Object.keys(STANDINGS_SCENARIO_1)) {
+        const { ok, line } = compareStanding(team, s1Map.get(team), STANDINGS_SCENARIO_1[team]);
+        if (!ok) allOk = false;
+        detail.push("  " + line);
+      }
+
+      // Ordering
+      const sorted = [...s1Rows].sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.goal_difference !== a.goal_difference) return b.goal_difference - a.goal_difference;
+        return b.goals_for - a.goals_for;
+      }).map((r) => r.team);
+      const orderOk = STANDINGS_EXPECTED_ORDER.every((t, i) => sorted[i] === t);
+      if (!orderOk) allOk = false;
+      detail.push(`Order: ${orderOk ? "✅" : "❌"} expected ${STANDINGS_EXPECTED_ORDER.join(" > ")}, got ${sorted.join(" > ")}`);
+
+      // Scenario 2: change Mexico vs South Africa from 2-0 → 0-0
+      const mexSaId = findId("Mexico", "South Africa")!;
+      const { error: s2Err } = await supabaseAdmin
+        .from("matches")
+        .update({ home_score: 0, away_score: 0, first_scorer: "none", status: "completed", is_final: true })
+        .eq("id", mexSaId);
+      if (s2Err) throw new Error(`apply scenario 2: ${s2Err.message}`);
+
+      const { data: s2Rows, error: s2ReadErr } = await supabaseAdmin
+        .from("wc_standings")
+        .select("team, played, won, drawn, lost, goals_for, goals_against, goal_difference, points, wc_groups!inner(name)")
+        .eq("wc_groups.name", "Group A");
+      if (s2ReadErr || !s2Rows) throw new Error(`read standings 2: ${s2ReadErr?.message ?? "no rows"}`);
+      const s2Map = new Map(s2Rows.map((r) => [r.team, r as unknown as StandingExpected & { team: string }]));
+
+      detail.push("Scenario 2 — Mexico vs South Africa corrected to 0-0:");
+      for (const team of Object.keys(STANDINGS_SCENARIO_2)) {
+        const { ok, line } = compareStanding(team, s2Map.get(team), STANDINGS_SCENARIO_2[team]);
+        if (!ok) allOk = false;
+        detail.push("  " + line);
+      }
+    } finally {
+      // Restore originals
+      for (const m of original) {
+        await supabaseAdmin
+          .from("matches")
+          .update({
+            home_score: m.home_score,
+            away_score: m.away_score,
+            first_scorer: m.first_scorer,
+            status: m.status,
+            is_final: m.is_final,
+          })
+          .eq("id", m.id);
+      }
+    }
+
+    return allOk
+      ? { status: "pass", message: "All standings values and order match expected", detail: detail.join("\n") }
+      : { status: "fail", message: "Standings mismatch — see detail", detail: detail.join("\n") };
+  });
