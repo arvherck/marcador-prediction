@@ -253,17 +253,8 @@ export function buildReport(args: {
   };
 }
 
-function fixPromptFor(t: ReportTest): string {
-  const ctx: FixCtx = {
-    name: t.name,
-    expected: t.expected,
-    actual: t.actual,
-    error: t.error,
-    file_hint: t.file_hint,
-  };
-  const tmpl = FIX_PROMPT_TEMPLATES[t.id];
-  return tmpl ? tmpl(ctx) : genericFixPrompt(ctx);
-}
+
+
 
 // Short one-line fix hints keyed by test id. Used in the spec markdown format.
 // Takes priority over the long FIX_PROMPT_TEMPLATES when present.
