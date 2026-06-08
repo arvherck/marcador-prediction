@@ -121,3 +121,20 @@ export const updateProfileFn = createServerFn({ method: "POST" })
     if (error) throw safeError(error, "auth");
     return { ok: true };
   });
+
+export const deleteAccountFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { userId } = context;
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { error: rpcErr } = await supabaseAdmin.rpc("delete_my_account", {
+      _user_id: userId,
+    });
+    if (rpcErr) throw new Error("delete_failed: " + rpcErr.message);
+
+    const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (authErr) throw new Error("auth_delete_failed: " + authErr.message);
+
+    return { ok: true };
+  });

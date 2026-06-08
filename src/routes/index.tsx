@@ -1,10 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { z } from "zod";
+import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { getUpcomingMatchesPublic } from "@/lib/game.functions";
 import { FeedbackButton } from "@/components/feedback/FeedbackButton";
 
+const searchSchema = z.object({
+  deleted: fallback(z.string().optional(), undefined).optional(),
+});
 
 export const Route = createFileRoute("/")({
+  validateSearch: zodValidator(searchSchema),
 
   head: () => {
     const url = "https://marcador-prediction.lovable.app/";
@@ -56,8 +62,25 @@ export const Route = createFileRoute("/")({
 });
 
 function Landing() {
+  const { deleted } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   return (
     <div className="min-h-screen flex flex-col">
+      {deleted && (
+        <div className="bg-amber-glow/15 border-b border-amber-glow/40 px-4 py-3 flex items-center justify-center gap-3 text-sm">
+          <span className="text-foreground font-medium">
+            Your account has been deleted. Thanks for playing Marcador.
+          </span>
+          <button
+            type="button"
+            onClick={() => navigate({ search: {} })}
+            aria-label="Dismiss"
+            className="text-muted-foreground hover:text-foreground text-lg leading-none"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <header className="px-6 py-5 flex items-center justify-between max-w-6xl mx-auto w-full">
         <div className="flex items-center gap-2">
           <Logo />

@@ -1,69 +1,88 @@
-# Predictions Closing Soon — Play screen banner
+# Account deletion (GDPR)
 
 ## Goal
-Add a top-of-page urgency banner on `/play` that surfaces matches kicking off within the next 2 hours that the user has not yet predicted, plus a subtle pulsing highlight on the corresponding match cards. Guest users do not see the banner (they cannot predict).
+Let signed-in users permanently delete their Marcador account and personal data from the Mi Marcador page. Predictions are anonymised (kept for stats), everything else user-scoped is removed.
 
-## When to show
-A match qualifies as "imminent + unpredicted" when ALL are true:
-- `teams_confirmed === true`
-- `status === 'upcoming'` (raw status, so the match has not kicked off / locked)
-- `kickoff_at` is in the future and within the next 2 hours (`<= now + 2h`)
-- `prediction === null` (user has not submitted)
+## Database migration
 
-The banner is shown iff there is at least one such match. The nearest one (smallest `kickoff_at`) drives the countdown text and styling.
+There is no `email_log` table in this project — that step from the spec is skipped.
 
-## Banner content + styling
-Position: very top of `PlayPage`, above `<TournamentBanner />` and the header. Full-width strip, rounded, non-dismissible.
+Current FKs on `user_id` are mostly `ON DELETE CASCADE` (profiles, predictions, league_members, matchday_scores, user_roles, test_users). To preserve predictions for the underdog-bonus stats we must change the predictions FK and make the column nullable.
 
-States (driven by minutes-until-kickoff of the nearest match):
-- `> 30 min`: amber background (`bg-amber-glow/15` + amber border + dark text), pulsing ⏰
-  - 1 match: `⏰ {Home} vs {Away} kicks off in {Xh Ym} — predict now!`
-  - N>1 matches: `⏰ {N} matches kick off in under 2 hours — you haven't predicted them all yet!`
-- `5–30 min`: red background (`bg-red-500/15` + red border), 🔴
-  - `🔴 {Home} vs {Away} kicks off in {M} minutes — last chance to predict!`
-- `< 5 min`: red background, 🔴
-  - `🔴 Predictions locking in {M} minutes!` (or `< 1 minute` when sub-minute)
+Migration:
+- `ALTER TABLE public.predictions ALTER COLUMN user_id DROP NOT NULL`.
+- `ALTER TABLE public.predictions DROP CONSTRAINT predictions_user_id_fkey, ADD CONSTRAINT predictions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL` (re-add as SET NULL so even if anonymisation order ever slips, predictions still survive auth.users deletion).
+- Create `public.delete_my_account(_user_id uuid)` — `SECURITY DEFINER`, `search_path=public`, callable by `service_role` only (the server fn calls it via admin client). Body, in one transaction:
+  1. `UPDATE predictions SET user_id = NULL WHERE user_id = _user_id` (anonymise).
+  2. `DELETE FROM matchday_scores WHERE user_id = _user_id`.
+  3. League ownership transfer: for each `leagues.owner_id = _user_id`, pick the earliest remaining `league_members.user_id` (other than _user_id) by `league_members.joined_at`/`created_at` if present, otherwise any → `UPDATE leagues SET owner_id = <member>`. If the league has no other members → `DELETE FROM leagues WHERE id = <id>` (cascades league_members).
+  4. `DELETE FROM league_members WHERE user_id = _user_id`.
+  5. `DELETE FROM tournament_predictions WHERE user_id = _user_id`.
+  6. `DELETE FROM feedback WHERE user_id = _user_id` (spec says delete; FK is already SET NULL but the spec is explicit).
+  7. `DELETE FROM user_roles WHERE user_id = _user_id`.
+  8. `DELETE FROM profiles WHERE user_id = _user_id`.
+- `GRANT EXECUTE ON FUNCTION public.delete_my_account(uuid) TO service_role`; revoke from public/authenticated.
 
-Right side: a "Predict now →" button. Behavior:
-- If current view is `date`: scroll-into-view the DOM node of the nearest unpredicted match (smooth, center).
-- If current view is `matchday`: switch search to `view=date` first (so the card is rendered), then scroll on next tick. Also if `view=matchday` and the nearest match's matchday differs from the selected `md`, update `md` to the nearest match's matchday as a fallback before the scroll. (Spec allows either; we'll route to date view + scroll which always works.)
+The auth.users deletion is performed by the server function via `supabaseAdmin.auth.admin.deleteUser(userId)` AFTER `delete_my_account` returns. With predictions' FK now `SET NULL`, even the cascade path from auth.users would not destroy predictions.
 
-Live countdown: re-render every 1s via a `useNow(1000)` hook scoped to the banner (and the highlighted cards). Stop the interval when the page unmounts.
+## Server function — `src/lib/auth.functions.ts`
 
-The banner auto-hides when no qualifying matches remain (user submits prediction → query invalidation removes it; or kickoff passes → effective status flips and the match is filtered out by `status === 'upcoming'` + future kickoff check).
+Add `deleteAccountFn`:
+- `createServerFn({ method: 'POST' }).middleware([requireSupabaseAuth]).handler(...)`.
+- Inside handler:
+  - `const { userId } = context`.
+  - `const { supabaseAdmin } = await import('@/integrations/supabase/client.server')` (per the import-graph rules — don't import at module scope in a `.functions.ts` file).
+  - `const { error: rpcErr } = await supabaseAdmin.rpc('delete_my_account', { _user_id: userId })`. If error → throw `new Error('delete_failed: ' + rpcErr.message)` (no partial-delete fallback needed because the RPC body is one statement-list and Postgres wraps it in a single transaction; if any step fails the whole RPC rolls back).
+  - `const { error: authErr } = await supabaseAdmin.auth.admin.deleteUser(userId)`. If error → throw.
+  - Return `{ ok: true }`.
 
-## Match card highlight
-In `ByDateView` and `ByMatchdayView`, wrap each rendered `MatchCard` in a `<div id="match-{id}" className={...}>` (or pass the id/classes via a new prop on `MatchCard`). When that match qualifies as imminent+unpredicted, add a pulsing amber ring: `ring-2 ring-amber-glow/60 animate-pulse rounded-2xl` (or a custom keyframe to keep it subtle — slower than `animate-pulse`). The id is needed so the banner's "Predict now →" can scroll to it.
+No client-side rollback is required since profile rows aren't deleted until the RPC succeeds, and the auth user is deleted last.
 
-The existing per-card "Locks in Xh Ym" countdown is untouched.
+## Mi Marcador page — `src/routes/_authenticated/me.tsx`
 
-## Implementation
+At the very bottom of the page, after every existing section, render a new `DangerZone` component:
+- Outer `<section>` with `border border-red-500/40 rounded-2xl bg-red-500/5 p-5 mt-10`.
+- Heading "Danger zone" (red), subheading "Delete your account", subtext exactly per spec.
+- Red "Delete my account" button (variant via tailwind classes) → opens a controlled `DeleteAccountDialog`.
 
-### New file: `src/components/play/ClosingSoonBanner.tsx`
-- Props: `matches: Match[]`, `view: 'date'|'matchday'`, `onSwitchToDate: (matchId: string, mdId: number) => void`.
-- Computes `imminent = matches.filter(qualifies)` on every render, sorted by `kickoff_at`.
-- Returns `null` when empty.
-- Uses a local `useNow(1000)` hook so the countdown ticks each second without re-fetching.
-- Renders the strip + "Predict now →" button. The button:
-  - `view === 'date'`: `document.getElementById('match-' + nearest.id)?.scrollIntoView({ behavior: 'smooth', block: 'center' })`.
-  - `view === 'matchday'`: calls `onSwitchToDate(nearest.id, nearest.matchday_id)` which updates search to `{ view: 'date' }`, then on next animation frame scrolls to the id.
+`DeleteAccountDialog` (local component, uses existing `Dialog` from `@/components/ui/dialog` if available — otherwise inline modal styled the same way as other modals in the project):
+- Title and bulleted warning per spec.
+- Controlled `<input>` with placeholder `Type DELETE to confirm`; tracked in local state.
+- "Permanently delete my account" button disabled until `confirm === 'DELETE'`.
+- On confirm: `setStatus('deleting')`, call `deleteAccountFn` via `useServerFn`.
+  - On success: `await supabase.auth.signOut()` (browser client), `queryClient.clear()`, then `window.location.assign('/?deleted=true')` (full reload guarantees no stale auth state slips back in).
+  - On error: show inline error, re-enable buttons.
 
-### Edit `src/routes/_authenticated/play.tsx`
-- Import and render `<ClosingSoonBanner />` at the top of the returned tree (above `TournamentBanner`), only when `!guest`.
-- Pass `view`, `matches`, and an `onSwitchToDate` that calls `navigate({ search: ... view: 'date' })` then schedules a `requestAnimationFrame` scroll.
+Loading state shows "Deleting your account…" in the dialog body.
 
-### Edit `src/components/play/ByDateView.tsx` and `ByMatchdayView.tsx`
-- Wrap each MatchCard render with `<div id={`match-${m.id}`} className={isImminentUnpredicted(m) ? 'rounded-2xl ring-2 ring-amber-glow/60 animate-[pulse_2s_ease-in-out_infinite]' : ''}>`. Helper lives in a shared util, e.g. `src/lib/imminent.ts`, exporting `isImminentUnpredicted(match, nowMs)` and `MS_2H = 2*60*60*1000`.
-- To keep the ring "live" (so it disappears when kickoff passes), use the same `useNow(60_000)` at the view level so the boolean refreshes once a minute (sufficient for the 2h window edge).
+## Landing page — `src/routes/index.tsx`
 
-### New file: `src/lib/imminent.ts`
-- `MS_2H`, `qualifies(match, nowMs)`, `formatCountdown(msRemaining)` returning `"1h 23m"` / `"23 minutes"` / `"4 minutes"` / `"< 1 minute"`.
+- Add a `?deleted` search param (zod-validated, optional boolean/string).
+- When set, render a dismissible banner at the top of the landing hero:
+  - Text: "Your account has been deleted. Thanks for playing Marcador."
+  - Auto-dismiss after a few seconds OR include a small `×` button — pick `×` button for clarity; on click, `navigate({ search: {} })` to drop the param.
 
-### New file: `src/hooks/useNow.ts`
-- `useNow(intervalMs)` returning `Date.now()` and re-rendering on each tick. Cleaned up on unmount.
+## Rules page — `src/routes/rules.tsx`
+
+Add a new "Your data" section near the bottom (above the existing footer/credits) with the GDPR copy exactly per spec.
+
+## Admin view note
+
+The spec asks for a "Deleted user" label in admin logs. Two places it shows up automatically:
+- `feedback.user_id` is set to NULL by the existing FK → in `FeedbackPanel`, when `user_id == null` (or `display_name` missing) render `Deleted user` in italics. Update only that label render — no schema/RPC changes.
+
+No further admin UI changes are needed (predictions don't show user-attached names anywhere admin-facing today).
 
 ## Out of scope
-- No dismiss / persistence.
-- No push or email notifications.
-- No changes to scoring, locking logic, or the per-card countdown.
-- Guest users: banner not rendered (no predictions possible).
+- No new "deletion audit log" table.
+- No email confirmation step.
+- No undo / soft-delete grace period — deletion is immediate per spec.
+- Other users' leaderboards refresh on their own via existing query invalidation; no extra broadcast needed.
+
+## Files touched
+- New migration (FK swap + nullability + `delete_my_account` function + grant).
+- `src/lib/auth.functions.ts` — add `deleteAccountFn`.
+- `src/routes/_authenticated/me.tsx` — add Danger zone section + DeleteAccountDialog.
+- `src/routes/index.tsx` — handle `?deleted` banner.
+- `src/routes/rules.tsx` — add "Your data" section.
+- `src/components/admin/FeedbackPanel.tsx` — render "Deleted user" when `user_id` is null.

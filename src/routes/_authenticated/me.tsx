@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { getMyHistoryFn, getMyMatchdayScoresFn, getMyPointsByRoundFn, getMyProfileStatsFn, type PointsByRoundRow } from "@/lib/game.functions";
-import { updateProfileFn } from "@/lib/auth.functions";
+import { deleteAccountFn, updateProfileFn } from "@/lib/auth.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { TEAMS_2026 } from "@/lib/teams";
 import { teamFlag } from "@/lib/teamFlags";
 
@@ -96,7 +97,131 @@ function MePage() {
       <Section title="Prediction history">
         <History groups={(history.data as HistoryGroup[] | undefined) ?? []} />
       </Section>
+
+      <DangerZone />
     </AppShell>
+  );
+}
+
+function DangerZone() {
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [status, setStatus] = useState<"idle" | "deleting" | "error">("idle");
+  const [err, setErr] = useState<string | null>(null);
+  const deleteAccount = useServerFn(deleteAccountFn);
+  const qc = useQueryClient();
+
+  const canDelete = confirm === "DELETE" && status !== "deleting";
+
+  async function onDelete() {
+    setStatus("deleting");
+    setErr(null);
+    try {
+      await deleteAccount();
+      await supabase.auth.signOut();
+      qc.clear();
+      window.location.assign("/?deleted=1");
+    } catch (e) {
+      setStatus("error");
+      setErr(e instanceof Error ? e.message : "Could not delete your account. Please try again.");
+    }
+  }
+
+  function close() {
+    if (status === "deleting") return;
+    setOpen(false);
+    setConfirm("");
+    setErr(null);
+    setStatus("idle");
+  }
+
+  return (
+    <section className="mt-12 rounded-2xl border border-red-500/40 bg-red-500/5 p-5">
+      <div className="text-xs uppercase tracking-[0.2em] text-red-400 font-semibold">
+        Danger zone
+      </div>
+      <h2 className="font-display font-bold text-lg mt-1">Delete your account</h2>
+      <p className="text-sm text-muted-foreground mt-1">
+        Permanently delete your Marcador account and all your data. This cannot be undone.
+      </p>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-4 inline-flex items-center justify-center rounded-xl bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 text-sm transition"
+      >
+        Delete my account
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={close}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-red-500/40 bg-card p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-display font-bold text-xl">Delete your account?</h3>
+            <div className="mt-3 text-sm text-muted-foreground space-y-2">
+              <p>This will permanently delete:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Your profile and display name</li>
+                <li>All your predictions and points</li>
+                <li>Your league memberships</li>
+                <li>Your tournament winner prediction</li>
+              </ul>
+              <p>
+                This action cannot be undone. Your rank and points will be removed from all
+                leaderboards immediately.
+              </p>
+            </div>
+
+            {status === "deleting" ? (
+              <div className="mt-5 rounded-lg border border-border bg-background px-3 py-3 text-sm text-center">
+                Deleting your account…
+              </div>
+            ) : (
+              <>
+                <label className="block text-xs font-semibold uppercase tracking-widest text-muted-foreground mt-5 mb-1">
+                  Type DELETE to confirm
+                </label>
+                <input
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  autoFocus
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  placeholder="DELETE"
+                />
+                {err && (
+                  <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {err}
+                  </div>
+                )}
+                <div className="mt-5 flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={close}
+                    className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-secondary transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    disabled={!canDelete}
+                    className="rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  >
+                    Permanently delete my account
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -370,7 +370,7 @@ export type Database = {
           match_id: number
           points: number | null
           updated_at: string
-          user_id: string
+          user_id: string | null
         }
         Insert: {
           away_goals: number
@@ -382,7 +382,7 @@ export type Database = {
           match_id: number
           points?: number | null
           updated_at?: string
-          user_id: string
+          user_id?: string | null
         }
         Update: {
           away_goals?: number
@@ -394,7 +394,7 @@ export type Database = {
           match_id?: number
           points?: number | null
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -656,6 +656,7 @@ export type Database = {
         Args: { _caller_id: string; _matchday_id: number; _user_id: string }
         Returns: number
       }
+      delete_my_account: { Args: { _user_id: string }; Returns: undefined }
       delete_test_users: {
         Args: { _caller_id: string }
         Returns: {
