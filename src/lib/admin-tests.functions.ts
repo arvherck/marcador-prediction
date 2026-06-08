@@ -287,11 +287,13 @@ async function scoreAndGetPoints(
   mdId: number,
   userId: string,
   matchId: number,
-  authedSupabase: import("@supabase/supabase-js").SupabaseClient,
 ): Promise<number> {
-  const { error } = await authedSupabase.rpc("score_matchday", { _matchday_id: mdId });
-  if (error) throw safeError(error, "admin-tests");
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { error } = await supabaseAdmin.rpc("score_matchday", {
+    _matchday_id: mdId,
+    _caller_id: userId,
+  });
+  if (error) throw new Error(error.message);
   const { data, error: qErr } = await supabaseAdmin
     .from("predictions")
     .select("points")
