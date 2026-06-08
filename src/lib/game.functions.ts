@@ -23,6 +23,7 @@ export type MatchRow = {
   host_country: string | null;
   group_letter: string | null;
   phase: string | null;
+  points_multiplier: number;
   teams_confirmed: boolean;
   status: MatchStatus;
   effective_status: MatchStatus;
