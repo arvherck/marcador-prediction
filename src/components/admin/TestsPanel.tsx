@@ -95,6 +95,16 @@ const EDGE_TESTS: TestDef[] = [
   { id: "edge-correction", label: "Result correction recalculates correctly", category: "Game logic", run: () => testEdgeResultCorrection() },
 ];
 
+const LOCK_TESTS: TestDef[] = [
+  { id: "lock-ui-past", label: "UI: past matches render locked", category: "Auth & security", run: () => testLockUiPastMatch() },
+  { id: "lock-srv-past", label: "Server rejects insert on past match", category: "Auth & security", run: () => testLockServerRejectsPastInsert() },
+  { id: "lock-srv-completed", label: "Server rejects insert on completed match", category: "Auth & security", run: () => testLockServerRejectsCompleted() },
+  { id: "lock-srv-update", label: "Server rejects update after kickoff", category: "Auth & security", run: () => testLockServerRejectsUpdate() },
+  { id: "lock-future-ok", label: "Future match accepts prediction", category: "Auth & security", run: () => testLockServerAcceptsFuture() },
+  { id: "lock-reopen", label: "Moving kickoff to future reopens predictions", category: "Auth & security", run: () => testLockReopensWhenKickoffMovedFuture() },
+  { id: "lock-relock", label: "Moving kickoff back to past re-locks", category: "Auth & security", run: () => testLockRelocksWhenKickoffMovedPast() },
+];
+
 export function TestsPanel() {
   const [state, setState] = useState<Record<string, RunState>>({});
 
