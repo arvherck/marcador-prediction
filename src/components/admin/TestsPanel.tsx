@@ -37,6 +37,7 @@ import {
   testLockServerAcceptsFuture,
   testLockReopensWhenKickoffMovedFuture,
   testLockRelocksWhenKickoffMovedPast,
+  testStandingsVerifier,
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
