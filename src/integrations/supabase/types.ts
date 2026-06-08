@@ -263,6 +263,7 @@ export type Database = {
           created_at: string
           id: number
           is_scored: boolean
+          is_test: boolean
           name: string
           starts_at: string
         }
@@ -270,6 +271,7 @@ export type Database = {
           created_at?: string
           id?: number
           is_scored?: boolean
+          is_test?: boolean
           name: string
           starts_at: string
         }
@@ -277,6 +279,7 @@ export type Database = {
           created_at?: string
           id?: number
           is_scored?: boolean
+          is_test?: boolean
           name?: string
           starts_at?: string
         }
