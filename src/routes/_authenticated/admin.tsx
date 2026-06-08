@@ -842,6 +842,7 @@ function ResultRow({
           >
             {m.is_final ? "Update" : "Save"}
           </button>
+          <ScoreMatchButton match={m} onChange={onChange} />
           <span
             className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded ${STATUS_META[eff].cls}`}
             title={`Status: ${STATUS_META[eff].label}`}
