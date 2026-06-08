@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { FeedbackButton } from "@/components/feedback/FeedbackButton";
 
 export const Route = createFileRoute("/rules")({
   head: () => {
