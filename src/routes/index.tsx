@@ -128,6 +128,8 @@ function Landing() {
           <span>Marcador · the scoreboard</span>
           <span aria-hidden>·</span>
           <Link to="/rules" className="hover:text-amber-glow transition-colors">Rules</Link>
+          <span aria-hidden>·</span>
+          <FeedbackButton />
         </div>
       </footer>
 
