@@ -41,36 +41,113 @@ import {
   testLockReopensWhenKickoffMovedFuture,
   testLockRelocksWhenKickoffMovedPast,
   testStandingsVerifier,
+  testMultiplierGroupStage,
+  testMultiplierR32,
+  testMultiplierR16,
+  testMultiplierQF,
+  testMultiplierSemi,
+  testMultiplierFinal,
+  testMultiplierAppliesR32Scoring,
+  testBoosterWithGroupMultiplier,
+  testBoosterWithSemifinal,
+  testUnderdogFlatR32,
+  testTournamentPredictionsTableExists,
+  testTournamentSettingsTableExists,
+  testTournamentWinnerAwards50,
+  testTournamentWinnerWrongAwards0,
+  testStandingsTriggerExists,
+  testLigaInviteCodeFormat,
+  testLigaJoinValidCode,
+  testLigaJoinInvalidCode,
+  testLigaJoinTwice,
+  testValidatePredictionTriggerScoped,
+  testScoreMatchdayUsesCallerId,
+  testScoreMatchExists,
+  testScoreMatchUsesCallerId,
+  testNoNullMultiplier,
+  testNoTestMatches,
+  testNoTestUsers,
+  testKnockoutPlaceholdersSet,
+  testRulesRouteExists,
   type TestResult,
 } from "@/lib/admin-tests.functions";
+
+type Category =
+  | "📊 Data Integrity"
+  | "🔐 Auth & RLS"
+  | "⚽ Scoring Engine"
+  | "✖️ Multipliers"
+  | "🏆 Tournament Winner"
+  | "🔒 Prediction Locking"
+  | "🏟️ Standings Trigger"
+  | "🤝 Ligas";
 
 type TestDef = {
   id: string;
   label: string;
-  category: "Data integrity" | "Auth & security" | "Game logic";
+  category: Category;
   critical?: boolean;
   run: () => Promise<TestResult>;
 };
 
 const TESTS: TestDef[] = [
-  { id: "match-count", label: "All 104 matches imported", category: "Data integrity", critical: true, run: () => testMatchCount() },
-  { id: "matchdays", label: "All 9 matchdays created", category: "Data integrity", run: () => testMatchdays() },
-  { id: "no-dupes", label: "No duplicate matches", category: "Data integrity", run: () => testNoDuplicateMatches() },
-  { id: "group-confirmed", label: "All 72 group stage matches confirmed", category: "Data integrity", run: () => testGroupStageConfirmed() },
-  { id: "kickoff-range", label: "Kickoff times in tournament window", category: "Data integrity", run: () => testKickoffRange() },
-  { id: "standings", label: "Groups table populated (48 rows)", category: "Data integrity", run: () => testStandingsPopulated() },
+  // 📊 Data Integrity
+  { id: "match-count", label: "All matches imported (104)", category: "📊 Data Integrity", critical: true, run: () => testMatchCount() },
+  { id: "matchdays", label: "All 9 matchdays created", category: "📊 Data Integrity", run: () => testMatchdays() },
+  { id: "no-dupes", label: "No duplicate matches", category: "📊 Data Integrity", run: () => testNoDuplicateMatches() },
+  { id: "group-confirmed", label: "All 72 group stage matches confirmed", category: "📊 Data Integrity", run: () => testGroupStageConfirmed() },
+  { id: "kickoff-range", label: "Kickoff times in tournament window", category: "📊 Data Integrity", run: () => testKickoffRange() },
+  { id: "standings", label: "Groups table populated (12 × 4 = 48)", category: "📊 Data Integrity", run: () => testStandingsPopulated() },
+  { id: "no-null-mult", label: "No matches with null multiplier", category: "📊 Data Integrity", critical: true, run: () => testNoNullMultiplier() },
+  { id: "no-test-matches", label: "No test data in production", category: "📊 Data Integrity", critical: true, run: () => testNoTestMatches() },
+  { id: "no-test-users", label: "No test users in production", category: "📊 Data Integrity", critical: true, run: () => testNoTestUsers() },
+  { id: "ko-placeholders", label: "All knockout matches have placeholders", category: "📊 Data Integrity", critical: true, run: () => testKnockoutPlaceholdersSet() },
+  { id: "rules-route", label: "Rules page accessible", category: "📊 Data Integrity", critical: true, run: () => testRulesRouteExists() },
 
-  { id: "rls-predictions", label: "RLS blocks anon read of predictions", category: "Auth & security", run: () => testPredictionsRlsAnon() },
-  { id: "rls-profiles", label: "RLS blocks anon read of profiles", category: "Auth & security", run: () => testProfilesRlsAnon() },
-  { id: "admin-exists", label: "Admin role assigned", category: "Auth & security", critical: true, run: () => testAdminExists() },
-  { id: "matches-public", label: "Matches readable by public", category: "Auth & security", critical: true, run: () => testMatchesPublicReadable() },
+  // 🔐 Auth & RLS
+  { id: "rls-predictions", label: "RLS blocks anon read of predictions", category: "🔐 Auth & RLS", run: () => testPredictionsRlsAnon() },
+  { id: "rls-profiles", label: "RLS blocks anon read of profiles", category: "🔐 Auth & RLS", run: () => testProfilesRlsAnon() },
+  { id: "admin-exists", label: "Admin role assigned", category: "🔐 Auth & RLS", critical: true, run: () => testAdminExists() },
+  { id: "matches-public", label: "Matches readable by public", category: "🔐 Auth & RLS", critical: true, run: () => testMatchesPublicReadable() },
+  { id: "validate-trg", label: "validate_prediction trigger preserved", category: "🔐 Auth & RLS", critical: true, run: () => testValidatePredictionTriggerScoped() },
 
-  { id: "score-exact", label: "Scoring engine — exact + first scorer (13 pts)", category: "Game logic", critical: true, run: () => testScoringExact() },
-  { id: "score-correct", label: "Scoring engine — correct result + scorer (6 pts)", category: "Game logic", run: () => testScoringCorrectResult() },
-  { id: "score-wrong", label: "Scoring engine — wrong result (0 pts)", category: "Game logic", run: () => testScoringWrongResult() },
-  { id: "booster", label: "Booster doubles points", category: "Game logic", run: () => testBoosterDoubles() },
-  { id: "lock", label: "Predictions lock at kickoff", category: "Game logic", critical: true, run: () => testKickoffLock() },
-  { id: "standings-trigger", label: "Standings trigger works", category: "Game logic", critical: true, run: () => testStandingsTrigger() },
+  // ⚽ Scoring Engine
+  { id: "score-exact", label: "Group Stage exact + scorer = 13 pts (×1)", category: "⚽ Scoring Engine", run: () => testScoringExact() },
+  { id: "score-correct", label: "Group Stage correct result + scorer = 6 pts (×1)", category: "⚽ Scoring Engine", run: () => testScoringCorrectResult() },
+  { id: "score-wrong", label: "Wrong result = 0 pts", category: "⚽ Scoring Engine", run: () => testScoringWrongResult() },
+  { id: "booster", label: "Booster doubles points (Group Stage 13×1×2 = 26)", category: "⚽ Scoring Engine", run: () => testBoosterDoubles() },
+  { id: "lock", label: "Predictions lock at kickoff", category: "⚽ Scoring Engine", run: () => testKickoffLock() },
+  { id: "score-md-caller", label: "score_matchday uses _caller_id", category: "⚽ Scoring Engine", critical: true, run: () => testScoreMatchdayUsesCallerId() },
+  { id: "score-match-exists", label: "score_match function exists", category: "⚽ Scoring Engine", run: () => testScoreMatchExists() },
+  { id: "score-match-caller", label: "score_match uses _caller_id", category: "⚽ Scoring Engine", run: () => testScoreMatchUsesCallerId() },
+
+  // ✖️ Multipliers
+  { id: "mult-group", label: "Group Stage multiplier ×1", category: "✖️ Multipliers", run: () => testMultiplierGroupStage() },
+  { id: "mult-r32", label: "Round of 32 multiplier ×2", category: "✖️ Multipliers", run: () => testMultiplierR32() },
+  { id: "mult-r16", label: "Round of 16 multiplier ×3", category: "✖️ Multipliers", run: () => testMultiplierR16() },
+  { id: "mult-qf", label: "Quarterfinal / Third Place multiplier ×4", category: "✖️ Multipliers", run: () => testMultiplierQF() },
+  { id: "mult-semi", label: "Semifinal multiplier ×5", category: "✖️ Multipliers", run: () => testMultiplierSemi() },
+  { id: "mult-final", label: "Final multiplier ×6", category: "✖️ Multipliers", run: () => testMultiplierFinal() },
+  { id: "mult-apply-r32", label: "Multiplier applies in scoring (R32: 13×2 = 26)", category: "✖️ Multipliers", run: () => testMultiplierAppliesR32Scoring() },
+  { id: "mult-boost-group", label: "Booster applies after multiplier (13×1×2 = 26)", category: "✖️ Multipliers", run: () => testBoosterWithGroupMultiplier() },
+  { id: "mult-boost-semi", label: "Booster + Semifinal (13×5×2 = 130)", category: "✖️ Multipliers", run: () => testBoosterWithSemifinal() },
+  { id: "mult-underdog", label: "Underdog bonus NOT multiplied (13×2 + 5 = 31)", category: "✖️ Multipliers", run: () => testUnderdogFlatR32() },
+
+  // 🏆 Tournament Winner
+  { id: "tp-table", label: "tournament_predictions table exists", category: "🏆 Tournament Winner", run: () => testTournamentPredictionsTableExists() },
+  { id: "ts-table", label: "tournament_settings table exists", category: "🏆 Tournament Winner", run: () => testTournamentSettingsTableExists() },
+  { id: "tp-50", label: "Correct winner awards +50 points", category: "🏆 Tournament Winner", run: () => testTournamentWinnerAwards50() },
+  { id: "tp-0", label: "Wrong winner awards 0 points", category: "🏆 Tournament Winner", run: () => testTournamentWinnerWrongAwards0() },
+
+  // 🏟️ Standings Trigger
+  { id: "standings-trigger-exists", label: "Standings trigger exists", category: "🏟️ Standings Trigger", critical: true, run: () => testStandingsTriggerExists() },
+  { id: "standings-trigger", label: "Standings update on result entry", category: "🏟️ Standings Trigger", run: () => testStandingsTrigger() },
+
+  // 🤝 Ligas
+  { id: "liga-code-format", label: "Liga invite codes match MRC-XXXX", category: "🤝 Ligas", run: () => testLigaInviteCodeFormat() },
+  { id: "liga-join-valid", label: "Join with valid code succeeds", category: "🤝 Ligas", run: () => testLigaJoinValidCode() },
+  { id: "liga-join-invalid", label: "Join with invalid code rejected", category: "🤝 Ligas", run: () => testLigaJoinInvalidCode() },
+  { id: "liga-join-twice", label: "Cannot join same liga twice (idempotent)", category: "🤝 Ligas", run: () => testLigaJoinTwice() },
 ];
 
 type RunState = "idle" | "running" | TestResult;
@@ -84,32 +161,43 @@ const ICON: Record<string, string> = {
 };
 
 const EDGE_TESTS: TestDef[] = [
-  { id: "edge-exact", label: "Exact scoreline (all points)", category: "Game logic", run: () => testEdgeExactScoreline() },
-  { id: "edge-correct-wrong-score", label: "Correct result, wrong score", category: "Game logic", run: () => testEdgeCorrectResultWrongScore() },
-  { id: "edge-wrong-scorer", label: "Correct result, wrong first scorer", category: "Game logic", run: () => testEdgeWrongFirstScorer() },
-  { id: "edge-draw", label: "Draw predicted correctly", category: "Game logic", run: () => testEdgeDrawCorrect() },
-  { id: "edge-00-draw", label: "0-0 draw predicted correctly", category: "Game logic", run: () => testEdgeZeroZeroDraw() },
-  { id: "edge-00-boost", label: "0-0 draw with booster", category: "Game logic", run: () => testEdgeZeroZeroBooster() },
-  { id: "edge-wrong", label: "Wrong result (zero points)", category: "Game logic", run: () => testEdgeWrongResult() },
-  { id: "edge-away", label: "Correct away win", category: "Game logic", run: () => testEdgeAwayWin() },
-  { id: "edge-booster", label: "Booster doubles points", category: "Game logic", run: () => testEdgeBooster() },
-  { id: "edge-underdog-below", label: "Underdog bonus fires below 10%", category: "Game logic", run: () => testEdgeUnderdogBelow10pct() },
-  { id: "edge-underdog-at", label: "Underdog bonus does NOT fire at 10%", category: "Game logic", run: () => testEdgeUnderdogAt10pct() },
-  { id: "edge-rescore", label: "Re-scoring does not double points", category: "Game logic", run: () => testEdgeRescoreNoDouble() },
-  { id: "edge-correction", label: "Result correction recalculates correctly", category: "Game logic", run: () => testEdgeResultCorrection() },
-  { id: "edge-mul-r32", label: "Round multiplier ×2 applies in R32", category: "Game logic", run: () => testEdgeMultiplierR32() },
-  { id: "edge-mul-boost", label: "Booster applies after round multiplier", category: "Game logic", run: () => testEdgeMultiplierBoosterStack() },
-  { id: "edge-mul-underdog", label: "Underdog +5 stays flat after multiplier", category: "Game logic", run: () => testEdgeMultiplierUnderdogFlat() },
+  { id: "edge-exact", label: "Exact scoreline (all points)", category: "⚽ Scoring Engine", run: () => testEdgeExactScoreline() },
+  { id: "edge-correct-wrong-score", label: "Correct result, wrong score", category: "⚽ Scoring Engine", run: () => testEdgeCorrectResultWrongScore() },
+  { id: "edge-wrong-scorer", label: "Correct result, wrong first scorer", category: "⚽ Scoring Engine", run: () => testEdgeWrongFirstScorer() },
+  { id: "edge-draw", label: "Draw predicted correctly", category: "⚽ Scoring Engine", run: () => testEdgeDrawCorrect() },
+  { id: "edge-00-draw", label: "0-0 draw predicted correctly", category: "⚽ Scoring Engine", run: () => testEdgeZeroZeroDraw() },
+  { id: "edge-00-boost", label: "0-0 draw with booster", category: "⚽ Scoring Engine", run: () => testEdgeZeroZeroBooster() },
+  { id: "edge-wrong", label: "Wrong result (zero points)", category: "⚽ Scoring Engine", run: () => testEdgeWrongResult() },
+  { id: "edge-away", label: "Correct away win", category: "⚽ Scoring Engine", run: () => testEdgeAwayWin() },
+  { id: "edge-booster", label: "Booster doubles points", category: "⚽ Scoring Engine", run: () => testEdgeBooster() },
+  { id: "edge-underdog-below", label: "Underdog bonus fires below 10%", category: "⚽ Scoring Engine", run: () => testEdgeUnderdogBelow10pct() },
+  { id: "edge-underdog-at", label: "Underdog bonus does NOT fire at 10%", category: "⚽ Scoring Engine", run: () => testEdgeUnderdogAt10pct() },
+  { id: "edge-rescore", label: "Re-scoring does not double points", category: "⚽ Scoring Engine", run: () => testEdgeRescoreNoDouble() },
+  { id: "edge-correction", label: "Result correction recalculates correctly", category: "⚽ Scoring Engine", run: () => testEdgeResultCorrection() },
+  { id: "edge-mul-r32", label: "Round multiplier ×2 applies in R32", category: "⚽ Scoring Engine", run: () => testEdgeMultiplierR32() },
+  { id: "edge-mul-boost", label: "Booster applies after round multiplier", category: "⚽ Scoring Engine", run: () => testEdgeMultiplierBoosterStack() },
+  { id: "edge-mul-underdog", label: "Underdog +5 stays flat after multiplier", category: "⚽ Scoring Engine", run: () => testEdgeMultiplierUnderdogFlat() },
 ];
 
 const LOCK_TESTS: TestDef[] = [
-  { id: "lock-ui-past", label: "UI: past matches render locked", category: "Auth & security", run: () => testLockUiPastMatch() },
-  { id: "lock-srv-past", label: "Server rejects insert on past match", category: "Auth & security", run: () => testLockServerRejectsPastInsert() },
-  { id: "lock-srv-completed", label: "Server rejects insert on completed match", category: "Auth & security", run: () => testLockServerRejectsCompleted() },
-  { id: "lock-srv-update", label: "Server rejects update after kickoff", category: "Auth & security", run: () => testLockServerRejectsUpdate() },
-  { id: "lock-future-ok", label: "Future match accepts prediction", category: "Auth & security", run: () => testLockServerAcceptsFuture() },
-  { id: "lock-reopen", label: "Moving kickoff to future reopens predictions", category: "Auth & security", run: () => testLockReopensWhenKickoffMovedFuture() },
-  { id: "lock-relock", label: "Moving kickoff back to past re-locks", category: "Auth & security", run: () => testLockRelocksWhenKickoffMovedPast() },
+  { id: "lock-ui-past", label: "UI: past matches render locked", category: "🔒 Prediction Locking", run: () => testLockUiPastMatch() },
+  { id: "lock-srv-past", label: "Server rejects insert on past match", category: "🔒 Prediction Locking", run: () => testLockServerRejectsPastInsert() },
+  { id: "lock-srv-completed", label: "Server rejects insert on completed match", category: "🔒 Prediction Locking", run: () => testLockServerRejectsCompleted() },
+  { id: "lock-srv-update", label: "Server rejects update after kickoff", category: "🔒 Prediction Locking", run: () => testLockServerRejectsUpdate() },
+  { id: "lock-future-ok", label: "Future match accepts prediction", category: "🔒 Prediction Locking", run: () => testLockServerAcceptsFuture() },
+  { id: "lock-reopen", label: "Moving kickoff to future reopens predictions", category: "🔒 Prediction Locking", run: () => testLockReopensWhenKickoffMovedFuture() },
+  { id: "lock-relock", label: "Moving kickoff back to past re-locks", category: "🔒 Prediction Locking", run: () => testLockRelocksWhenKickoffMovedPast() },
+];
+
+const CATEGORY_ORDER: Category[] = [
+  "📊 Data Integrity",
+  "🔐 Auth & RLS",
+  "⚽ Scoring Engine",
+  "✖️ Multipliers",
+  "🏆 Tournament Winner",
+  "🏟️ Standings Trigger",
+  "🔒 Prediction Locking",
+  "🤝 Ligas",
 ];
 
 export function TestsPanel() {
@@ -132,6 +220,7 @@ export function TestsPanel() {
     for (const t of TESTS) await runOne(t);
   };
 
+  const criticals = TESTS.filter((t) => t.critical);
   const allRun = TESTS.every((t) => {
     const s = state[t.id];
     return s && s !== "idle" && s !== "running" && typeof s !== "string";
@@ -144,11 +233,15 @@ export function TestsPanel() {
     },
     { pass: 0, fail: 0, warn: 0 } as Record<"pass" | "fail" | "warn", number>,
   );
-  const criticalsPassing = TESTS.filter((t) => t.critical).every((t) => {
+  const criticalsRun = criticals.every((t) => {
+    const s = state[t.id];
+    return s && s !== "idle" && s !== "running" && typeof s !== "string";
+  });
+  const criticalsPassing = criticals.every((t) => {
     const s = state[t.id];
     return s && typeof s !== "string" && s.status === "pass";
   });
-  const anyCriticalFailed = TESTS.filter((t) => t.critical).some((t) => {
+  const anyCriticalFailed = criticals.some((t) => {
     const s = state[t.id];
     return s && typeof s !== "string" && s.status === "fail";
   });
@@ -158,8 +251,39 @@ export function TestsPanel() {
       (acc[t.category] = acc[t.category] ?? []).push(t);
       return acc;
     },
-    {} as Record<string, TestDef[]>,
+    {} as Record<Category, TestDef[]>,
   );
+
+  const renderTestRow = (t: TestDef) => {
+    const s = state[t.id];
+    const status =
+      !s || s === "idle" ? "idle" : s === "running" ? "running" : s.status;
+    const message =
+      s && typeof s !== "string" ? s.message : s === "running" ? "Running…" : "Not run";
+    return (
+      <div key={t.id} className="px-4 py-2.5 flex items-center gap-3">
+        <span className="text-base w-6 text-center">{ICON[status]}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium flex items-center gap-2">
+            {t.label}
+            {t.critical && (
+              <span className="text-[9px] uppercase tracking-wider bg-primary/15 text-primary px-1.5 py-0.5 rounded">
+                critical
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground truncate">{message}</div>
+        </div>
+        <button
+          onClick={() => runOne(t)}
+          disabled={s === "running"}
+          className="rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
+        >
+          ▶ Run
+        </button>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -167,86 +291,78 @@ export function TestsPanel() {
       <EdgeCasesPanel />
       <PredictionLockPanel />
       <StandingsVerifierPanel />
-      <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="px-4 py-3 flex items-center justify-between border-b border-border">
-        <div>
-          <div className="font-semibold">Pre-release checks</div>
-          <div className="text-xs text-muted-foreground">
-            Run before going live. Critical tests must pass.
+
+      {/* 🚀 Launch Readiness */}
+      <div className="rounded-2xl border border-border bg-card overflow-hidden mb-4">
+        <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+          <div>
+            <div className="font-semibold">🚀 Launch Readiness</div>
+            <div className="text-xs text-muted-foreground">
+              Critical checks that must pass before going live. ({criticals.length} tests)
+            </div>
           </div>
+          <button
+            onClick={async () => {
+              for (const t of criticals) await runOne(t);
+            }}
+            className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground"
+          >
+            ▶ Run launch checks
+          </button>
         </div>
-        <button
-          onClick={runAll}
-          className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground"
-        >
-          ▶ Run all tests
-        </button>
+        {criticalsRun && (
+          <div
+            className={`px-4 py-3 text-sm font-bold border-b border-border ${
+              anyCriticalFailed
+                ? "bg-destructive/10 text-destructive"
+                : criticalsPassing
+                  ? "bg-success/10 text-success"
+                  : "bg-amber-500/10 text-amber-glow"
+            }`}
+          >
+            {anyCriticalFailed
+              ? "❌ Fix these issues before going live"
+              : "✅ App is ready for launch 🚀"}
+          </div>
+        )}
+        <div className="divide-y divide-border">{criticals.map(renderTestRow)}</div>
       </div>
 
-      {allRun && (
-        <div
-          className={`px-4 py-3 text-sm font-bold border-b border-border ${
-            anyCriticalFailed
-              ? "bg-destructive/10 text-destructive"
-              : criticalsPassing
-                ? "bg-success/10 text-success"
-                : "bg-amber-500/10 text-amber-glow"
-          }`}
-        >
-          {anyCriticalFailed
-            ? "❌ Fix issues before launch"
-            : criticalsPassing
-              ? "✅ App is ready for launch 🚀"
-              : "⚠️ Some checks need attention"}
-          <span className="ml-3 text-xs font-normal opacity-80">
-            ✅ {counts.pass} · ❌ {counts.fail} · ⚠️ {counts.warn}
-          </span>
+      {/* Full suite, grouped */}
+      <div className="rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="px-4 py-3 flex items-center justify-between border-b border-border">
+          <div>
+            <div className="font-semibold">Full test suite</div>
+            <div className="text-xs text-muted-foreground">
+              {TESTS.length} tests across {CATEGORY_ORDER.length} categories.
+            </div>
+          </div>
+          <button
+            onClick={runAll}
+            className="rounded-lg bg-amber-gradient px-3 py-1.5 text-xs font-bold text-primary-foreground"
+          >
+            ▶ Run all tests
+          </button>
         </div>
-      )}
 
-      {Object.entries(grouped).map(([cat, tests]) => (
-        <div key={cat} className="border-b border-border last:border-b-0">
-          <div className="px-4 py-2 text-[11px] uppercase tracking-wider text-muted-foreground bg-muted/30">
-            {cat}
+        {allRun && (
+          <div className="px-4 py-3 text-xs text-muted-foreground border-b border-border">
+            ✅ {counts.pass} passed · ❌ {counts.fail} failed · ⚠️ {counts.warn} warnings · {TESTS.length} total
           </div>
-          <div className="divide-y divide-border">
-            {tests.map((t) => {
-              const s = state[t.id];
-              const status =
-                !s || s === "idle"
-                  ? "idle"
-                  : s === "running"
-                    ? "running"
-                    : s.status;
-              const message =
-                s && typeof s !== "string" ? s.message : s === "running" ? "Running…" : "Not run";
-              return (
-                <div key={t.id} className="px-4 py-2.5 flex items-center gap-3">
-                  <span className="text-base w-6 text-center">{ICON[status]}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium flex items-center gap-2">
-                      {t.label}
-                      {t.critical && (
-                        <span className="text-[9px] uppercase tracking-wider bg-primary/15 text-primary px-1.5 py-0.5 rounded">
-                          critical
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">{message}</div>
-                  </div>
-                  <button
-                    onClick={() => runOne(t)}
-                    disabled={s === "running"}
-                    className="rounded-md border border-border px-2 py-1 text-xs font-medium hover:bg-muted disabled:opacity-50"
-                  >
-                    ▶ Run
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+        )}
+
+        {CATEGORY_ORDER.map((cat) => {
+          const tests = grouped[cat];
+          if (!tests || tests.length === 0) return null;
+          return (
+            <div key={cat} className="border-b border-border last:border-b-0">
+              <div className="px-4 py-2 text-[11px] uppercase tracking-wider text-muted-foreground bg-muted/30">
+                {cat} ({tests.length})
+              </div>
+              <div className="divide-y divide-border">{tests.map(renderTestRow)}</div>
+            </div>
+          );
+        })}
       </div>
     </>
   );
