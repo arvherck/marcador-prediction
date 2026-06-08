@@ -1193,6 +1193,30 @@ export const adminBracketStatus = createServerFn({ method: "GET" })
     };
   });
 
+export type ThirdPlaceTeam = {
+  team: string;
+  group: string;
+  points: number;
+  gd: number;
+  gf: number;
+  fair_play: number;
+};
+
+export type BracketPopulateResult =
+  | { ok: true; populated: number[]; pending: number[] }
+  | { ok: false; reason: "group_stage_incomplete"; remaining: number }
+  | { ok: false; reason: "not_enough_thirds"; have: number }
+  | {
+      ok: false;
+      reason: "needs_third_confirmation";
+      third_teams: ThirdPlaceTeam[];
+      third_slots: number[];
+      winners: Record<string, string>;
+      runners: Record<string, string>;
+    };
+
+export type BracketCascadeResult = { ok: true; populated: number[] };
+
 export const adminPopulateBracket = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
@@ -1202,7 +1226,7 @@ export const adminPopulateBracket = createServerFn({ method: "POST" })
         .optional(),
     }),
   )
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<BracketPopulateResult> => {
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
     const { data: result, error } = await supabase.rpc("populate_knockout_brackets", {
@@ -1212,19 +1236,18 @@ export const adminPopulateBracket = createServerFn({ method: "POST" })
         : null,
     });
     if (error) throw safeError(error, "game");
-    // Run cascade in case any knockout match is already final.
     await supabase.rpc("cascade_knockout_winners", { _caller_id: userId });
-    return JSON.parse(JSON.stringify(result)) as unknown;
+    return result as unknown as BracketPopulateResult;
   });
 
 export const adminCascadeKnockout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .handler(async ({ context }): Promise<BracketCascadeResult> => {
     const { supabase, userId } = context;
     await assertAdmin(supabase, userId);
     const { data, error } = await supabase.rpc("cascade_knockout_winners", { _caller_id: userId });
     if (error) throw safeError(error, "game");
-    return data as Record<string, unknown>;
+    return data as unknown as BracketCascadeResult;
   });
 
 export const adminOverrideKnockoutTeams = createServerFn({ method: "POST" })
