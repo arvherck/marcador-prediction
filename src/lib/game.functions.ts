@@ -1118,16 +1118,17 @@ export const getMyMatchdayScoresFn = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     const { data, error } = await supabase
       .from("matchday_scores")
-      .select("matchday_id, total_points, rank, matchday:matchdays(name, starts_at)")
+      .select("matchday_id, total_points, rank, matchday:matchdays(name, starts_at, is_test)")
       .eq("user_id", userId);
     if (error) throw safeError(error, "game");
     type Row = {
       matchday_id: number;
       total_points: number;
       rank: number | null;
-      matchday: { name: string; starts_at: string };
+      matchday: { name: string; starts_at: string; is_test: boolean };
     };
     return ((data ?? []) as Row[])
+      .filter((r) => !r.matchday?.is_test)
       .map((r) => ({
         matchday_id: r.matchday_id,
         name: r.matchday.name,
@@ -1142,15 +1143,18 @@ export const getMyProfileStatsFn = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    const testMdIds = await getTestMatchdayIds(supabase);
     const [{ count: totalMatches }, { data: preds, error: pErr }] = await Promise.all([
       supabase
         .from("matches")
         .select("id", { count: "exact", head: true })
-        .eq("teams_confirmed", true),
+        .eq("teams_confirmed", true)
+        .not("matchday_id", "in", notInList(testMdIds)),
       supabase
         .from("predictions")
-        .select("home_goals, away_goals, points, match:matches(home_team, away_team, is_final)")
-        .eq("user_id", userId),
+        .select("home_goals, away_goals, points, match:matches!inner(home_team, away_team, is_final, matchday_id)")
+        .eq("user_id", userId)
+        .not("match.matchday_id", "in", notInList(testMdIds)),
     ]);
     if (pErr) throw new Error(pErr.message);
     type Pred = {
