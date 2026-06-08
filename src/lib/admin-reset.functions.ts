@@ -275,7 +275,7 @@ export const adminResetToGoLiveFn = createServerFn({ method: "POST" })
       return before ?? 0;
     });
 
-    // Step 4: Reset group standings to zero
+    // Step 4: Reset group standings to zero (goal_difference + points are generated)
     await record("standings", "Group standings reset to zero", async () => {
       const { count } = await supabaseAdmin
         .from("wc_standings")
@@ -289,11 +289,14 @@ export const adminResetToGoLiveFn = createServerFn({ method: "POST" })
           lost: 0,
           goals_for: 0,
           goals_against: 0,
+          yellow_cards: 0,
+          red_cards: 0,
         })
         .not("id", "is", null);
       if (error) throw error;
       return count ?? 0;
     });
+
 
     // Step 5: Reset user streaks
     await record("streaks", "User streaks reset", async () => {
