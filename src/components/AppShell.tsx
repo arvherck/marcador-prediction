@@ -133,14 +133,21 @@ export function AppShell({
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 py-6">{children}</main>
 
       <footer className="max-w-3xl mx-auto w-full px-4 py-4 text-center">
-        <button
-          type="button"
-          onClick={() => setDonateOpen(true)}
-          className="text-xs text-muted-foreground hover:text-amber-glow transition-colors"
-        >
-          Support Marcador
-        </button>
+        <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setDonateOpen(true)}
+            className="hover:text-amber-glow transition-colors"
+          >
+            Support Marcador
+          </button>
+          <span aria-hidden>·</span>
+          <Link to="/rules" className="hover:text-amber-glow transition-colors">
+            Rules
+          </Link>
+        </div>
       </footer>
+
 
       <nav className="fixed md:hidden bottom-0 inset-x-0 z-30 border-t border-border bg-background/95 backdrop-blur">
         <div className="grid grid-cols-4 max-w-md mx-auto">
