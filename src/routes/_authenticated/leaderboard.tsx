@@ -50,6 +50,10 @@ type OverallRow = {
   total_points: number;
   last_md_points: number;
   current_streak: number;
+  rank?: number | null;
+  correct_results?: number;
+  exact_scores?: number;
+  correct_first_scorers?: number;
 };
 
 type MatchdayRow = {
@@ -59,6 +63,9 @@ type MatchdayRow = {
   favourite_team: string;
   total_points: number;
   rank: number | null;
+  correct_results?: number;
+  exact_scores?: number;
+  correct_first_scorers?: number;
 };
 
 function LeaderboardPage() {
