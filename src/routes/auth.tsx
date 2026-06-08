@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { setGuest, clearGuest } from "@/lib/guest";
 import { lovable } from "@/integrations/lovable";
-import { AuthShell, GoogleButton, OrDivider } from "@/components/auth/AuthShell";
+import { AuthShell } from "@/components/auth/AuthShell";
 import { CookieNotice } from "@/components/CookieNotice";
 
 export const Route = createFileRoute("/auth")({
