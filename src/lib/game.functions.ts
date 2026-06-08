@@ -660,11 +660,15 @@ export const adminListMatchdays = createServerFn({ method: "GET" })
     if (mErr) throw new Error(mErr.message);
     const { data: predCounts, error: pcErr } = await supabase
       .from("predictions")
-      .select("match_id");
+      .select("match_id, points");
     if (pcErr) throw new Error(pcErr.message);
     const predsByMatch = new Map<number, number>();
+    const unscoredByMatch = new Map<number, number>();
     for (const p of predCounts ?? []) {
       predsByMatch.set(p.match_id, (predsByMatch.get(p.match_id) ?? 0) + 1);
+      if (p.points === null || p.points === undefined) {
+        unscoredByMatch.set(p.match_id, (unscoredByMatch.get(p.match_id) ?? 0) + 1);
+      }
     }
     const byMd = new Map<number, typeof ms>();
     for (const m of ms ?? []) {
@@ -673,12 +677,23 @@ export const adminListMatchdays = createServerFn({ method: "GET" })
       byMd.set(m.matchday_id, arr);
     }
     return (mds ?? []).map((md) => {
-      const matches = byMd.get(md.id) ?? [];
+      const matches = (byMd.get(md.id) ?? []).map((m) => ({
+        ...m,
+        unscored_count: unscoredByMatch.get(m.id) ?? 0,
+      }));
       const predCount = matches.reduce(
         (sum, m) => sum + (predsByMatch.get(m.id) ?? 0),
         0,
       );
-      return { ...md, matches, prediction_count: predCount };
+      const unscoredMatchCount = matches.filter(
+        (m) => m.status === "completed" && m.is_final && (unscoredByMatch.get(m.id) ?? 0) > 0,
+      ).length;
+      return {
+        ...md,
+        matches,
+        prediction_count: predCount,
+        unscored_match_count: unscoredMatchCount,
+      };
     });
   });
 
