@@ -112,8 +112,8 @@ export function MatchCard({
       away: next.away ?? away,
       scorer: next.scorer ?? scorer,
       changed,
-      homeTeam: match.home_team,
-      awayTeam: match.away_team,
+      homeTeam: match.home_team ?? undefined,
+      awayTeam: match.away_team ?? undefined,
     });
     setHome(r.home);
     setAway(r.away);
@@ -189,7 +189,7 @@ export function MatchCard({
           )}
         </div>
         <div className="mt-2 text-sm font-medium text-muted-foreground">
-          {match.home_team} <span className="opacity-60">vs</span> {match.away_team}
+          {match.home_team ?? match.home_placeholder ?? "TBD"} <span className="opacity-60">vs</span> {match.away_team ?? match.away_placeholder ?? "TBD"}
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground/80">
           Teams TBD — predictions open soon
@@ -238,7 +238,7 @@ export function MatchCard({
 
       <div className="px-4 pt-5 pb-4">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <TeamSide name={match.home_team} />
+          <TeamSide name={match.home_team ?? ""} />
           <ScorePair
             home={home}
             away={away}
@@ -252,7 +252,7 @@ export function MatchCard({
             homeDecDisabled={scorer === "home" && home <= 1}
             awayDecDisabled={scorer === "away" && away <= 1}
           />
-          <TeamSide name={match.away_team} alignRight />
+          <TeamSide name={match.away_team ?? ""} alignRight />
         </div>
 
         {hint && !disabled && (
@@ -324,9 +324,9 @@ export function MatchCard({
               const active = scorer === opt;
               const label =
                 opt === "home"
-                  ? `${teamFlag(match.home_team)} ${match.home_team}`
+                  ? `${teamFlag(match.home_team ?? "")} ${match.home_team ?? ""}`
                   : opt === "away"
-                  ? `${match.away_team} ${teamFlag(match.away_team)}`
+                  ? `${match.away_team ?? ""} ${teamFlag(match.away_team ?? "")}`
                   : "No goal";
               return (
                 <button

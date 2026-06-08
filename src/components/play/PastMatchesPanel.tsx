@@ -71,8 +71,8 @@ function PastMatchRow({ match }: { match: MatchRow }) {
     <li className="rounded-xl border border-border bg-card/60 px-3 py-2.5">
       <div className="flex items-center justify-between gap-3 text-sm">
         <div className="min-w-0 flex items-center gap-2 truncate">
-          <span className="text-lg leading-none">{teamFlag(match.home_team)}</span>
-          <span className="font-semibold truncate">{match.home_team}</span>
+          <span className="text-lg leading-none">{teamFlag(match.home_team ?? "")}</span>
+          <span className="font-semibold truncate">{match.home_team ?? match.home_placeholder ?? "TBD"}</span>
         </div>
         <div className="font-score font-bold tabular-nums text-base whitespace-nowrap">
           {hasResult ? (
@@ -85,8 +85,8 @@ function PastMatchRow({ match }: { match: MatchRow }) {
           )}
         </div>
         <div className="min-w-0 flex items-center gap-2 justify-end truncate">
-          <span className="font-semibold truncate">{match.away_team}</span>
-          <span className="text-lg leading-none">{teamFlag(match.away_team)}</span>
+          <span className="font-semibold truncate">{match.away_team ?? match.away_placeholder ?? "TBD"}</span>
+          <span className="text-lg leading-none">{teamFlag(match.away_team ?? "")}</span>
         </div>
       </div>
       <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted-foreground">

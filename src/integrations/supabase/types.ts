@@ -197,13 +197,16 @@ export type Database = {
       }
       matches: {
         Row: {
+          auto_populated: boolean
+          away_placeholder: string | null
           away_score: number | null
-          away_team: string
+          away_team: string | null
           city: string | null
           first_scorer: string | null
           group_letter: string | null
+          home_placeholder: string | null
           home_score: number | null
-          home_team: string
+          home_team: string | null
           host_country: string | null
           id: number
           is_final: boolean
@@ -215,13 +218,16 @@ export type Database = {
           teams_confirmed: boolean
         }
         Insert: {
+          auto_populated?: boolean
+          away_placeholder?: string | null
           away_score?: number | null
-          away_team: string
+          away_team?: string | null
           city?: string | null
           first_scorer?: string | null
           group_letter?: string | null
+          home_placeholder?: string | null
           home_score?: number | null
-          home_team: string
+          home_team?: string | null
           host_country?: string | null
           id?: number
           is_final?: boolean
@@ -233,13 +239,16 @@ export type Database = {
           teams_confirmed?: boolean
         }
         Update: {
+          auto_populated?: boolean
+          away_placeholder?: string | null
           away_score?: number | null
-          away_team?: string
+          away_team?: string | null
           city?: string | null
           first_scorer?: string | null
           group_letter?: string | null
+          home_placeholder?: string | null
           home_score?: number | null
-          home_team?: string
+          home_team?: string | null
           host_country?: string | null
           id?: number
           is_final?: boolean
@@ -441,9 +450,11 @@ export type Database = {
           lost: number
           played: number
           points: number | null
+          red_cards: number
           team: string
           updated_at: string
           won: number
+          yellow_cards: number
         }
         Insert: {
           drawn?: number
@@ -455,9 +466,11 @@ export type Database = {
           lost?: number
           played?: number
           points?: number | null
+          red_cards?: number
           team: string
           updated_at?: string
           won?: number
+          yellow_cards?: number
         }
         Update: {
           drawn?: number
@@ -469,9 +482,11 @@ export type Database = {
           lost?: number
           played?: number
           points?: number | null
+          red_cards?: number
           team?: string
           updated_at?: string
           won?: number
+          yellow_cards?: number
         }
         Relationships: [
           {
@@ -505,6 +520,7 @@ export type Database = {
       }
     }
     Functions: {
+      cascade_knockout_winners: { Args: { _caller_id: string }; Returns: Json }
       find_league_by_code: { Args: { _code: string }; Returns: string }
       global_leaderboard: {
         Args: { _league_id?: string }
@@ -555,7 +571,19 @@ export type Database = {
           owner_id: string
         }[]
       }
+      populate_knockout_brackets: {
+        Args: { _caller_id: string; _third_assignment?: Json }
+        Returns: Json
+      }
       recalculate_team_standing: { Args: { _team: string }; Returns: undefined }
+      reset_knockout_match: {
+        Args: { _caller_id: string; _match_id: number }
+        Returns: undefined
+      }
+      resolve_knockout_placeholder: {
+        Args: { _label: string; _runners: Json; _thirds: Json; _winners: Json }
+        Returns: string
+      }
       score_matchday: {
         Args: { _caller_id: string; _matchday_id: number }
         Returns: number

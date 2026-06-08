@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { TestsPanel } from "@/components/admin/TestsPanel";
+import { KnockoutBracketPanel } from "@/components/admin/KnockoutBracketPanel";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -101,6 +102,7 @@ function AdminPage() {
 const NAV = [
   { id: "overview", label: "Overview", icon: "📊" },
   { id: "results", label: "Results & Scoring", icon: "⚽" },
+  { id: "bracket", label: "Knockout Bracket", icon: "🥊" },
   { id: "api-sync", label: "API Sync", icon: "🔄" },
   { id: "tournament", label: "Tournament", icon: "🏆" },
   { id: "donations", label: "Donations", icon: "💰" },
@@ -163,6 +165,10 @@ function AdminInner({ displayName }: { displayName?: string }) {
                 <p className="text-sm text-muted-foreground">No matchdays yet.</p>
               )}
             </div>
+          </Section>
+
+          <Section id="bracket" title="Knockout Bracket">
+            <KnockoutBracketPanel />
           </Section>
 
           <Section id="api-sync" title="API Sync">

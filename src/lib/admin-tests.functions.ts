@@ -513,8 +513,12 @@ export const testStandingsTrigger = createServerFn({ method: "POST" })
       .maybeSingle();
     if (mErr) return { status: "fail", message: mErr.message };
     if (!match) return { status: "warn", message: "No upcoming group-stage match available to test." };
-
-    const teams = [match.home_team, match.away_team];
+    if (!match.home_team || !match.away_team) {
+      return { status: "warn", message: "Match has no confirmed teams yet." };
+    }
+    const homeTeam: string = match.home_team;
+    const awayTeam: string = match.away_team;
+    const teams: string[] = [homeTeam, awayTeam];
     const snapshot = async () => {
       const { data, error } = await supabaseAdmin
         .from("wc_standings")
