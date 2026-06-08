@@ -408,6 +408,8 @@ export type Database = {
       }
       profiles: {
         Row: {
+          age_confirmed: boolean
+          consent_recorded_at: string | null
           country: string
           created_at: string
           current_streak: number
@@ -415,11 +417,14 @@ export type Database = {
           donor: boolean
           favourite_team: string
           longest_streak: number
+          privacy_accepted: boolean
           theme_preference: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          age_confirmed?: boolean
+          consent_recorded_at?: string | null
           country: string
           created_at?: string
           current_streak?: number
@@ -427,11 +432,14 @@ export type Database = {
           donor?: boolean
           favourite_team: string
           longest_streak?: number
+          privacy_accepted?: boolean
           theme_preference?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          age_confirmed?: boolean
+          consent_recorded_at?: string | null
           country?: string
           created_at?: string
           current_streak?: number
@@ -439,6 +447,7 @@ export type Database = {
           donor?: boolean
           favourite_team?: string
           longest_streak?: number
+          privacy_accepted?: boolean
           theme_preference?: string | null
           updated_at?: string
           user_id?: string

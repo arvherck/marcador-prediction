@@ -122,6 +122,48 @@ export const updateProfileFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const recordConsentFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(
+    z.object({
+      age_confirmed: z.literal(true),
+      privacy_accepted: z.literal(true),
+    }),
+  )
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const now = new Date().toISOString();
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          age_confirmed: true,
+          privacy_accepted: true,
+          consent_recorded_at: now,
+        })
+        .eq("user_id", userId);
+      if (error) throw safeError(error, "auth");
+    } else {
+      const { error } = await supabase.from("profiles").insert({
+        user_id: userId,
+        display_name: "",
+        country: "",
+        favourite_team: "",
+        age_confirmed: true,
+        privacy_accepted: true,
+        consent_recorded_at: now,
+      });
+      if (error) throw safeError(error, "auth");
+    }
+    return { ok: true };
+  });
+
 export const deleteAccountFn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {

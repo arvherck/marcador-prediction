@@ -25,6 +25,7 @@ import { Route as AuthenticatedMeRouteImport } from './routes/_authenticated/me'
 import { Route as AuthenticatedLeaguesRouteImport } from './routes/_authenticated/leagues'
 import { Route as AuthenticatedLeaderboardRouteImport } from './routes/_authenticated/leaderboard'
 import { Route as AuthenticatedGruposRouteImport } from './routes/_authenticated/grupos'
+import { Route as AuthenticatedConsentRouteImport } from './routes/_authenticated/consent'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as ApiPublicStripeWebhookRouteImport } from './routes/api/public/stripe-webhook'
 import { Route as AuthenticatedLeaguesJoinRouteImport } from './routes/_authenticated/leagues.join'
@@ -110,6 +111,11 @@ const AuthenticatedGruposRoute = AuthenticatedGruposRouteImport.update({
   path: '/grupos',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedConsentRoute = AuthenticatedConsentRouteImport.update({
+  id: '/consent',
+  path: '/consent',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/rules': typeof RulesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/consent': typeof AuthenticatedConsentRoute
   '/grupos': typeof AuthenticatedGruposRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/leagues': typeof AuthenticatedLeaguesRouteWithChildren
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/rules': typeof RulesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/admin': typeof AuthenticatedAdminRoute
+  '/consent': typeof AuthenticatedConsentRoute
   '/grupos': typeof AuthenticatedGruposRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/leagues': typeof AuthenticatedLeaguesRouteWithChildren
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/rules': typeof RulesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
+  '/_authenticated/consent': typeof AuthenticatedConsentRoute
   '/_authenticated/grupos': typeof AuthenticatedGruposRoute
   '/_authenticated/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/_authenticated/leagues': typeof AuthenticatedLeaguesRouteWithChildren
@@ -206,6 +215,7 @@ export interface FileRouteTypes {
     | '/rules'
     | '/sitemap.xml'
     | '/admin'
+    | '/consent'
     | '/grupos'
     | '/leaderboard'
     | '/leagues'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/rules'
     | '/sitemap.xml'
     | '/admin'
+    | '/consent'
     | '/grupos'
     | '/leaderboard'
     | '/leagues'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/rules'
     | '/sitemap.xml'
     | '/_authenticated/admin'
+    | '/_authenticated/consent'
     | '/_authenticated/grupos'
     | '/_authenticated/leaderboard'
     | '/_authenticated/leagues'
@@ -388,6 +400,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedGruposRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/consent': {
+      id: '/_authenticated/consent'
+      path: '/consent'
+      fullPath: '/consent'
+      preLoaderRoute: typeof AuthenticatedConsentRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/admin': {
       id: '/_authenticated/admin'
       path: '/admin'
@@ -434,6 +453,7 @@ const AuthenticatedLeaguesRouteWithChildren =
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
+  AuthenticatedConsentRoute: typeof AuthenticatedConsentRoute
   AuthenticatedGruposRoute: typeof AuthenticatedGruposRoute
   AuthenticatedLeaderboardRoute: typeof AuthenticatedLeaderboardRoute
   AuthenticatedLeaguesRoute: typeof AuthenticatedLeaguesRouteWithChildren
@@ -444,6 +464,7 @@ interface AuthenticatedRouteChildren {
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
+  AuthenticatedConsentRoute: AuthenticatedConsentRoute,
   AuthenticatedGruposRoute: AuthenticatedGruposRoute,
   AuthenticatedLeaderboardRoute: AuthenticatedLeaderboardRoute,
   AuthenticatedLeaguesRoute: AuthenticatedLeaguesRouteWithChildren,

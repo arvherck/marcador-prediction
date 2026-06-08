@@ -29,6 +29,9 @@ function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [age18, setAge18] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const [showConsentErrors, setShowConsentErrors] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
@@ -37,6 +40,10 @@ function SignupPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!age18 || !privacy) {
+      setShowConsentErrors(true);
+      return;
+    }
     if (password.length < 8) {
       toast.error("Password must be at least 8 characters.");
       return;
@@ -53,6 +60,11 @@ function SignupPage() {
         options: { emailRedirectTo: redirect() },
       });
       if (error) throw error;
+      try {
+        window.sessionStorage.setItem("marcador_consent_pending", "1");
+      } catch {
+        /* ignore */
+      }
       setSentTo(email);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create account.");
@@ -142,9 +154,52 @@ function SignupPage() {
           onChange={(e) => setConfirm(e.target.value)}
           className="w-full rounded-xl bg-input border border-border px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-primary/50"
         />
+
+        <div className="space-y-2 pt-1">
+          <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={age18}
+              onChange={(e) => setAge18(e.target.checked)}
+              className="mt-0.5 size-4 rounded border-border accent-amber-glow"
+            />
+            <span>I am 18 years of age or older</span>
+          </label>
+          {showConsentErrors && !age18 && (
+            <p className="ml-6 text-[11px] text-destructive">
+              Please confirm you are 18+ to continue
+            </p>
+          )}
+          <label className="flex items-start gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={privacy}
+              onChange={(e) => setPrivacy(e.target.checked)}
+              className="mt-0.5 size-4 rounded border-border accent-amber-glow"
+            />
+            <span>
+              I agree to the{" "}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noreferrer"
+                className="text-amber-glow hover:underline"
+              >
+                Privacy Policy
+              </a>{" "}
+              and understand how my data is used
+            </span>
+          </label>
+          {showConsentErrors && !privacy && (
+            <p className="ml-6 text-[11px] text-destructive">
+              Please agree to the Privacy Policy to continue
+            </p>
+          )}
+        </div>
+
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !age18 || !privacy}
           className="w-full rounded-xl bg-amber-gradient px-4 py-3 text-sm font-bold shadow-glow disabled:opacity-50"
         >
           {loading ? "..." : "Create account"}
