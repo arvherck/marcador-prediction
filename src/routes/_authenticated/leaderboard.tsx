@@ -204,20 +204,39 @@ function MatchdayTab({ meId, isGuest }: { meId: string; isGuest?: boolean }) {
       {rows.length === 0 ? (
         <EmptyState />
       ) : (
-        <Board>
-          {rows.map((row, i) => (
-            <Row
-              key={row.id}
-              rank={row.rank ?? i + 1}
-              isMe={row.id === meId}
-              name={row.display_name}
-              country={row.country}
-              favourite={row.favourite_team}
-              primary={row.total_points}
-              donor={donorSet.has(row.id)}
-            />
-          ))}
-        </Board>
+        (() => {
+          const rankCounts = new Map<number, number>();
+          rows.forEach((r) => {
+            const k = r.rank ?? 0;
+            rankCounts.set(k, (rankCounts.get(k) ?? 0) + 1);
+          });
+          return (
+            <Board>
+              {rows.map((row, i) => {
+                const rk = row.rank ?? i + 1;
+                const tied = (rankCounts.get(rk) ?? 0) > 1 && row.rank != null;
+                return (
+                  <Row
+                    key={row.id}
+                    rank={rk}
+                    tied={tied}
+                    tieInfo={
+                      tied
+                        ? `Tied on points — ranked by correct results (${row.correct_results ?? 0}), exact scores (${row.exact_scores ?? 0}), correct first scorers (${row.correct_first_scorers ?? 0})`
+                        : undefined
+                    }
+                    isMe={row.id === meId}
+                    name={row.display_name}
+                    country={row.country}
+                    favourite={row.favourite_team}
+                    primary={row.total_points}
+                    donor={donorSet.has(row.id)}
+                  />
+                );
+              })}
+            </Board>
+          );
+        })()
       )}
     </>
   );
