@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getUpcomingMatchesPublic } from "@/lib/game.functions";
+import { FeedbackButton } from "@/components/feedback/FeedbackButton";
 
 
 export const Route = createFileRoute("/")({
