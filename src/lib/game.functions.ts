@@ -166,7 +166,8 @@ export const getAllMatches = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
-    const testMdIds = await getTestMatchdayIds(supabase);
+    const testMdIds = await getTestMatchdayIds(supabase, userId);
+
     const [{ data: matches, error: mErr }, { data: preds, error: pErr }] = await Promise.all([
       supabase
         .from("matches")
