@@ -113,21 +113,13 @@ function AuthPage() {
     navigate({ to: "/play" });
   };
 
-  const googleSignIn = async () => {
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: `${window.location.origin}/auth/callback`,
-    });
-    if (result.error) toast.error(result.error instanceof Error ? result.error.message : "Google sign-in failed.");
-  };
-
   return (
     <>
     <AuthShell>
       <h1 className="font-display font-bold text-3xl mb-1">Welcome back</h1>
       <p className="text-sm text-muted-foreground mb-8">Sign in to make this matchday's calls.</p>
 
-      <GoogleButton onClick={googleSignIn} />
-      <OrDivider />
+
 
       <form onSubmit={submit} className="space-y-3">
         <input
