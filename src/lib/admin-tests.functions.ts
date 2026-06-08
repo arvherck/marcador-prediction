@@ -709,3 +709,213 @@ export const adminListMatchdaysSlimFn = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return (data ?? []) as { id: number; name: string }[];
   });
+
+// ---------- Multi-user simulation ----------
+
+const TEST_EMAIL_DOMAIN = "@marcador-test.com";
+const TEST_PASSWORD = "TestMarcador2026!";
+const TEST_COUNTRIES = [
+  "Belgium", "France", "Brazil", "Argentina",
+  "England", "Germany", "Spain", "Netherlands",
+];
+
+function pickCountry(): string {
+  return TEST_COUNTRIES[Math.floor(Math.random() * TEST_COUNTRIES.length)];
+}
+
+async function currentTestMatchdayId(): Promise<number | null> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("matches")
+    .select("matchday_id")
+    .eq("teams_confirmed", true)
+    .order("matchday_id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data?.matchday_id ?? null;
+}
+
+export const adminCreateTestUsersFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ count: z.number().int().min(1).max(10) }))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const mdId = await currentTestMatchdayId();
+    let usersCreated = 0;
+    let predictionsAdded = 0;
+
+    for (let i = 1; i <= data.count; i++) {
+      const email = `testuser${i}${TEST_EMAIL_DOMAIN}`;
+      let userId: string | null = null;
+
+      const { data: created, error: cErr } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: TEST_PASSWORD,
+        email_confirm: true,
+      });
+      if (created?.user) {
+        userId = created.user.id;
+        usersCreated += 1;
+      } else if (cErr) {
+        // Lookup if it already exists
+        const { data: list } = await supabaseAdmin.auth.admin.listUsers({
+          page: 1,
+          perPage: 200,
+        });
+        const found = list?.users.find((u) => u.email === email);
+        if (!found) throw new Error(cErr.message);
+        userId = found.id;
+      }
+      if (!userId) continue;
+
+      const country = pickCountry();
+      await supabaseAdmin.from("profiles").upsert(
+        {
+          user_id: userId,
+          display_name: `Test User ${i}`,
+          country,
+          favourite_team: country,
+        },
+        { onConflict: "user_id" },
+      );
+
+      await supabaseAdmin
+        .from("test_users")
+        .upsert({ user_id: userId, email }, { onConflict: "user_id" });
+
+      if (mdId !== null) {
+        const { data: cnt, error: pErr } = await context.supabase.rpc(
+          "create_test_user_predictions" as never,
+          {
+            _caller_id: context.userId,
+            _user_id: userId,
+            _matchday_id: mdId,
+          } as never,
+        );
+        if (pErr) throw safeError(pErr, "game");
+        predictionsAdded += Number(cnt ?? 0);
+      }
+    }
+
+    // Leaderboard preview for the current matchday
+    let leaderboard: { user_id: string; display_name: string; total_points: number }[] = [];
+    if (mdId !== null) {
+      const { data: tu } = await supabaseAdmin.from("test_users").select("user_id");
+      const ids = (tu ?? []).map((r) => r.user_id);
+      if (ids.length) {
+        const { data: scores } = await supabaseAdmin
+          .from("matchday_scores")
+          .select("user_id, total_points")
+          .eq("matchday_id", mdId)
+          .in("user_id", ids);
+        const { data: profs } = await supabaseAdmin
+          .from("profiles")
+          .select("user_id, display_name")
+          .in("user_id", ids);
+        const nameMap = new Map((profs ?? []).map((p) => [p.user_id, p.display_name]));
+        leaderboard = (scores ?? [])
+          .map((s) => ({
+            user_id: s.user_id,
+            display_name: nameMap.get(s.user_id) ?? "Test User",
+            total_points: s.total_points,
+          }))
+          .sort((a, b) => b.total_points - a.total_points);
+      }
+    }
+
+    return {
+      users_created: usersCreated,
+      predictions_added: predictionsAdded,
+      current_md: mdId,
+      leaderboard,
+    };
+  });
+
+export const adminListTestUsersFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: tu } = await supabaseAdmin
+      .from("test_users")
+      .select("user_id, email, created_at")
+      .order("created_at", { ascending: true });
+    const ids = (tu ?? []).map((r) => r.user_id);
+    if (!ids.length) return { users: [], current_md: null as number | null };
+
+    const mdId = await currentTestMatchdayId();
+    const { data: profs } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id, display_name, country")
+      .in("user_id", ids);
+    const profMap = new Map((profs ?? []).map((p) => [p.user_id, p]));
+
+    const pointsMap = new Map<string, number>();
+    if (mdId !== null) {
+      const { data: scores } = await supabaseAdmin
+        .from("matchday_scores")
+        .select("user_id, total_points")
+        .eq("matchday_id", mdId)
+        .in("user_id", ids);
+      for (const s of scores ?? []) pointsMap.set(s.user_id, s.total_points);
+    }
+
+    return {
+      current_md: mdId,
+      users: (tu ?? []).map((r) => ({
+        user_id: r.user_id,
+        email: r.email,
+        display_name: profMap.get(r.user_id)?.display_name ?? r.email,
+        country: profMap.get(r.user_id)?.country ?? null,
+        total_points: pointsMap.get(r.user_id) ?? null,
+      })),
+    };
+  });
+
+export const adminDeleteTestUsersFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: rows, error } = await supabaseAdmin.rpc("delete_test_users" as never, {
+      _caller_id: context.userId,
+    } as never);
+    if (error) throw safeError(error, "game");
+
+    const ids = ((rows ?? []) as { user_id: string }[]).map((r) => r.user_id);
+    let removed = 0;
+    for (const id of ids) {
+      const { error: dErr } = await supabaseAdmin.auth.admin.deleteUser(id);
+      if (!dErr) removed += 1;
+    }
+    return { removed };
+  });
+
+export const adminListLeaguesForTestFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("leagues")
+      .select("id, name")
+      .order("name");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as { id: string; name: string }[];
+  });
+
+export const adminAddTestUsersToLeagueFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(z.object({ league_id: z.string().uuid() }))
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.userId);
+    const { data: res, error } = await context.supabase.rpc(
+      "add_test_users_to_league" as never,
+      { _caller_id: context.userId, _league_id: data.league_id } as never,
+    );
+    if (error) throw safeError(error, "game");
+    return { added: Number(res ?? 0) };
+  });

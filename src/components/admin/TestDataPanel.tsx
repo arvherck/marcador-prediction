@@ -7,6 +7,11 @@ import {
   adminFillTestPredictionsFn,
   adminRunTestCycleFn,
   adminListMatchdaysSlimFn,
+  adminCreateTestUsersFn,
+  adminListTestUsersFn,
+  adminDeleteTestUsersFn,
+  adminListLeaguesForTestFn,
+  adminAddTestUsersToLeagueFn,
   type FilledMatch,
 } from "@/lib/admin-tests.functions";
 
@@ -33,9 +38,67 @@ export function TestDataPanel() {
   >(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // Multi-user simulation state
+  const [simCount, setSimCount] = useState<number>(5);
+  const [simResult, setSimResult] = useState<{
+    users_created: number;
+    predictions_added: number;
+    leaderboard: { user_id: string; display_name: string; total_points: number }[];
+  } | null>(null);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  const [selectedLeague, setSelectedLeague] = useState<string>("");
+
   const mds = useQuery({
     queryKey: ["admin-matchdays-slim"],
     queryFn: () => adminListMatchdaysSlimFn(),
+  });
+
+  const testUsers = useQuery({
+    queryKey: ["admin-test-users"],
+    queryFn: () => adminListTestUsersFn(),
+  });
+
+  const leagues = useQuery({
+    queryKey: ["admin-leagues-for-test"],
+    queryFn: () => adminListLeaguesForTestFn(),
+  });
+
+  const createUsers = useMutation({
+    mutationFn: () => adminCreateTestUsersFn({ data: { count: simCount } }),
+    onSuccess: (r) => {
+      setSimResult({
+        users_created: r.users_created,
+        predictions_added: r.predictions_added,
+        leaderboard: r.leaderboard,
+      });
+      toast.success(`${r.users_created} test users created · ${r.predictions_added} predictions added`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
+  });
+
+  const removeUsers = useMutation({
+    mutationFn: () => adminDeleteTestUsersFn(),
+    onSuccess: (r) => {
+      setSimResult(null);
+      setRemoveConfirmOpen(false);
+      toast.success(`✓ ${r.removed} test users removed`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Error");
+      setRemoveConfirmOpen(false);
+    },
+  });
+
+  const addToLeague = useMutation({
+    mutationFn: () => adminAddTestUsersToLeagueFn({ data: { league_id: selectedLeague } }),
+    onSuccess: (r) => {
+      const ligaName = leagues.data?.find((l) => l.id === selectedLeague)?.name ?? "liga";
+      toast.success(`✓ Added ${r.added} test users to ${ligaName}`);
+      qc.invalidateQueries();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Error"),
   });
 
   const fill = useMutation({
@@ -255,6 +318,134 @@ export function TestDataPanel() {
           </div>
         )}
       </div>
+
+      {/* Tool 5: Multi-user simulation */}
+      <div className="px-4 py-3 border-t border-border space-y-3">
+        <div className="font-medium text-sm">Multi-user simulation</div>
+        <div className="text-[11px] text-muted-foreground">
+          Creates fake test users (emails @marcador-test.com) with varied predictions on the
+          current matchday so you can verify leaderboards, scoring and liga standings with real
+          competition.
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-muted-foreground">Number of test users</label>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={simCount}
+            onChange={(e) =>
+              setSimCount(Math.max(1, Math.min(10, Number(e.target.value) || 1)))
+            }
+            className="w-20 rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
+          />
+          <button
+            onClick={() => createUsers.mutate()}
+            disabled={createUsers.isPending}
+            className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+          >
+            {createUsers.isPending ? "Creating…" : "Create test users & predictions"}
+          </button>
+          <button
+            onClick={() => setRemoveConfirmOpen(true)}
+            disabled={removeUsers.isPending || !(testUsers.data?.users.length ?? 0)}
+            className="rounded-lg border border-destructive text-destructive px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+          >
+            Remove all test users
+          </button>
+        </div>
+
+        {simResult && (
+          <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs space-y-1">
+            <div className="font-bold text-success">
+              ✓ {simResult.users_created} test users created · {simResult.predictions_added}{" "}
+              predictions added
+            </div>
+            {simResult.leaderboard.length > 0 && (
+              <div className="mt-1">
+                <div className="text-muted-foreground mb-0.5">Leaderboard preview:</div>
+                <ul className="space-y-0.5 font-mono">
+                  {simResult.leaderboard.map((u, i) => (
+                    <li key={u.user_id}>
+                      {i + 1}. {u.display_name} — {u.total_points} pts
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(testUsers.data?.users.length ?? 0) > 0 && (
+          <div className="rounded-lg border border-border bg-card p-3 text-xs space-y-2">
+            <div className="font-medium">
+              Current test users ({testUsers.data!.users.length})
+            </div>
+            <ul className="space-y-0.5 font-mono text-[11px]">
+              {testUsers.data!.users.map((u) => (
+                <li key={u.user_id}>
+                  {u.display_name} — {u.country ?? "—"} —{" "}
+                  {u.total_points !== null ? `${u.total_points} pts` : "not scored"}
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border">
+              <label className="text-xs text-muted-foreground">Add to liga</label>
+              <select
+                value={selectedLeague}
+                onChange={(e) => setSelectedLeague(e.target.value)}
+                className="rounded-lg bg-input border border-border px-2 py-1.5 text-xs"
+              >
+                <option value="">— pick liga —</option>
+                {leagues.data?.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => addToLeague.mutate()}
+                disabled={!selectedLeague || addToLeague.isPending}
+                className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+              >
+                Add test users to liga
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {removeConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-w-md w-full rounded-2xl border border-border bg-card p-5 space-y-3">
+            <div className="text-base font-bold">Remove all test users?</div>
+            <div className="text-sm text-muted-foreground">
+              Deletes every fake user (@marcador-test.com) along with their predictions, scores
+              and liga memberships. Real users are not affected. This cannot be undone.
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setRemoveConfirmOpen(false)}
+                disabled={removeUsers.isPending}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => removeUsers.mutate()}
+                disabled={removeUsers.isPending}
+                className="rounded-lg bg-destructive text-destructive-foreground px-3 py-1.5 text-xs font-bold disabled:opacity-40"
+              >
+                {removeUsers.isPending ? "Removing…" : "Remove all test users"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
 
       {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
