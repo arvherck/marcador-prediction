@@ -242,6 +242,14 @@ function RulesPage() {
               </ul>
             </Section>
 
+            <Section id="your-data" title="12. Your data">
+              <p>
+                You can delete your Marcador account and all associated data at any time from
+                your Mi Marcador profile page. Deletion is permanent and immediate.
+              </p>
+            </Section>
+
+
             <div className="pt-8 mt-8 border-t border-border text-sm text-muted-foreground space-y-2">
               <div>Last updated: June 2026</div>
               <div>
