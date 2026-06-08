@@ -172,7 +172,7 @@ export const exportMyDataFn = createServerFn({ method: "GET" })
         .from("league_members")
         .select("joined_at, leagues!inner(name, invite_code, owner_id)")
         .eq("user_id", userId),
-      supabase.rpc("global_leaderboard", { _league_id: null }),
+      supabase.rpc("global_leaderboard", { _league_id: undefined }),
     ]);
 
     const myRow = (leaderboard ?? []).find(
