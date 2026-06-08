@@ -621,3 +621,91 @@ export const testStandingsTrigger = createServerFn({ method: "POST" })
     }
   });
 
+
+// ---------- Test Data tools ----------
+
+const ScopeSchema = z.object({
+  scope: z.enum(["current", "all_groups", "matchday"]),
+  matchday_id: z.number().int().optional(),
+});
+
+export type FilledMatch = {
+  id: number;
+  home_team: string;
+  away_team: string;
+  home_score: number;
+  away_score: number;
+  first_scorer: string;
+};
+
+export const adminFillRandomScoresFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(ScopeSchema)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: res, error } = await supabase.rpc("fill_random_scores" as never, {
+      _caller_id: userId,
+      _scope: data.scope,
+      _matchday_id: data.matchday_id ?? null,
+    } as never);
+    if (error) throw safeError(error, "game");
+    const r = res as { filled: number; matches: FilledMatch[] };
+    return { filled: r?.filled ?? 0, matches: r?.matches ?? [] };
+  });
+
+export const adminClearTestScoresFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator(ScopeSchema)
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: res, error } = await supabase.rpc("clear_test_scores" as never, {
+      _caller_id: userId,
+      _scope: data.scope,
+      _matchday_id: data.matchday_id ?? null,
+    } as never);
+    if (error) throw safeError(error, "game");
+    return { cleared: (res as { cleared: number })?.cleared ?? 0 };
+  });
+
+export const adminFillTestPredictionsFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: res, error } = await supabase.rpc("fill_test_predictions" as never, {
+      _caller_id: userId,
+    } as never);
+    if (error) throw safeError(error, "game");
+    return { created: (res as { created: number })?.created ?? 0 };
+  });
+
+export const adminRunTestCycleFn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: res, error } = await supabase.rpc("run_test_cycle" as never, {
+      _caller_id: userId,
+    } as never);
+    if (error) throw safeError(error, "game");
+    return res as {
+      matchday_id: number | null;
+      matches_scored: number;
+      predictions_evaluated: number;
+      admin_points: number;
+      admin_rank: number | null;
+      predictions_created: number;
+    };
+  });
+
+export const adminListMatchdaysSlimFn = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.userId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("matchdays")
+      .select("id, name")
+      .not("name", "like", "\\_\\_%")
+      .order("id");
+    if (error) throw new Error(error.message);
+    return (data ?? []) as { id: number; name: string }[];
+  });
