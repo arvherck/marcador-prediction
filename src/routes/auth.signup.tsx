@@ -29,6 +29,9 @@ function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [age18, setAge18] = useState(false);
+  const [privacy, setPrivacy] = useState(false);
+  const [showConsentErrors, setShowConsentErrors] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
 
@@ -37,6 +40,10 @@ function SignupPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!age18 || !privacy) {
+      setShowConsentErrors(true);
+      return;
+    }
     if (password.length < 8) {
       toast.error("Password must be at least 8 characters.");
       return;
@@ -53,6 +60,11 @@ function SignupPage() {
         options: { emailRedirectTo: redirect() },
       });
       if (error) throw error;
+      try {
+        window.sessionStorage.setItem("marcador_consent_pending", "1");
+      } catch {
+        /* ignore */
+      }
       setSentTo(email);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create account.");
