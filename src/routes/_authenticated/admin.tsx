@@ -102,6 +102,7 @@ function AdminPage() {
 const NAV = [
   { id: "overview", label: "Overview", icon: "📊" },
   { id: "results", label: "Results & Scoring", icon: "⚽" },
+  { id: "bracket", label: "Knockout Bracket", icon: "🥊" },
   { id: "api-sync", label: "API Sync", icon: "🔄" },
   { id: "tournament", label: "Tournament", icon: "🏆" },
   { id: "donations", label: "Donations", icon: "💰" },
