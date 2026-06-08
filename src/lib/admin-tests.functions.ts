@@ -36,11 +36,20 @@ export const testMatchCount = createServerFn({ method: "POST" })
   .handler(async ({ context }): Promise<TestResult> => {
     await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // Exclude any leftover __test rows so the launch-readiness count is honest.
-    const { count, error } = await supabaseAdmin
+    // Exclude __test rows AND matches in is_test matchdays (Pre-WC friendlies, UI tests).
+    const { data: testMdIds } = await supabaseAdmin
+      .from("matchdays")
+      .select("id")
+      .eq("is_test", true);
+    const excludeIds = (testMdIds ?? []).map((m) => m.id);
+    let q = supabaseAdmin
       .from("matches")
       .select("id", { count: "exact", head: true })
       .neq("home_team", "__test");
+    if (excludeIds.length > 0) {
+      q = q.not("matchday_id", "in", `(${excludeIds.join(",")})`);
+    }
+    const { count, error } = await q;
     if (error) return { status: "fail", message: error.message };
     if (count === 104) return { status: "pass", message: "All 104 matches imported." };
     return {
@@ -95,11 +104,21 @@ export const testGroupStageConfirmed = createServerFn({ method: "POST" })
   .handler(async ({ context }): Promise<TestResult> => {
     await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { count, error } = await supabaseAdmin
+    const { data: testMdIds } = await supabaseAdmin
+      .from("matchdays")
+      .select("id")
+      .eq("is_test", true);
+    const excludeIds = (testMdIds ?? []).map((m) => m.id);
+    let q = supabaseAdmin
       .from("matches")
       .select("id", { count: "exact", head: true })
       .eq("phase", "Group stage")
-      .eq("teams_confirmed", true);
+      .eq("teams_confirmed", true)
+      .neq("home_team", "__test");
+    if (excludeIds.length > 0) {
+      q = q.not("matchday_id", "in", `(${excludeIds.join(",")})`);
+    }
+    const { count, error } = await q;
     if (error) return { status: "fail", message: error.message };
     if (count === 72)
       return { status: "pass", message: "All 72 group stage matches confirmed." };
@@ -114,9 +133,19 @@ export const testKickoffRange = createServerFn({ method: "POST" })
   .handler(async ({ context }): Promise<TestResult> => {
     await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
+    const { data: testMdIds } = await supabaseAdmin
+      .from("matchdays")
+      .select("id")
+      .eq("is_test", true);
+    const excludeIds = (testMdIds ?? []).map((m) => m.id);
+    let q = supabaseAdmin
       .from("matches")
-      .select("id, kickoff_at");
+      .select("id, kickoff_at")
+      .neq("home_team", "__test");
+    if (excludeIds.length > 0) {
+      q = q.not("matchday_id", "in", `(${excludeIds.join(",")})`);
+    }
+    const { data, error } = await q;
     if (error) return { status: "fail", message: error.message };
     const lo = new Date("2026-06-11T00:00:00Z").getTime();
     const hi = new Date("2026-07-20T23:59:59Z").getTime();
@@ -128,6 +157,7 @@ export const testKickoffRange = createServerFn({ method: "POST" })
       ? { status: "pass", message: "All kickoff times within tournament window." }
       : { status: "fail", message: `${bad.length} matches have invalid kickoff times` };
   });
+
 
 export const testStandingsPopulated = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
