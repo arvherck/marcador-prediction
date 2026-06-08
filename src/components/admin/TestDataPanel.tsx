@@ -74,7 +74,7 @@ export function TestDataPanel() {
   });
 
   const fillPreds = useMutation({
-    mutationFn: () => adminFillTestPredictionsFn({ data: undefined as never }),
+    mutationFn: () => adminFillTestPredictionsFn(),
     onSuccess: (r) => {
       setPredMsg(`✓ ${r.created} predictions created for admin`);
       qc.invalidateQueries();
