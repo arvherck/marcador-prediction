@@ -232,6 +232,15 @@ export function MatchCard({
               {match.phase}
             </span>
           )}
+          {match.points_multiplier > 1 && (
+            <span
+              className="rounded-md bg-amber-glow/15 text-amber-glow px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+              title={`Points multiplied ×${match.points_multiplier} in this round`}
+              aria-label={`Points multiplied ×${match.points_multiplier} in this round`}
+            >
+              {match.points_multiplier}×
+            </span>
+          )}
           <StatusPill state={state} status={status} />
         </div>
       </div>
