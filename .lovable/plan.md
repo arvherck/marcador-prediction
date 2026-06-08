@@ -1,33 +1,67 @@
-# Cookie Notice Banner
+## Problem
 
-Add a slim, dismissible informational cookie banner shown only on public pages to logged-out visitors.
+Multi-user simulation throws "Something went wrong" after creating each test user.
 
-## New component
+Worker logs show repeated Postgres errors from the RPC `create_test_user_predictions`:
 
-`src/components/CookieNotice.tsx`
-- Fixed bottom bar, dark background (use existing card/border tokens), high z-index (`z-50`), max-width container, small text, slim padding. Non-blocking — does not overlay full screen.
-- Content: "Marcador uses essential cookies to keep you logged in. No tracking or advertising cookies are used." followed by two actions:
-  - "Learn more" → `<Link to="/privacy" hash="cookies">` (anchor `#cookies` on the privacy page)
-  - "Got it" → button that sets `localStorage.marcador_cookie_notice = "dismissed"` and hides the banner
-- On mount: check `localStorage.marcador_cookie_notice`. If present, render nothing. Also check Supabase session via `supabase.auth.getSession()` — if a session exists, render nothing (and subscribe with `onAuthStateChange` so it disappears on login during the visit).
-- SSR-safe: gate on a `mounted` state so nothing renders during SSR (avoids hydration mismatch and `window` access).
+```
+22P02 invalid input syntax for type uuid: "187"
+22P02 invalid input syntax for type uuid: "433"
+```
 
-## Where it renders
+The numbers are sequential `public.predictions.id` values.
 
-Add `<CookieNotice />` to exactly the four public route components:
-- `src/routes/index.tsx` (landing)
-- `src/routes/auth.tsx` (or the actual auth route file used — confirm during edit; the spec says `/auth`)
-- `src/routes/rules.tsx`
-- `src/routes/privacy.tsx`
+## Root cause
 
-This keeps it out of all `_authenticated/*` pages by construction, satisfying "do not show to logged-in users / on any authenticated page."
+In `public.create_test_user_predictions(uuid, uuid, integer)` the booster-pick block declares the variable as `uuid` but `predictions.id` is an `integer`:
 
-## Privacy page anchor
+```sql
+DECLARE
+  pick_id uuid;          -- ← wrong type
+BEGIN
+  ...
+  SELECT p.id INTO pick_id
+    FROM public.predictions p
+    JOIN public.matches m ON m.id = p.match_id
+   WHERE p.user_id = _user_id AND m.matchday_id = _matchday_id
+   ORDER BY random() LIMIT 1;
+  IF pick_id IS NOT NULL THEN
+    UPDATE public.predictions SET booster = true WHERE id = pick_id;
+  END IF;
+```
 
-In `src/routes/privacy.tsx`, ensure the Cookies section heading has `id="cookies"` so `/privacy#cookies` scrolls to it. Add the id if it isn't already there.
+Assigning the integer prediction id into a `uuid` variable raises `22P02`, the RPC aborts, and the server function rethrows via `safeError(..., "game")` → generic toast.
 
-## Out of scope
+## Fix
 
-- No consent gating (functional-only cookies, per spec).
-- No server-side storage of dismissal.
-- No changes to authenticated routes or auth flow.
+Single migration to redefine the function with `pick_id integer` (no other changes to the function body or signature).
+
+```sql
+CREATE OR REPLACE FUNCTION public.create_test_user_predictions(
+  _caller_id uuid, _user_id uuid, _matchday_id integer
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  r RECORD;
+  s RECORD;
+  use_real boolean;
+  created int := 0;
+  pick_id integer;   -- fixed
+BEGIN
+  -- (existing body, unchanged)
+END;
+$$;
+```
+
+No client code changes; no schema changes; no other RPCs touched.
+
+## Verification
+
+After the migration:
+1. Reload the Admin → Tests page.
+2. Click "Create test users & predictions" with count = 5.
+3. Expect success toast `5 test users created · N predictions added` and the leaderboard preview populated.
+4. Confirm no new `22P02` errors in worker logs.
