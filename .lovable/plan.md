@@ -1,65 +1,43 @@
-# UI Test Matches for Test Matchday
+## Investigation
 
-Adds 4 fictional, easily identifiable matches (prefix `UI_Test_` plus one knockout TBD row) to the existing `Test — Pre-WC Friendlies (June 2026)` matchday, plus an admin-only "Preview UI test matches" toggle so the test data can be exercised in the real Play screen UI without exposing it to regular users.
+The "Group standings accuracy" test fails because the **expected values in the test fixture are wrong**, not the database calculation. I recomputed each team by hand from the 6 Group A matches the test applies — the DB-produced standings are arithmetically correct; the hardcoded expectations in `src/lib/admin-tests.functions.ts` do not match the match results they're verifying against.
 
-## 1. Seed data (data migration via insert tool)
+### Recomputed from the test's own match list
 
-Append to the existing `is_test = true` matchday (no schema change — `matches.status_check` already allows `live`):
+Matches applied (Scenario 1):
+```
+Mexico 2-0 South Africa
+South Korea 1-1 Czechia
+Mexico 1-0 South Korea
+Czechia 3-1 South Africa
+Czechia 0-0 Mexico
+South Africa 2-2 South Korea
+```
 
-| # | home_team | away_team | kickoff | status | teams_confirmed | mult | phase |
-|---|-----------|-----------|---------|--------|-----------------|------|-------|
-| 7 | UI_Test_Home | UI_Test_Away | now()+2h | upcoming | true | 2 | Round of 32 |
-| 8 | UI_Test_Imminent_Home | UI_Test_Imminent_Away | now()+45m | upcoming | true | 1 | Group stage |
-| 9 | UI_Test_Live_Home | UI_Test_Live_Away | now()−30m | live | true | 3 | Round of 16 |
-| 10 | Winner Group A | Winner Group B | now()+7d | upcoming | false | 4 | Quarterfinal |
+| Team        | P | W | D | L | GF | GA | GD | Pts | Current expected (wrong) |
+|-------------|---|---|---|---|----|----|----|-----|--------------------------|
+| Mexico      | 3 | 2 | 1 | 0 | 3  | 0  | +3 | 7   | ✓ matches |
+| Czechia     | 3 | 1 | 2 | 0 | 4  | 2  | +2 | 5   | ✗ test says D=1 L=1 GA=3 GD=1 Pts=4 |
+| South Korea | 3 | 0 | 2 | 1 | 3  | 4  | −1 | 2   | ✓ matches |
+| South Africa| 3 | 0 | 1 | 2 | 3  | 7  | −4 | 1   | ✗ test says GA=6 GD=−3 |
 
-All have `home_score/away_score/first_scorer = null`, `is_final = false`. Bypass `auto_confirm_teams` for match 10 by inserting `teams_confirmed = false` after the trigger fires (the trigger only flips `false → true` when the team names don't match TBD patterns; "Winner Group A/B" matches the regex, so it stays false). The `set_points_multiplier` trigger respects explicit values when phase default differs, but for matches 7/9/10 the phase default already equals the requested value, and for match 8 we pass `points_multiplier = 1` (group default).
+Scenario 2 (Mexico vs South Africa rewritten to 0-0):
 
-Kickoff times are computed once at insert (`now() + interval ...`) — they are absolute timestamps, so match 8 will eventually leave the "closing soon" window and match 9's "live" state is a manual flag, not time-derived. Acceptable for a short-lived test toggle (see §3).
+| Team         | P | W | D | L | GF | GA | GD | Pts | Current expected (wrong) |
+|--------------|---|---|---|---|----|----|----|-----|--------------------------|
+| Mexico       | 3 | 1 | 2 | 0 | 1  | 0  | +1 | 5   | ✓ matches |
+| South Africa | 3 | 0 | 2 | 1 | 3  | 5  | −2 | 2   | ✗ test says GA=4 GD=−1 |
 
-## 2. User-facing read filters (verification only)
+The DB's `recalculate_team_standing` trigger output (shown via the ❌ markers in the screenshot) matches my hand-calculated values exactly. The test's hardcoded `STANDINGS_SCENARIO_1.Czechia`, `STANDINGS_SCENARIO_1["South Africa"]`, and `STANDINGS_SCENARIO_2["South Africa"]` are wrong.
 
-Already in place from the previous turn — no code changes. Verify each path still excludes `is_test`:
+## Fix
 
-- `getAllMatches` / `getAllMatchesPublic` (Play By Date + By Matchday)
-- `getMatchdaysWithProgress` (matchday tab list + progress bar denominator)
-- `getMyProfileStatsFn` total matches
-- `global_leaderboard` / `matchday_leaderboard` RPCs
-- Streak update inside `score_matchday` (only touches users with predictions on the scored matchday; test matchday is never scored via the normal flow)
+Edit `src/lib/admin-tests.functions.ts` only — no DB or trigger changes.
 
-## 3. Admin-only "Preview UI test matches" toggle
+1. `STANDINGS_SCENARIO_1.Czechia` → `{ played: 3, won: 1, drawn: 2, lost: 0, goals_for: 4, goals_against: 2, goal_difference: 2, points: 5 }`
+2. `STANDINGS_SCENARIO_1["South Africa"]` → `{ played: 3, won: 0, drawn: 1, lost: 2, goals_for: 3, goals_against: 7, goal_difference: -4, points: 1 }`
+3. `STANDINGS_SCENARIO_2["South Africa"]` → `{ played: 3, won: 0, drawn: 2, lost: 1, goals_for: 3, goals_against: 5, goal_difference: -2, points: 2 }`
 
-Storage: a new admin-scoped serverFn pair backed by an in-memory map keyed by `userId` with a 30-minute expiry timestamp. No DB column needed — the toggle is intentionally ephemeral and per-admin.
+The expected ordering (Mexico > Czechia > South Korea > South Africa) stays the same — both old and corrected Czechia totals still rank 2nd, and SA still 4th.
 
-- `adminGetUiTestPreviewFn` → `{ enabled: boolean, expiresAt: number | null }`
-- `adminSetUiTestPreviewFn({ enabled })` → sets/clears entry; enabling stamps `expiresAt = now + 30min`
-
-Wiring:
-
-- `getAllMatches` / `getAllMatchesPublic` / `getMatchdaysWithProgress`: when the caller is an admin AND their preview flag is active (and not expired), drop the `is_test = false` filter. All other read paths (leaderboards, streaks, progress denominator) stay filtered — preview is visual only.
-- New `<UiTestPreviewBanner />` rendered above the Play screen tabs. Polls `adminGetUiTestPreviewFn` every 30 s; shows amber banner `⚠️ UI TEST MODE — test matches visible (auto-disables in Xm)` with a "Disable now" button. Hidden for non-admins or when disabled.
-- In `TestsPanel` (admin Tests section), add a Switch labeled "Preview UI test matches in Play screen" with helper text "Auto-disables after 30 minutes. Admin-only — does not affect other users."
-
-## 4. Admin Results & scoring
-
-No code change — the test matchday block already shows all matches in the matchday; matches 7-10 will appear automatically beside the 6 historical ones under the existing amber `⚠️ Test data` badge.
-
-## 5. New tests in `src/lib/admin-tests.functions.ts`
-
-1. **UI test matches exist** — `SELECT count(*) WHERE md.is_test AND m.home_team LIKE 'UI_Test%'` → expect 4 (counts matches 7/8/9 + match 10's `Winner Group A` row via OR `home_team = 'Winner Group A'`). Per spec the count check is `LIKE 'UI_Test%'` only → expect 3; we'll follow spec exactly and assert 3, then a second assertion confirms the TBD row exists separately.
-2. **Live match card state** — fetch UI_Test_Live_Home row, assert `status='live' AND kickoff_at < now() AND home_score IS NULL`.
-3. **TBD match blocks predictions** — try `supabase.from('predictions').insert({...})` for the `Winner Group A` match via a temp service-role call as a non-admin test user; expect rejection from `validate_prediction` trigger (`teams_confirmed=false`).
-
-## 6. Cleanup
-
-Extend `adminRemovePreWcTestMatchesFn` (created last turn): also delete predictions + matches where `home_team LIKE 'UI_Test%' OR home_team = 'Winner Group A'` on the test matchday before deleting the matchday itself. The existing button label stays "Remove pre-WC test matches".
-
-## Out of scope
-
-- No new banner/badge components in `MatchCard` — closing-soon banner, live badge, TBD greyed-out card, and multiplier badge are already implemented and will activate naturally once the rows are visible via the preview toggle.
-- No changes to scoring engine, streaks, or leaderboards.
-- No persistent storage of the preview flag — intentionally ephemeral.
-
-## Open question
-
-Spec says test #1 should pass if count = 4, but the SQL provided (`LIKE 'UI_Test%'`) only matches 3 of the 4 new rows (match 10 uses `Winner Group A`). I'll implement the assertion as **count = 4 using `home_team LIKE 'UI_Test%' OR home_team IN ('Winner Group A','Winner Group B')`** to match the stated pass condition. Flag if you'd rather assert exactly 3.
+After the fix the test should pass green.

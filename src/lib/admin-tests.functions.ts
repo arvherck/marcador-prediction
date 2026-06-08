@@ -1621,16 +1621,16 @@ const STANDINGS_GROUP_A_MATCHES: Array<{
 
 const STANDINGS_SCENARIO_1: Record<string, StandingExpected> = {
   Mexico:        { played: 3, won: 2, drawn: 1, lost: 0, goals_for: 3, goals_against: 0, goal_difference:  3, points: 7 },
-  Czechia:       { played: 3, won: 1, drawn: 1, lost: 1, goals_for: 4, goals_against: 3, goal_difference:  1, points: 4 },
+  Czechia:       { played: 3, won: 1, drawn: 2, lost: 0, goals_for: 4, goals_against: 2, goal_difference:  2, points: 5 },
   "South Korea": { played: 3, won: 0, drawn: 2, lost: 1, goals_for: 3, goals_against: 4, goal_difference: -1, points: 2 },
-  "South Africa":{ played: 3, won: 0, drawn: 1, lost: 2, goals_for: 3, goals_against: 6, goal_difference: -3, points: 1 },
+  "South Africa":{ played: 3, won: 0, drawn: 1, lost: 2, goals_for: 3, goals_against: 7, goal_difference: -4, points: 1 },
 };
 
 const STANDINGS_EXPECTED_ORDER = ["Mexico", "Czechia", "South Korea", "South Africa"];
 
 const STANDINGS_SCENARIO_2: Record<string, StandingExpected> = {
   Mexico:         { played: 3, won: 1, drawn: 2, lost: 0, goals_for: 1, goals_against: 0, goal_difference:  1, points: 5 },
-  "South Africa": { played: 3, won: 0, drawn: 2, lost: 1, goals_for: 3, goals_against: 4, goal_difference: -1, points: 2 },
+  "South Africa": { played: 3, won: 0, drawn: 2, lost: 1, goals_for: 3, goals_against: 5, goal_difference: -2, points: 2 },
 };
 
 function firstScorerFor(h: number, a: number): "home" | "away" | "none" {
