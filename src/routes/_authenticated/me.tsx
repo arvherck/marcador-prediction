@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { getMyHistoryFn, getMyMatchdayScoresFn, getMyPointsByRoundFn, getMyProfileStatsFn, type PointsByRoundRow } from "@/lib/game.functions";
-import { deleteAccountFn, updateProfileFn } from "@/lib/auth.functions";
+import { deleteAccountFn, exportMyDataFn, updateProfileFn } from "@/lib/auth.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { TEAMS_2026 } from "@/lib/teams";
 import { teamFlag } from "@/lib/teamFlags";
@@ -98,8 +98,52 @@ function MePage() {
         <History groups={(history.data as HistoryGroup[] | undefined) ?? []} />
       </Section>
 
+      <YourDataSection />
       <DangerZone />
     </AppShell>
+  );
+}
+
+function YourDataSection() {
+  const exportData = useServerFn(exportMyDataFn);
+  const [loading, setLoading] = useState(false);
+
+  const onDownload = async () => {
+    setLoading(true);
+    try {
+      const data = await exportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "marcador-data-export.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Your data export is downloading ✓");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not export your data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="mt-8 rounded-2xl border border-border bg-card/60 p-5">
+      <h2 className="font-display font-bold text-lg">Your data</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Download a copy of all the personal data Marcador holds about you. This is your right under GDPR.
+      </p>
+      <button
+        type="button"
+        onClick={onDownload}
+        disabled={loading}
+        className="mt-4 rounded-xl bg-amber-gradient px-4 py-2.5 text-sm font-bold shadow-glow disabled:opacity-50"
+      >
+        {loading ? "Preparing…" : "Download my data"}
+      </button>
+    </section>
   );
 }
 
