@@ -95,7 +95,7 @@ function PlayPage() {
             away_team?: string;
           } | null;
           if (oldRow?.teams_confirmed === false && newRow?.teams_confirmed === true) {
-            toast(`🔓 New match to predict: ${newRow.home_team} vs ${newRow.away_team}`);
+            toast(`🔓 ${newRow.home_team} vs ${newRow.away_team} — now open for predictions!`);
             qc.invalidateQueries({ queryKey: ["all-matches"] });
             qc.invalidateQueries({ queryKey: ["matchdays-progress"] });
             qc.invalidateQueries({ queryKey: ["play-overview"] });
