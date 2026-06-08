@@ -540,6 +540,11 @@ function MatchdayBlock({ md, onChange }: { md: Matchday; onChange: () => void })
                 .map((s) => `${STATUS_META[s].icon} ${counts[s]} ${STATUS_META[s].label.toLowerCase()}`)
                 .join(" · ") || "No matches"}
             </div>
+            {(md.unscored_match_count ?? 0) > 0 && (
+              <div className="text-[11px] font-bold text-amber-glow mt-0.5">
+                ● {md.unscored_match_count} match{md.unscored_match_count === 1 ? "" : "es"} need scoring
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
