@@ -73,6 +73,12 @@ import {
   testPreWcBelgiumTunisia,
   testPreWcScoringBelgium13,
   testPreWcExcludedFromLeaderboard,
+  testUiTestMatchesExist,
+  testUiLiveMatchState,
+  testUiTbdBlocksPrediction,
+  adminGetUiTestPreviewFn,
+  adminSetUiTestPreviewFn,
+
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
