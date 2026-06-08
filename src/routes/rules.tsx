@@ -274,6 +274,8 @@ function RulesPage() {
           <span aria-hidden>·</span>
           <Link to="/" className="hover:text-amber-glow transition-colors">Home</Link>
           <span aria-hidden>·</span>
+          <Link to="/privacy" className="hover:text-amber-glow transition-colors">Privacy</Link>
+          <span aria-hidden>·</span>
           <FeedbackButton />
         </div>
       </footer>

@@ -151,6 +151,13 @@ function SignupPage() {
         </button>
       </form>
 
+      <p className="mt-4 text-[11px] text-center text-muted-foreground leading-relaxed">
+        By creating an account you agree to our{" "}
+        <Link to="/rules" className="text-amber-glow hover:underline">Rules</Link>
+        {" "}and{" "}
+        <Link to="/privacy" className="text-amber-glow hover:underline">Privacy Policy</Link>.
+      </p>
+
       <div className="mt-6 text-sm text-center">
         <Link to="/auth" className="text-muted-foreground hover:text-foreground">
           Already have an account? Sign in →
