@@ -3,6 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { TestDataPanel } from "@/components/admin/TestDataPanel";
+import { AppStateDashboard } from "@/components/admin/AppStateDashboard";
+import { ResetGoLiveCard } from "@/components/admin/ResetGoLiveCard";
+import { QuickTestCheckCard } from "@/components/admin/QuickTestCheckCard";
+import { TestWorkflowGuide } from "@/components/admin/TestWorkflowGuide";
+
 import {
   buildReport,
   toMarkdown,
@@ -260,7 +265,7 @@ export function TestsPanel({ adminDisplayName }: TestsPanelProps = {}) {
   const [historicalReport, setHistoricalReport] = useState<Report | null>(null);
   const [history, setHistory] = useState<Report[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  
   const [isRunningAll, setIsRunningAll] = useState(false);
 
   useEffect(() => {
@@ -426,30 +431,11 @@ export function TestsPanel({ adminDisplayName }: TestsPanelProps = {}) {
 
   return (
     <>
-      {/* How-to info box */}
-      <div className="rounded-2xl border border-border bg-card mb-4">
-        <button
-          onClick={() => setInfoOpen((v) => !v)}
-          className="w-full px-4 py-3 flex items-center justify-between text-left"
-        >
-          <div className="font-semibold text-sm">ℹ️ How to use the test report</div>
-          <span className="text-xs text-muted-foreground">{infoOpen ? "▲" : "▼"}</span>
-        </button>
-        {infoOpen && (
-          <div className="px-4 pb-4 text-sm text-muted-foreground space-y-1">
-            <div>1. Click <strong>▶ Run all tests</strong></div>
-            <div>2. Click <strong>📋 Copy report</strong></div>
-            <div>
-              3. Paste into Claude with the message:
-              <div className="mt-1 ml-4 italic">
-                "Here is my Marcador test report. Please analyse the failures and write Lovable fix prompts for each."
-              </div>
-            </div>
-            <div>4. Paste the fix prompts into Lovable</div>
-            <div>5. After Lovable applies fixes, git pull and re-run tests to verify</div>
-          </div>
-        )}
-      </div>
+      {/* App state dashboard, reset, quick check, workflow guide */}
+      <AppStateDashboard />
+      <ResetGoLiveCard />
+      <QuickTestCheckCard />
+      <TestWorkflowGuide />
 
       {historicalReport && (
         <div className="rounded-2xl border border-amber-glow/40 bg-amber-500/10 px-4 py-3 mb-4 flex items-center justify-between gap-3">
@@ -466,6 +452,7 @@ export function TestsPanel({ adminDisplayName }: TestsPanelProps = {}) {
           </button>
         </div>
       )}
+
 
       <UiTestPreviewPanel />
       <TestDataPanel />

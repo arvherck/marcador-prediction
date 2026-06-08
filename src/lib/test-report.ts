@@ -253,34 +253,60 @@ export function buildReport(args: {
   };
 }
 
-function fixPromptFor(t: ReportTest): string {
-  const ctx: FixCtx = {
-    name: t.name,
-    expected: t.expected,
-    actual: t.actual,
-    error: t.error,
-    file_hint: t.file_hint,
-  };
+
+
+
+// Short one-line fix hints keyed by test id. Used in the spec markdown format.
+// Takes priority over the long FIX_PROMPT_TEMPLATES when present.
+export const FIX_HINTS: Record<string, string> = {
+  "match-count": "Re-run CSV import in Advanced section",
+  "no-null-mult":
+    "Run: UPDATE matches SET points_multiplier = CASE phase WHEN 'Group stage' THEN 1 WHEN 'Round of 32' THEN 2 WHEN 'Round of 16' THEN 3 WHEN 'Quarterfinal' THEN 4 WHEN 'Semifinal' THEN 5 WHEN 'Final' THEN 6 ELSE 1 END WHERE points_multiplier IS NULL",
+  "no-test-matches": "Go to Advanced → Test Data → Clear test scores",
+  "no-test-users": "Go to Advanced → Test Data → Remove test users",
+  "admin-exists":
+    "Run SQL: INSERT INTO user_roles (user_id, role) SELECT id, 'admin' FROM auth.users WHERE email = 'gandalftheswole76@gmail.com'",
+  "matches-public":
+    "Add RLS policy: CREATE POLICY matches_public_read ON matches FOR SELECT USING (true)",
+  "validate-trg":
+    "Recreate trigger: BEFORE INSERT OR UPDATE OF home_goals, away_goals, first_scorer, booster ON predictions",
+  "score-md-caller":
+    "Update score_matchday to use _caller_id parameter instead of auth.uid()",
+  "rls-predictions":
+    "Check RLS policies on predictions — anon users should not be able to SELECT",
+  "liga-join-valid":
+    "Check joinLeagueFn — ensure find_league_by_code RPC exists and invite_code column is correct",
+};
+
+function shortFixHint(t: ReportTest): string {
+  const hint = FIX_HINTS[t.id];
+  if (hint) return hint;
   const tmpl = FIX_PROMPT_TEMPLATES[t.id];
-  return tmpl ? tmpl(ctx) : genericFixPrompt(ctx);
+  if (tmpl)
+    return tmpl({
+      name: t.name,
+      expected: t.expected,
+      actual: t.actual,
+      error: t.error,
+      file_hint: t.file_hint,
+    });
+  return `Inspect ${t.file_hint ?? "the relevant module"} and address: ${t.error ?? "(no error message)"}`;
 }
 
 export function toMarkdown(r: Report): string {
   const lines: string[] = [];
+  lines.push("---");
   lines.push("# Marcador Test Report");
   lines.push(`Generated: ${r.report_generated_at}`);
   lines.push(`App URL: ${r.app_url}`);
   lines.push(
-    `Total: ${r.summary.total} · Passed: ${r.summary.passed} · Failed: ${r.summary.failed} · Warnings: ${r.summary.warnings} · Not run: ${r.summary.not_run}`,
+    `Total: ${r.summary.total} · ✅ ${r.summary.passed} · ❌ ${r.summary.failed} · ⚠️ ${r.summary.warnings}`,
   );
-  lines.push(`Test duration: ${r.summary.duration_ms}ms`);
+  lines.push(`Duration: ${r.summary.duration_ms}ms`);
   lines.push("");
-  lines.push("## 🚀 Launch Readiness");
   lines.push(
-    `Status: ${r.launch_readiness.ready ? "✅ READY FOR LAUNCH" : "❌ NOT READY — fix failures below"}`,
+    `## 🚀 Launch Readiness: ${r.launch_readiness.ready ? "✅ READY" : "❌ NOT READY"}`,
   );
-  lines.push("");
-  lines.push("Critical tests:");
   for (const c of r.launch_readiness.critical_tests) {
     const icon = c.status === "pass" ? "✅" : "❌";
     lines.push(`${icon} ${c.name}`);
@@ -296,70 +322,133 @@ export function toMarkdown(r: Report): string {
   const passed = allTests.filter((t) => t.status === "pass");
 
   lines.push(`## ❌ Failed Tests (${failed.length})`);
-  lines.push("");
   for (const t of failed) {
     lines.push(`### ${t.name}`);
     lines.push(`- Category: ${t.category}`);
     lines.push(`- Error: ${t.error ?? "(no message)"}`);
     lines.push(`- Expected: ${t.expected ?? "n/a"}`);
     lines.push(`- Actual: ${t.actual ?? "n/a"}`);
-    lines.push(`- Likely cause: ${t.likely_cause ?? "(none recorded — inspect manually)"}`);
-    lines.push(`- File hint: ${t.file_hint ?? "n/a"}`);
+    lines.push(`- Fix: ${shortFixHint(t)}`);
     lines.push("");
   }
 
   lines.push(`## ⚠️ Warnings (${warned.length})`);
-  lines.push("");
-  for (const t of warned) {
-    lines.push(`### ${t.name}`);
-    lines.push(`- Category: ${t.category}`);
-    lines.push(`- Message: ${t.error ?? "(no message)"}`);
-    lines.push("");
-  }
-
-  lines.push(`## ✅ Passed Tests (${passed.length})`);
-  for (const t of passed) lines.push(`✅ ${t.name}`);
+  for (const t of warned) lines.push(`- ${t.name}: ${t.error ?? ""}`);
   lines.push("");
 
-  lines.push("## 📊 Category Summary");
-  lines.push("| Category | Total | ✅ | ❌ | ⚠️ |");
-  lines.push("|---|---|---|---|---|");
+  lines.push(`## ✅ Passed (${passed.length})`);
+  for (const t of passed) lines.push(`- ${t.name}`);
+  lines.push("");
+
+  lines.push("## 📊 By Category");
+  lines.push("| Category | ✅ | ❌ | ⚠️ |");
+  lines.push("|---|---|---|---|");
   for (const c of r.categories) {
-    const total = c.tests.length;
     const p = c.tests.filter((t) => t.status === "pass").length;
     const f = c.tests.filter((t) => t.status === "fail").length;
     const w = c.tests.filter((t) => t.status === "warn").length;
-    lines.push(`| ${c.name} | ${total} | ${p} | ${f} | ${w} |`);
+    lines.push(`| ${c.name} | ${p} | ${f} | ${w} |`);
   }
   lines.push("");
-
-  lines.push("## 🔧 Suggested Fix Prompts");
-  lines.push("");
-  for (const t of failed) {
-    lines.push(`### Fix: ${t.name}`);
-    lines.push(fixPromptFor(t));
-    lines.push("");
-  }
 
   lines.push("## Environment");
-  lines.push(`- Supabase: ${r.environment.supabase_url}`);
-  lines.push(`- Version: ${r.environment.app_version}`);
+  lines.push(`- URL: ${r.app_url}`);
   lines.push(`- Admin: ${r.environment.admin_display_name}`);
+  lines.push(`- Version: ${r.environment.app_version}`);
+  lines.push("---");
 
   return lines.join("\n");
 }
 
+// Spec JSON shape — flatter than the in-memory Report.
+type SpecJson = {
+  generated_at: string;
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    warnings: number;
+    launch_ready: boolean;
+    duration_ms: number;
+  };
+  launch_readiness: {
+    ready: boolean;
+    tests: { id: string; name: string; status: "pass" | "fail"; error: string | null }[];
+  };
+  results: {
+    id: string;
+    name: string;
+    category: string;
+    status: ReportTestStatus;
+    message: string | null;
+    detail: string | null;
+    duration_ms: number;
+  }[];
+  environment: { url: string; admin: string; version: string };
+};
+
 export function toJson(r: Report): string {
-  return JSON.stringify(r, null, 2);
+  const allTests = r.categories
+    .filter((c) => c.name !== "Launch Readiness")
+    .flatMap((c) => c.tests);
+  const spec: SpecJson = {
+    generated_at: r.report_generated_at,
+    summary: {
+      total: r.summary.total,
+      passed: r.summary.passed,
+      failed: r.summary.failed,
+      warnings: r.summary.warnings,
+      launch_ready: r.summary.launch_ready,
+      duration_ms: r.summary.duration_ms,
+    },
+    launch_readiness: {
+      ready: r.launch_readiness.ready,
+      tests: r.launch_readiness.critical_tests.map((t) => ({
+        id: t.name,
+        name: t.name,
+        status: t.status === "pass" ? "pass" : "fail",
+        error: t.error,
+      })),
+    },
+    results: allTests.map((t) => ({
+      id: t.id,
+      name: t.name,
+      category: t.category,
+      status: t.status,
+      message: t.error,
+      detail: null,
+      duration_ms: t.duration_ms,
+    })),
+    environment: {
+      url: r.app_url,
+      admin: r.environment.admin_display_name,
+      version: r.environment.app_version,
+    },
+  };
+  return JSON.stringify(spec, null, 2);
 }
 
 // localStorage history -------------------------------------------------------
 
-const STORAGE_KEY = "marcador_test_reports";
-const MAX_HISTORY = 5;
+const STORAGE_KEY = "marcador_test_history";
+const LEGACY_STORAGE_KEY = "marcador_test_reports";
+const MAX_HISTORY = 10;
+
+function migrateLegacy() {
+  try {
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!legacy) return;
+    const current = localStorage.getItem(STORAGE_KEY);
+    if (!current) localStorage.setItem(STORAGE_KEY, legacy);
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    /* fail silently */
+  }
+}
 
 export function loadHistory(): Report[] {
   try {
+    migrateLegacy();
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
@@ -388,8 +477,8 @@ export function formatHistoryLabel(r: Report): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-  const ready = r.summary.launch_ready ? "✅ READY" : "❌ NOT READY";
-  return `${fmt} — ${r.summary.passed} passed · ${r.summary.failed} failed · ${ready}`;
+  const ready = r.summary.launch_ready ? "READY" : "NOT READY";
+  return `${fmt} — ✅ ${r.summary.passed} passed · ❌ ${r.summary.failed} failed · ${ready}`;
 }
 
 export function downloadFilename(r: Report): string {
@@ -398,3 +487,4 @@ export function downloadFilename(r: Report): string {
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
   return `marcador-test-report-${stamp}.json`;
 }
+
