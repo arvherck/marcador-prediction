@@ -732,6 +732,17 @@ export const adminSetResultFn = createServerFn({ method: "POST" })
       const a = byTeam.get(awayTeam);
       if (h && a) standingsImpact = { home: h, away: a };
     }
+
+    // Cascade winners into downstream knockout slots if this was a knockout match
+    const { data: mdRow } = await supabase
+      .from("matches")
+      .select("matchday_id")
+      .eq("id", data.match_id)
+      .maybeSingle();
+    if (mdRow && mdRow.matchday_id >= 4) {
+      await supabase.rpc("cascade_knockout_winners", { _caller_id: userId });
+    }
+
     return { ok: true, standingsImpact };
   });
 
