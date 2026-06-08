@@ -422,6 +422,7 @@ export type Database = {
           longest_streak: number
           privacy_accepted: boolean
           theme_preference: string | null
+          ui_test_preview_until: string | null
           updated_at: string
           user_id: string
         }
@@ -437,6 +438,7 @@ export type Database = {
           longest_streak?: number
           privacy_accepted?: boolean
           theme_preference?: string | null
+          ui_test_preview_until?: string | null
           updated_at?: string
           user_id: string
         }
@@ -452,6 +454,7 @@ export type Database = {
           longest_streak?: number
           privacy_accepted?: boolean
           theme_preference?: string | null
+          ui_test_preview_until?: string | null
           updated_at?: string
           user_id?: string
         }
