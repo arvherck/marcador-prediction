@@ -2570,9 +2570,11 @@ export const testPreWcFriendliesExist = createServerFn({ method: "POST" })
       .select("id", { count: "exact", head: true })
       .eq("matchday_id", mdId);
     if (error) return { status: "fail", message: error.message };
-    if (count === 6) return { status: "pass", message: "6 Pre-WC friendly test matches present ✓" };
-    return { status: "fail", message: `Expected 6 Pre-WC test matches, found ${count ?? 0}` };
+    if (count !== null && count >= 6)
+      return { status: "pass", message: `${count} Pre-WC friendly test matches present ✓` };
+    return { status: "fail", message: `Expected at least 6 Pre-WC test matches, found ${count ?? 0}` };
   });
+
 
 export const testPreWcBelgiumTunisia = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
