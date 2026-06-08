@@ -204,6 +204,7 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabase, userId } = context;
+    const testMdIds = await getTestMatchdayIds(supabase, userId);
     const [
       { data: mds, error: mdErr },
       { data: matches, error: mErr },
@@ -213,11 +214,12 @@ export const getMatchdaysWithProgress = createServerFn({ method: "GET" })
         .from("matchdays")
         .select("id, name, starts_at, is_scored")
         .not("name", "like", "\\_\\_%")
-        .eq("is_test", false)
+        .not("id", "in", notInList(testMdIds))
         .order("starts_at", { ascending: true }),
       supabase.from("matches").select("id, matchday_id, kickoff_at, teams_confirmed, is_final, status"),
       supabase.from("predictions").select("match_id").eq("user_id", userId),
     ]);
+
     if (mdErr) throw new Error(mdErr.message);
     if (mErr) throw new Error(mErr.message);
     if (pErr) throw new Error(pErr.message);
