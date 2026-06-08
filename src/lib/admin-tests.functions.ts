@@ -316,7 +316,7 @@ export const testScoringExact = createServerFn({ method: "POST" })
           { home: 2, away: 1, scorer: "home" },
           { home: 2, away: 1, scorer: "home" },
         );
-        return scoreAndGetPoints(mdId, context.userId, matchId, context.supabase);
+        return scoreAndGetPoints(mdId, context.userId, matchId);
       });
       // 3 (result) + 2 (home exact) + 2 (away exact) + 3 (GD) + 3 (first scorer) = 13
       // Underdog: only 1 prediction → share=1.0, no bonus
@@ -340,7 +340,7 @@ export const testScoringCorrectResult = createServerFn({ method: "POST" })
           { home: 2, away: 0, scorer: "home" },
           { home: 1, away: 0, scorer: "home" },
         );
-        return scoreAndGetPoints(mdId, context.userId, matchId, context.supabase);
+        return scoreAndGetPoints(mdId, context.userId, matchId);
       });
       // result correct (3) + first scorer correct (3) = 6
       return result === 6
@@ -363,7 +363,7 @@ export const testScoringWrongResult = createServerFn({ method: "POST" })
           { home: 2, away: 0, scorer: "home" },
           { home: 0, away: 1, scorer: "away" },
         );
-        return scoreAndGetPoints(mdId, context.userId, matchId, context.supabase);
+        return scoreAndGetPoints(mdId, context.userId, matchId);
       });
       return result === 0
         ? { status: "pass", message: "Wrong result = 0 pts ✓" }
@@ -385,7 +385,7 @@ export const testBoosterDoubles = createServerFn({ method: "POST" })
           { home: 1, away: 0, scorer: "home", booster: true },
           { home: 1, away: 0, scorer: "home" },
         );
-        return scoreAndGetPoints(mdId, context.userId, matchId, context.supabase);
+        return scoreAndGetPoints(mdId, context.userId, matchId);
       });
       const plain = await withTempScenario(async ({ mdId }) => {
         const matchId = await seedMatchAndPrediction(
@@ -394,7 +394,7 @@ export const testBoosterDoubles = createServerFn({ method: "POST" })
           { home: 1, away: 0, scorer: "home", booster: false },
           { home: 1, away: 0, scorer: "home" },
         );
-        return scoreAndGetPoints(mdId, context.userId, matchId, context.supabase);
+        return scoreAndGetPoints(mdId, context.userId, matchId);
       });
       return boosted === plain * 2
         ? { status: "pass", message: `Booster doubled ${plain} → ${boosted} ✓` }
