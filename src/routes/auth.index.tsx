@@ -7,7 +7,7 @@ import { lovable } from "@/integrations/lovable";
 import { AuthShell, OrDivider } from "@/components/auth/AuthShell";
 import { CookieNotice } from "@/components/CookieNotice";
 
-export const Route = createFileRoute("/auth")({
+export const Route = createFileRoute("/auth/")({
   head: () => {
     const url = "https://marcador-prediction.lovable.app/auth";
     const title = "Sign in · Marcador";

@@ -1,25 +1,23 @@
-Add `is_test` matchday exclusion to three tests in `src/lib/admin-tests.functions.ts`. Pure additive filter — no other logic changes.
+## Root cause
 
-## 1. `testMatchCount` (lines 34–50)
+`src/routes/auth.tsx` declares route `/auth` and also becomes the layout parent for every sibling that starts with `auth.` (`auth.signup`, `auth.reset`, `auth.new-password`, `auth.callback`) under TanStack's file-based routing. Confirmed in `routeTree.gen.ts` — `AuthRouteWithChildren`.
 
-Fetch `is_test = true` matchday ids, then add `.not("matchday_id", "in", "(...)")` to the existing query (guard against empty list to avoid a malformed `()` filter). Expected count stays 104.
+But `AuthPage` returns the full login form, not `<Outlet />`. Result: navigating to `/auth/signup` matches the parent `/auth` route, re-renders the login form, and the signup component never mounts. Same problem for `/auth/reset`, `/auth/new-password`, and `/auth/callback` — they're all currently dead.
 
-## 2. `testGroupStageConfirmed` (lines 93–110)
+## Fix
 
-Same pattern: load test matchday ids and add `.not("matchday_id", "in", "(...)")` plus `.neq("home_team", "__test")` to the existing `phase = 'Group stage' AND teams_confirmed = true` count. Expected count stays 72.
+Rename `src/routes/auth.tsx` → `src/routes/auth.index.tsx`. This converts `/auth` into a leaf route and makes `auth.signup`, `auth.reset`, `auth.new-password`, `auth.callback` siblings instead of children. Each will render on its own.
 
-## 3. `testKickoffRange` (lines 112–130)
+Inside the moved file, no code changes needed — `createFileRoute("/auth")` still maps correctly because the URL is determined by the filename prefix (`auth.index` → `/auth`).
 
-Same pattern: load test matchday ids, add `.not("matchday_id", "in", "(...)")` and `.neq("home_team", "__test")` to the select before applying the June 11 – July 20 2026 window check.
+The route tree regenerates automatically on the next build/dev pass.
 
-## Shared detail
+## Files
 
-In all three, build the exclusion list with:
-```ts
-const { data: testMdIds } = await supabaseAdmin
-  .from("matchdays").select("id").eq("is_test", true);
-const excludeIds = (testMdIds ?? []).map((m) => m.id);
-```
-and only chain `.not("matchday_id", "in", ...)` when `excludeIds.length > 0` (PostgREST rejects an empty `()`).
+- `src/routes/auth.tsx` → renamed to `src/routes/auth.index.tsx` (single `mv`, no content edits).
 
-No other tests, no DB changes, no UI changes.
+No other files need changes. No DB, no UI redesign, no logic changes.
+
+## Verification
+
+After the rename, click "New here? Create an account →" from `/auth` and confirm the signup form renders. Also spot-check `/auth/reset` loads the reset page.
