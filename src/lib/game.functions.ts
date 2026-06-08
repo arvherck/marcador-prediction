@@ -54,6 +54,7 @@ function mapMatch(
     first_scorer: string | null;
     is_final: boolean;
     phase: string | null;
+    points_multiplier?: number | null;
     stadium?: string | null;
     city?: string | null;
     host_country?: string | null;
