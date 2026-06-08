@@ -2,8 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
-import { AuthShell, GoogleButton, OrDivider } from "@/components/auth/AuthShell";
+import { AuthShell } from "@/components/auth/AuthShell";
+
 import { CheckInboxPanel } from "@/components/auth/CheckInboxPanel";
 
 export const Route = createFileRoute("/auth/signup")({
@@ -83,10 +83,6 @@ function SignupPage() {
     if (error) throw error;
   };
 
-  const googleSignIn = async () => {
-    const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: redirect() });
-    if (result.error) toast.error(result.error instanceof Error ? result.error.message : "Google sign-in failed.");
-  };
 
   if (sentTo) {
     return (
@@ -118,8 +114,8 @@ function SignupPage() {
       <h1 className="font-display font-bold text-3xl mb-1">Create your account</h1>
       <p className="text-sm text-muted-foreground mb-8">Join Marcador and start predicting.</p>
 
-      <GoogleButton onClick={googleSignIn} />
-      <OrDivider />
+
+
 
       <form onSubmit={submit} className="space-y-3">
         <input
