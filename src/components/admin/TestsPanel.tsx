@@ -69,6 +69,10 @@ import {
   testNoTestUsers,
   testKnockoutPlaceholdersSet,
   testRulesRouteExists,
+  testPreWcFriendliesExist,
+  testPreWcBelgiumTunisia,
+  testPreWcScoringBelgium13,
+  testPreWcExcludedFromLeaderboard,
   type TestResult,
 } from "@/lib/admin-tests.functions";
 
