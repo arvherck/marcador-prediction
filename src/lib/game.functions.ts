@@ -41,16 +41,53 @@ const scorerEnum = z.enum(["home", "away", "none"]);
 
 // Fetch IDs of matchdays flagged as internal/test fixtures.
 // Used to hide them from all user-facing reads (play screen, leaderboard, stats).
-async function getTestMatchdayIds(client: unknown): Promise<number[]> {
+// When `userId` is provided AND that user is an admin with an active
+// `ui_test_preview_until` timestamp (set via adminSetUiTestPreviewFn), we
+// intentionally return [] so test matchdays show up in their Play view only.
+async function getTestMatchdayIds(client: unknown, userId?: string): Promise<number[]> {
   const c = client as {
-    from: (t: string) => { select: (s: string) => { eq: (c: string, v: boolean) => Promise<{ data: Array<{ id: number }> | null }> } };
+    from: (t: string) => {
+      select: (s: string) => {
+        eq: (
+          c: string,
+          v: boolean | string,
+        ) => {
+          maybeSingle?: () => Promise<{ data: { ui_test_preview_until: string | null } | null }>;
+        } & Promise<{ data: Array<{ id: number }> | null }>;
+      };
+    };
   };
+  if (userId) {
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const [{ data: role }, { data: prof }] = await Promise.all([
+        supabaseAdmin
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userId)
+          .eq("role", "admin")
+          .maybeSingle(),
+        supabaseAdmin
+          .from("profiles")
+          .select("ui_test_preview_until")
+          .eq("user_id", userId)
+          .maybeSingle(),
+      ]);
+      if (role && prof?.ui_test_preview_until) {
+        const until = new Date(prof.ui_test_preview_until).getTime();
+        if (until > Date.now()) return [];
+      }
+    } catch {
+      // fall through to default filtering
+    }
+  }
   const { data } = await c.from("matchdays").select("id").eq("is_test", true);
   return (data ?? []).map((r) => r.id);
 }
 function notInList(ids: number[]): string {
   return `(${ids.length ? ids.join(",") : "0"})`;
 }
+
 
 function mapMatch(
   m: {
