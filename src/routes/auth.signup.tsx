@@ -114,8 +114,8 @@ function SignupPage() {
       <h1 className="font-display font-bold text-3xl mb-1">Create your account</h1>
       <p className="text-sm text-muted-foreground mb-8">Join Marcador and start predicting.</p>
 
-      <GoogleButton onClick={googleSignIn} />
-      <OrDivider />
+
+
 
       <form onSubmit={submit} className="space-y-3">
         <input
