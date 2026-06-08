@@ -113,6 +113,7 @@ const NAV = [
   { id: "api-sync", label: "API Sync", icon: "🔄" },
   { id: "tournament", label: "Tournament", icon: "🏆" },
   { id: "donations", label: "Donations", icon: "💰" },
+  { id: "feedback", label: "Feedback", icon: "💬" },
   { id: "tests", label: "Tests", icon: "🧪" },
   { id: "advanced", label: "Advanced", icon: "⚙️" },
 ];
