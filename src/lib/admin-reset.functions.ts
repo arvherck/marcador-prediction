@@ -153,7 +153,7 @@ export const adminQuickTestCheckFn = createServerFn({ method: "POST" })
         .select("user_id", { count: "exact", head: true })
         .in("match_id", upcomingIds);
       if (testIds.length > 0) {
-        q = q.not("user_id", "in", `(${testIds.map((id) => `"${id}"`).join(",")})`);
+        q = q.not("user_id", "in", `(${testIds.join(",")})`);
       }
       const { count } = await q;
       realLive = count ?? 0;
