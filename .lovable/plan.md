@@ -1,23 +1,49 @@
-## Root cause
+# Improve signup password UX
 
-`src/routes/auth.tsx` declares route `/auth` and also becomes the layout parent for every sibling that starts with `auth.` (`auth.signup`, `auth.reset`, `auth.new-password`, `auth.callback`) under TanStack's file-based routing. Confirmed in `routeTree.gen.ts` — `AuthRouteWithChildren`.
+Scope: `src/routes/auth.signup.tsx` only. Pure frontend/presentation change.
 
-But `AuthPage` returns the full login form, not `<Outlet />`. Result: navigating to `/auth/signup` matches the parent `/auth` route, re-renders the login form, and the signup component never mounts. Same problem for `/auth/reset`, `/auth/new-password`, and `/auth/callback` — they're all currently dead.
+## 1. Requirements checklist (below password input)
+Compute 4 booleans from `password`:
+- `len` — `password.length >= 8`
+- `upper` — `/[A-Z]/.test(password)`
+- `lower` — `/[a-z]/.test(password)`
+- `digit` — `/[0-9]/.test(password)`
 
-## Fix
+Render the list only when `password.length > 0`. Each row:
+- Unmet: `text-muted-foreground` with `○` (lucide `Circle`)
+- Met: `text-emerald-500` with `✓` (lucide `Check`)
 
-Rename `src/routes/auth.tsx` → `src/routes/auth.index.tsx`. This converts `/auth` into a leaf route and makes `auth.signup`, `auth.reset`, `auth.new-password`, `auth.callback` siblings instead of children. Each will render on its own.
+Labels: "At least 8 characters", "One uppercase letter (A-Z)", "One lowercase letter (a-z)", "One number (0-9)".
 
-Inside the moved file, no code changes needed — `createFileRoute("/auth")` still maps correctly because the URL is determined by the filename prefix (`auth.index` → `/auth`).
+## 2. Strength bar (below checklist)
+`metCount = len + upper + lower + digit`.
+- 0: hide
+- 1–2: red bar (33%), label "Weak" (`text-destructive`)
+- 3: amber bar (66%), label "Almost there" (`text-amber-glow`)
+- 4: green bar (100%), label "Strong" (`text-emerald-500`)
 
-The route tree regenerates automatically on the next build/dev pass.
+Track: `h-1 rounded-full bg-secondary` with inner `div` width + color transition.
 
-## Files
+## 3. Confirm-password indicator
+Track `confirmTouched` (set true on first `onChange`). When `confirmTouched && confirm.length > 0`:
+- `confirm === password` → green ✓ next to/inside field (right-aligned absolute icon)
+- else → red ✗
+Use a relative wrapper with `pr-10` on the input and an absolute icon on the right.
 
-- `src/routes/auth.tsx` → renamed to `src/routes/auth.index.tsx` (single `mv`, no content edits).
+## 4. Submit button gating
+Disable "Create account" unless `len && upper && lower && digit && confirm === password && age18 && privacy`. Keep existing `loading` disable. (Existing consent error UX stays the same.)
 
-No other files need changes. No DB, no UI redesign, no logic changes.
+## 5. Friendly Supabase error
+In `submit` catch block, replace generic toast for password-strength rejections. Detect via `/password/i.test(err.message)` (covers Supabase's "Password should contain..." and weak-password errors). Show:
+> "Password not strong enough. Please use at least 8 characters including uppercase, lowercase and a number."
+Other errors keep current behavior (generic message, not raw if unclear). Never surface raw message for password errors.
 
-## Verification
+## 6. Not changed
+- No DB/auth/server changes.
+- No changes to login, reset, or new-password screens.
+- No change to consent checkbox logic.
 
-After the rename, click "New here? Create an account →" from `/auth` and confirm the signup form renders. Also spot-check `/auth/reset` loads the reset page.
+## Technical notes
+- Icons: `Check`, `Circle`, `X` from `lucide-react` (already used elsewhere).
+- All colors via existing tokens (`text-destructive`, `text-emerald-500`, `text-amber-glow`, `bg-secondary`).
+- Keep `minLength={8}` on inputs as a fallback.
