@@ -55,9 +55,11 @@ function MePage() {
   const { me } = Route.useRouteContext();
   const history = useQuery({ queryKey: ["my-history"], queryFn: () => getMyHistoryFn() });
   const scores = useQuery({ queryKey: ["my-scores"], queryFn: () => getMyMatchdayScoresFn() });
+  const rounds = useQuery({ queryKey: ["my-points-by-round"], queryFn: () => getMyPointsByRoundFn() });
   const stats = useQuery({ queryKey: ["my-stats"], queryFn: () => getMyProfileStatsFn() });
 
   const total = (scores.data as Score[] | undefined)?.reduce((a, b) => a + b.total_points, 0) ?? 0;
+
 
   return (
     <AppShell displayName={me.profile?.display_name} isAdmin={me.is_admin}>
