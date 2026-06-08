@@ -207,6 +207,30 @@ export const testMatchesPublicReadable = createServerFn({ method: "POST" })
 // in a future-dated window, finalize the match score, run scoring, and
 // clean up in finally.
 
+// Defensive sweep: delete any matchday whose name starts with "__" plus
+// cascading matches, predictions, and matchday_scores. Used before and
+// after every test that seeds data, so orphans never accumulate.
+async function purgeTestArtifacts() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data: mds } = await supabaseAdmin
+    .from("matchdays")
+    .select("id")
+    .like("name", "\\_\\_%");
+  const mdIds = (mds ?? []).map((m) => m.id);
+  if (!mdIds.length) return;
+  const { data: ms } = await supabaseAdmin
+    .from("matches")
+    .select("id")
+    .in("matchday_id", mdIds);
+  const matchIds = (ms ?? []).map((m) => m.id);
+  if (matchIds.length) {
+    await supabaseAdmin.from("predictions").delete().in("match_id", matchIds);
+    await supabaseAdmin.from("matches").delete().in("id", matchIds);
+  }
+  await supabaseAdmin.from("matchday_scores").delete().in("matchday_id", mdIds);
+  await supabaseAdmin.from("matchdays").delete().in("id", mdIds);
+}
+
 async function withTempScenario<T>(
   fn: (ctx: {
     admin: ReturnType<typeof anonClient>;
@@ -214,6 +238,8 @@ async function withTempScenario<T>(
   }) => Promise<T>,
 ): Promise<T> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  // Defensive pre-sweep so prior failures don't leak rows into the panel.
+  await purgeTestArtifacts();
   // Future kickoff so the trigger allows prediction inserts
   const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: md, error: mdErr } = await supabaseAdmin
@@ -237,6 +263,8 @@ async function withTempScenario<T>(
     }
     await supabaseAdmin.from("matchday_scores").delete().eq("matchday_id", md.id);
     await supabaseAdmin.from("matchdays").delete().eq("id", md.id);
+    // Defence in depth: nuke any "__"-prefixed leftovers from any path.
+    await purgeTestArtifacts();
   }
 }
 
