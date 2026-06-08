@@ -97,6 +97,9 @@ const EDGE_TESTS: TestDef[] = [
   { id: "edge-underdog-at", label: "Underdog bonus does NOT fire at 10%", category: "Game logic", run: () => testEdgeUnderdogAt10pct() },
   { id: "edge-rescore", label: "Re-scoring does not double points", category: "Game logic", run: () => testEdgeRescoreNoDouble() },
   { id: "edge-correction", label: "Result correction recalculates correctly", category: "Game logic", run: () => testEdgeResultCorrection() },
+  { id: "edge-mul-r32", label: "Round multiplier ×2 applies in R32", category: "Game logic", run: () => testEdgeMultiplierR32() },
+  { id: "edge-mul-boost", label: "Booster applies after round multiplier", category: "Game logic", run: () => testEdgeMultiplierBoosterStack() },
+  { id: "edge-mul-underdog", label: "Underdog +5 stays flat after multiplier", category: "Game logic", run: () => testEdgeMultiplierUnderdogFlat() },
 ];
 
 const LOCK_TESTS: TestDef[] = [
