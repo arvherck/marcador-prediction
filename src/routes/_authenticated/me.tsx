@@ -1,8 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
+import { useState } from "react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { EmptyBall } from "@/components/EmptyBall";
 import { getMyHistoryFn, getMyMatchdayScoresFn, getMyPointsByRoundFn, getMyProfileStatsFn, type PointsByRoundRow } from "@/lib/game.functions";
+import { updateProfileFn } from "@/lib/auth.functions";
+import { TEAMS_2026 } from "@/lib/teams";
 import { teamFlag } from "@/lib/teamFlags";
 
 export const Route = createFileRoute("/_authenticated/me")({
