@@ -14,6 +14,8 @@ import { ByDateView } from "@/components/play/ByDateView";
 import { ByMatchdayView } from "@/components/play/ByMatchdayView";
 import { ClosingSoonBanner } from "@/components/play/ClosingSoonBanner";
 import { HowToPlayModal } from "@/components/play/HowToPlayModal";
+import { UiTestPreviewBanner } from "@/components/play/UiTestPreviewBanner";
+
 import {
   getAllMatches,
   getAllMatchesPublic,
