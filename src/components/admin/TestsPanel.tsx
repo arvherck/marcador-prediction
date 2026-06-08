@@ -265,7 +265,7 @@ export function TestsPanel({ adminDisplayName }: TestsPanelProps = {}) {
   const [historicalReport, setHistoricalReport] = useState<Report | null>(null);
   const [history, setHistory] = useState<Report[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  
   const [isRunningAll, setIsRunningAll] = useState(false);
 
   useEffect(() => {
