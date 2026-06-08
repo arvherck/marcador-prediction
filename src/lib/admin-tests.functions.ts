@@ -59,6 +59,7 @@ export const testMatchdays = createServerFn({ method: "POST" })
       .from("matchdays")
       .select("id, name")
       .not("name", "like", "\\_\\_%")
+      .eq("is_test", false)
       .order("id");
     if (error) return { status: "fail", message: error.message };
     if ((data?.length ?? 0) === 9)
