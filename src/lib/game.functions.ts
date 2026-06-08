@@ -1122,7 +1122,7 @@ export const getFixtureStatsPublic = createServerFn({ method: "GET" }).handler(
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ count: matchCount }, { count: mdCount }] = await Promise.all([
       supabaseAdmin.from("matches").select("id", { count: "exact", head: true }),
-      supabaseAdmin.from("matchdays").select("id", { count: "exact", head: true }),
+      supabaseAdmin.from("matchdays").select("id", { count: "exact", head: true }).not("name", "like", "\\_\\_%"),
     ]);
     return { matches: matchCount ?? 0, matchdays: mdCount ?? 0 };
   },
