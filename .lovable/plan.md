@@ -1,39 +1,33 @@
-## GDPR consent on signup
+# Cookie Notice Banner
 
-### 1. DB migration — add to `public.profiles`
-- `age_confirmed boolean NOT NULL DEFAULT false`
-- `privacy_accepted boolean NOT NULL DEFAULT false`
-- `consent_recorded_at timestamptz` (nullable; existing rows stay null per spec)
+Add a slim, dismissible informational cookie banner shown only on public pages to logged-out visitors.
 
-No new policies (existing self-update policy on profiles covers it).
+## New component
 
-### 2. Server function — `src/lib/auth.functions.ts`
-Add `recordConsentFn` (POST, `requireSupabaseAuth`).
-- Input (zod): `{ age_confirmed: true, privacy_accepted: true }` — both literal `true`.
-- Upserts profile row with both flags + `consent_recorded_at = now()` (server time via `new Date().toISOString()`).
-- Returns `{ ok: true }`.
+`src/components/CookieNotice.tsx`
+- Fixed bottom bar, dark background (use existing card/border tokens), high z-index (`z-50`), max-width container, small text, slim padding. Non-blocking — does not overlay full screen.
+- Content: "Marcador uses essential cookies to keep you logged in. No tracking or advertising cookies are used." followed by two actions:
+  - "Learn more" → `<Link to="/privacy" hash="cookies">` (anchor `#cookies` on the privacy page)
+  - "Got it" → button that sets `localStorage.marcador_cookie_notice = "dismissed"` and hides the banner
+- On mount: check `localStorage.marcador_cookie_notice`. If present, render nothing. Also check Supabase session via `supabase.auth.getSession()` — if a session exists, render nothing (and subscribe with `onAuthStateChange` so it disappears on login during the visit).
+- SSR-safe: gate on a `mounted` state so nothing renders during SSR (avoids hydration mismatch and `window` access).
 
-### 3. Email signup screen — `src/routes/auth.signup.tsx`
-Between confirm-password and "Create account" button:
-- Checkbox 1: "I am 18 years of age or older" (state `age18`).
-- Checkbox 2: "I agree to the [Privacy Policy](/privacy) and understand how my data is used" — link opens `/privacy` in new tab.
-- Submit button disabled until both ticked.
-- On submit attempt with one missing → inline red error text under that box ("Please confirm you are 18+ to continue" / "Please agree to the Privacy Policy to continue").
-- On successful `supabase.auth.signUp`, set `sessionStorage.marcador_consent_pending = "1"` so consent can be recorded after email confirmation (no session exists pre-confirmation).
+## Where it renders
 
-### 4. Callback routing — `src/routes/auth.callback.tsx`
-After user is resolved:
-- If `sessionStorage.marcador_consent_pending === "1"` → call `recordConsentFn`, clear flag, then continue current routing logic.
-- Otherwise, if profile has no `consent_recorded_at` AND no `display_name` → redirect to new `/consent` route instead of `/onboarding`.
-- Existing users (display_name already set) are NOT forced through consent — they go straight to `/play`.
+Add `<CookieNotice />` to exactly the four public route components:
+- `src/routes/index.tsx` (landing)
+- `src/routes/auth.tsx` (or the actual auth route file used — confirm during edit; the spec says `/auth`)
+- `src/routes/rules.tsx`
+- `src/routes/privacy.tsx`
 
-### 5. New route — `src/routes/_authenticated/consent.tsx`
-Intermediate screen used by Google OAuth (and as fallback for email users who lost sessionStorage).
-- Heading: "One quick thing before you start".
-- Same 2 checkboxes (with same inline validation + Privacy link).
-- "Continue" button → `recordConsentFn` → `navigate({ to: "/onboarding" })`.
-- Styled like onboarding (AuthShell-ish or matching dark card).
+This keeps it out of all `_authenticated/*` pages by construction, satisfying "do not show to logged-in users / on any authenticated page."
 
-### Out of scope
-- No backfill / re-prompt for existing users (per spec).
-- No admin UI for viewing consent.
+## Privacy page anchor
+
+In `src/routes/privacy.tsx`, ensure the Cookies section heading has `id="cookies"` so `/privacy#cookies` scrolls to it. Add the id if it isn't already there.
+
+## Out of scope
+
+- No consent gating (functional-only cookies, per spec).
+- No server-side storage of dismissal.
+- No changes to authenticated routes or auth flow.
