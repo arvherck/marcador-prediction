@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { setGuest, clearGuest } from "@/lib/guest";
 import { lovable } from "@/integrations/lovable";
 import { AuthShell, GoogleButton, OrDivider } from "@/components/auth/AuthShell";
+import { CookieNotice } from "@/components/CookieNotice";
 
 export const Route = createFileRoute("/auth")({
   head: () => {
@@ -120,6 +121,7 @@ function AuthPage() {
   };
 
   return (
+    <>
     <AuthShell>
       <h1 className="font-display font-bold text-3xl mb-1">Welcome back</h1>
       <p className="text-sm text-muted-foreground mb-8">Sign in to make this matchday's calls.</p>
@@ -198,5 +200,7 @@ function AuthPage() {
         Read-only. You can't predict or appear on the leaderboard.
       </p>
     </AuthShell>
+    <CookieNotice />
+    </>
   );
 }

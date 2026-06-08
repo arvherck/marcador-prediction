@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { FeedbackButton } from "@/components/feedback/FeedbackButton";
+import { CookieNotice } from "@/components/CookieNotice";
 
 export const Route = createFileRoute("/privacy")({
   head: () => {
@@ -318,6 +319,7 @@ function PrivacyPage() {
           <FeedbackButton />
         </div>
       </footer>
+      <CookieNotice />
     </div>
   );
 }
