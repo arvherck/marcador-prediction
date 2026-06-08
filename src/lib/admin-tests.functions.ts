@@ -441,6 +441,7 @@ export const testKickoffLock = createServerFn({ method: "POST" })
   .handler(async ({ context }): Promise<TestResult> => {
     await assertAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await purgeTestArtifacts();
     const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { data: md, error: mdErr } = await supabaseAdmin
