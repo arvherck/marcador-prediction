@@ -240,6 +240,7 @@ export type Database = {
           kickoff_at: string
           matchday_id: number
           phase: string | null
+          points_multiplier: number
           stadium: string | null
           status: string
           teams_confirmed: boolean
@@ -261,6 +262,7 @@ export type Database = {
           kickoff_at: string
           matchday_id: number
           phase?: string | null
+          points_multiplier?: number
           stadium?: string | null
           status?: string
           teams_confirmed?: boolean
@@ -282,6 +284,7 @@ export type Database = {
           kickoff_at?: string
           matchday_id?: number
           phase?: string | null
+          points_multiplier?: number
           stadium?: string | null
           status?: string
           teams_confirmed?: boolean
@@ -650,6 +653,7 @@ export type Database = {
           owner_id: string
         }[]
       }
+      phase_default_multiplier: { Args: { _phase: string }; Returns: number }
       populate_knockout_brackets: {
         Args: { _caller_id: string; _third_assignment?: Json }
         Returns: Json
