@@ -50,6 +50,7 @@ type Match = {
   phase: string | null;
   teams_confirmed?: boolean;
   status?: MatchStatusT | null;
+  unscored_count?: number;
 };
 type Matchday = {
   id: number;
@@ -58,6 +59,7 @@ type Matchday = {
   is_scored: boolean;
   matches: Match[] | null;
   prediction_count?: number;
+  unscored_match_count?: number;
 };
 
 function effectiveStatus(m: Match): MatchStatusT {
