@@ -189,7 +189,7 @@ export function MatchCard({
           )}
         </div>
         <div className="mt-2 text-sm font-medium text-muted-foreground">
-          {match.home_team} <span className="opacity-60">vs</span> {match.away_team}
+          {match.home_team ?? match.home_placeholder ?? "TBD"} <span className="opacity-60">vs</span> {match.away_team ?? match.away_placeholder ?? "TBD"}
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground/80">
           Teams TBD — predictions open soon
