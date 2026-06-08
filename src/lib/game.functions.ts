@@ -940,7 +940,9 @@ export const adminListPredictionsFn = createServerFn({ method: "GET" })
       .select("*")
       .in("match_id", matchIds);
     if (pErr) throw new Error(pErr.message);
-    const userIds = Array.from(new Set((preds ?? []).map((p) => p.user_id)));
+    const userIds = Array.from(
+      new Set((preds ?? []).map((p) => p.user_id).filter((u): u is string => !!u)),
+    );
     const { data: profiles } = await supabase
       .from("profiles")
       .select("user_id, display_name")
@@ -967,7 +969,7 @@ export const adminListPredictionsFn = createServerFn({ method: "GET" })
           away_score: m.away_score,
           actual_first_scorer: m.first_scorer,
           is_final: m.is_final,
-          display_name: profileMap.get(p.user_id) ?? null,
+          display_name: p.user_id ? profileMap.get(p.user_id) ?? "Deleted user" : "Deleted user",
           email: "",
         };
       })
