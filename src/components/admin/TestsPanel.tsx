@@ -155,10 +155,14 @@ const TESTS: TestDef[] = [
   { id: "liga-join-twice", label: "Cannot join same liga twice (idempotent)", category: "🤝 Ligas", run: () => testLigaJoinTwice() },
 
   // 🧪 Pre-WC Test Matches
-  { id: "prewc-exist", label: "Pre-WC friendly test matches exist (6)", category: "🧪 Pre-WC Test Matches", run: () => testPreWcFriendliesExist() },
+  { id: "prewc-exist", label: "Pre-WC friendly test matches exist", category: "🧪 Pre-WC Test Matches", run: () => testPreWcFriendliesExist() },
   { id: "prewc-belgium", label: "Belgium 5-0 Tunisia stored correctly", category: "🧪 Pre-WC Test Matches", run: () => testPreWcBelgiumTunisia() },
   { id: "prewc-score-13", label: "Perfect 5-0 Belgium prediction scores 13 pts", category: "🧪 Pre-WC Test Matches", run: () => testPreWcScoringBelgium13() },
   { id: "prewc-leaderboard", label: "Test matchday excluded from leaderboard", category: "🧪 Pre-WC Test Matches", run: () => testPreWcExcludedFromLeaderboard() },
+  { id: "ui-test-exist", label: "UI test matches exist (4)", category: "🧪 Pre-WC Test Matches", run: () => testUiTestMatchesExist() },
+  { id: "ui-test-live", label: "Live match card state is testable", category: "🧪 Pre-WC Test Matches", run: () => testUiLiveMatchState() },
+  { id: "ui-test-tbd", label: "TBD match blocks predictions", category: "🧪 Pre-WC Test Matches", run: () => testUiTbdBlocksPrediction() },
+
 ];
 
 type RunState = "idle" | "running" | TestResult;
