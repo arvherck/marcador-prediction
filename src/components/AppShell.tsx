@@ -6,6 +6,7 @@ import { useGuestGate } from "@/components/GuestGate";
 import { supabase } from "@/integrations/supabase/client";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { DonateModal } from "@/components/DonateModal";
+import { FeedbackButton } from "@/components/feedback/FeedbackButton";
 
 const tabs = [
   { to: "/play", label: "Play", icon: BallIcon, guest: true },
@@ -145,6 +146,8 @@ export function AppShell({
           <Link to="/rules" className="hover:text-amber-glow transition-colors">
             Rules
           </Link>
+          <span aria-hidden>·</span>
+          <FeedbackButton displayName={displayName} />
         </div>
       </footer>
 

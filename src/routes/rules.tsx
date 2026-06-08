@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { FeedbackButton } from "@/components/feedback/FeedbackButton";
 
 export const Route = createFileRoute("/rules")({
   head: () => {
@@ -260,7 +261,13 @@ function RulesPage() {
       </main>
 
       <footer className="px-6 py-6 text-center text-xs text-muted-foreground border-t border-border">
-        Marcador · the scoreboard
+        <div className="flex items-center justify-center gap-3">
+          <span>Marcador · the scoreboard</span>
+          <span aria-hidden>·</span>
+          <Link to="/" className="hover:text-amber-glow transition-colors">Home</Link>
+          <span aria-hidden>·</span>
+          <FeedbackButton />
+        </div>
       </footer>
     </div>
   );

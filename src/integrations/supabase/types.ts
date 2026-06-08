@@ -110,6 +110,57 @@ export type Database = {
         }
         Relationships: []
       }
+      feedback: {
+        Row: {
+          admin_notes: string | null
+          category: string
+          created_at: string
+          display_name: string | null
+          id: string
+          is_read: boolean
+          message: string
+          page: string | null
+          user_id: string | null
+        }
+        Insert: {
+          admin_notes?: string | null
+          category: string
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          is_read?: boolean
+          message: string
+          page?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          admin_notes?: string | null
+          category?: string
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          is_read?: boolean
+          message?: string
+          page?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "feedback_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "public_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       league_members: {
         Row: {
           joined_at: string
@@ -602,6 +653,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      feedback_unread_count: { Args: never; Returns: number }
       fill_random_scores: {
         Args: { _caller_id: string; _matchday_id?: number; _scope: string }
         Returns: Json

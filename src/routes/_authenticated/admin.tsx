@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { TestsPanel } from "@/components/admin/TestsPanel";
 import { KnockoutBracketPanel } from "@/components/admin/KnockoutBracketPanel";
+import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { supabase } from "@/integrations/supabase/client";
 import {
   adminAddMatchFn,
   adminAddMatchdayFn,
@@ -111,6 +113,7 @@ const NAV = [
   { id: "api-sync", label: "API Sync", icon: "🔄" },
   { id: "tournament", label: "Tournament", icon: "🏆" },
   { id: "donations", label: "Donations", icon: "💰" },
+  { id: "feedback", label: "Feedback", icon: "💬" },
   { id: "tests", label: "Tests", icon: "🧪" },
   { id: "advanced", label: "Advanced", icon: "⚙️" },
 ];
@@ -121,10 +124,36 @@ function AdminInner({ displayName }: { displayName?: string }) {
   const matchdays = (mds.data as Matchday[] | undefined) ?? [];
   const [active, setActive] = useState<string>("overview");
 
+  const unread = useQuery({
+    queryKey: ["feedback-unread"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("feedback_unread_count");
+      if (error) throw error;
+      return (data as number) ?? 0;
+    },
+    refetchOnWindowFocus: true,
+  });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("feedback-unread-badge")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "feedback" },
+        () => qc.invalidateQueries({ queryKey: ["feedback-unread"] })
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [qc]);
+
   const jump = (id: string) => {
     setActive(id);
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  const unreadCount = unread.data ?? 0;
 
   return (
     <AppShell displayName={displayName} isAdmin>
@@ -139,14 +168,19 @@ function AdminInner({ displayName }: { displayName?: string }) {
               <button
                 key={n.id}
                 onClick={() => jump(n.id)}
-                className={`shrink-0 md:shrink text-left px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+                className={`shrink-0 md:shrink text-left px-3 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap flex items-center gap-2 ${
                   active === n.id
                     ? "bg-primary/15 text-primary"
                     : "text-muted-foreground hover:bg-muted/50"
                 }`}
               >
-                <span className="mr-2">{n.icon}</span>
-                {n.label}
+                <span>{n.icon}</span>
+                <span>{n.label}</span>
+                {n.id === "feedback" && unreadCount > 0 && (
+                  <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold">
+                    {unreadCount}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -196,6 +230,10 @@ function AdminInner({ displayName }: { displayName?: string }) {
 
           <Section id="donations" title="Donations">
             <DonationsPanel />
+          </Section>
+
+          <Section id="feedback" title="Feedback">
+            <FeedbackPanel />
           </Section>
 
           <Section id="tests" title="Tests">
