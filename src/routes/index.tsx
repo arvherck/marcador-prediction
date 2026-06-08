@@ -98,6 +98,15 @@ function Landing() {
                 I have an account
               </Link>
             </div>
+            <div className="mt-4">
+              <Link
+                to="/rules"
+                className="text-sm text-muted-foreground hover:text-amber-glow transition"
+              >
+                How does it work? →
+              </Link>
+            </div>
+
 
             <div className="mt-10 grid grid-cols-3 gap-4 max-w-md">
               <Stat label="Per result" value="+3" />
@@ -114,8 +123,13 @@ function Landing() {
       </main>
 
       <footer className="px-6 py-6 text-center text-xs text-muted-foreground">
-        Marcador · the scoreboard
+        <div className="flex items-center justify-center gap-3">
+          <span>Marcador · the scoreboard</span>
+          <span aria-hidden>·</span>
+          <Link to="/rules" className="hover:text-amber-glow transition-colors">Rules</Link>
+        </div>
       </footer>
+
     </div>
   );
 }
