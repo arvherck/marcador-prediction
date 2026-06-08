@@ -238,7 +238,7 @@ export function MatchCard({
 
       <div className="px-4 pt-5 pb-4">
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-          <TeamSide name={match.home_team} />
+          <TeamSide name={match.home_team ?? ""} />
           <ScorePair
             home={home}
             away={away}
